@@ -1,0 +1,2 @@
+# PMIScoutAI
+Template Cruip modificato
