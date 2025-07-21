@@ -5,22 +5,122 @@ import Link from 'next/link';
 export default function Home() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [userName, setUserName] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(null); // null = loading, false = not auth, true = auth
+  const [isLoading, setIsLoading] = useState(true);
 
-  // --- Recupera i dati utente da Outseta al caricamento della pagina ---
-  useEffect(() => {
-    // Questa funzione viene eseguita solo dopo che la pagina è stata caricata nel browser
-    // Controlliamo se l'oggetto Outseta è disponibile
-    if (window.Outseta) {
-      // Usiamo il metodo getUser() per recuperare i dati dell'utente attuale
-      window.Outseta.getUser().then(user => {
-        // Se un utente è loggato, i suoi dati saranno nell'oggetto 'user'
-        if (user) {
-          // Prendiamo il nome dell'utente (FirstName) e aggiorniamo lo stato
-          setUserName(user.FirstName);
-        }
-      });
+  // --- Funzione per verificare l'autenticazione ---
+  const checkAuthentication = () => {
+    if (typeof window !== 'undefined' && window.Outseta) {
+      window.Outseta.getUser()
+        .then(user => {
+          if (user && user.Email) {
+            // Utente autenticato
+            setIsAuthenticated(true);
+            setUserName(user.FirstName || user.Email.split('@')[0]);
+            setIsLoading(false);
+          } else {
+            // Utente non autenticato - reindirizza al login
+            setIsAuthenticated(false);
+            setIsLoading(false);
+            // Reindirizza alla pagina di login di Outseta
+            window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login&returnUrl=' + encodeURIComponent(window.location.href);
+          }
+        })
+        .catch(error => {
+          console.error('Errore durante la verifica dell\'autenticazione:', error);
+          setIsAuthenticated(false);
+          setIsLoading(false);
+          // In caso di errore, reindirizza comunque al login
+          window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login';
+        });
+    } else {
+      // Outseta non ancora caricato, riprova dopo un breve delay
+      setTimeout(checkAuthentication, 500);
     }
-  }, []); // L'array vuoto [] assicura che questo codice venga eseguito solo una volta
+  };
+
+  // --- Effect per verificare l'autenticazione al caricamento ---
+  useEffect(() => {
+    // Aspetta che Outseta sia completamente caricato
+    const waitForOutseta = () => {
+      if (typeof window !== 'undefined' && window.Outseta) {
+        checkAuthentication();
+      } else {
+        setTimeout(waitForOutseta, 100);
+      }
+    };
+
+    waitForOutseta();
+  }, []);
+
+  // --- Loading screen mentre verifichiamo l'autenticazione ---
+  if (isLoading || isAuthenticated === null) {
+    return (
+      <>
+        <Head>
+          <title>Caricamento - PMIScout</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <link rel="preconnect" href="https://fonts.googleapis.com" />
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+          <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+
+          {/* Script Outseta */}
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                var o_options = {
+                  domain: 'pmiscout.outseta.com',
+                  load: 'auth,customForm,emailList,leadCapture,nocode,profile,support',
+                  tokenStorage: 'cookie'
+                };
+              `,
+            }}
+          />
+          <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
+        </Head>
+
+        <div className="flex items-center justify-center min-h-screen bg-slate-50">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+            <h2 className="text-xl font-bold text-blue-600 mb-2">PMIScout</h2>
+            <p className="text-slate-600">Verifica dell'autenticazione in corso...</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // --- Se non autenticato, mostra messaggio di reindirizzamento ---
+  if (isAuthenticated === false) {
+    return (
+      <>
+        <Head>
+          <title>Accesso Richiesto - PMIScout</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+        </Head>
+
+        <div className="flex items-center justify-center min-h-screen bg-slate-50">
+          <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
+            <div className="text-blue-600 mb-4">
+              <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">Accesso Richiesto</h2>
+            <p className="text-slate-600 mb-6">Devi effettuare il login per accedere alla dashboard.</p>
+            <a 
+              href="https://pmiscout.outseta.com/auth?widgetMode=login"
+              className="inline-block w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            >
+              Vai al Login
+            </a>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   // --- Componenti Icona (per pulizia e riusabilità) ---
   const Icon = ({ path, className = 'w-6 h-6' }) => (
@@ -64,6 +164,7 @@ export default function Home() {
     { href: '#', text: 'Calcolatori', icon: icons.calculator, active: false },
     { href: '#', text: 'Marketplace', icon: icons.marketplace, active: false },
   ];
+
   const toolCards = [
     { title: 'Check-UP AI Azienda', description: 'Analisi approfondita della tua azienda tramite intelligenza artificiale.', linkText: 'Inizia analisi', href: '#', icon: icons.checkup },
     { title: 'Risparmio Costi', description: 'Identifica e ottimizza le spese per massimizzare i profitti.', linkText: 'Scopri come', href: '#', icon: icons.cost },
@@ -73,10 +174,12 @@ export default function Home() {
     { title: 'Il tuo Competitor', description: 'Analizza la concorrenza e scopri i loro punti deboli e di forza.', linkText: 'Analizza competitor', href: '#', icon: icons.competitor },
   ];
 
+  // --- DASHBOARD PRINCIPALE (solo per utenti autenticati) ---
   return (
     <>
       <Head>
         <title>Dashboard PMIScout</title>
+        <meta name="description" content="Dashboard privata PMIScout - Accesso riservato agli utenti registrati" />
         
         <script src="https://cdn.tailwindcss.com"></script>
         
@@ -85,7 +188,7 @@ export default function Home() {
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
 
-        {/* Script "Quick Start" di Outseta con tokenStorage */}
+        {/* Script Outseta */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -97,9 +200,7 @@ export default function Home() {
             `,
           }}
         />
-        <script src="https://cdn.outseta.com/outseta.min.js"
-                data-options="o_options">
-        </script>
+        <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
         
       </Head>
 
@@ -114,15 +215,24 @@ export default function Home() {
               <nav className="flex-1 px-2 pb-4 space-y-1">
                 {navLinks.map((link) => (
                   <Link key={link.text} href={link.href}>
-                    <a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group ${ link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}>
+                    <a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${ link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}>
                       <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
                       {link.text}
                     </a>
                   </Link>
                 ))}
               </nav>
-              <div className="px-2 py-4 mt-auto border-t">
-                <a href="mailto:antonio@pmiscout.eu" className="flex items-center px-2 py-2 text-sm font-medium text-slate-600 rounded-md hover:bg-slate-100 hover:text-slate-900 group">
+              
+              {/* Status utente nella sidebar */}
+              <div className="px-2 py-3 border-t border-slate-200">
+                <div className="flex items-center px-2 py-2 text-xs text-slate-500">
+                  <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                  Connesso come {userName}
+                </div>
+              </div>
+
+              <div className="px-2 py-4 border-t">
+                <a href="mailto:antonio@pmiscout.eu" className="flex items-center px-2 py-2 text-sm font-medium text-slate-600 rounded-md hover:bg-slate-100 hover:text-slate-900 group transition-colors">
                   <Icon path={icons.support} className="w-6 h-6 mr-3 text-slate-500" />
                   Supporto
                 </a>
@@ -131,11 +241,23 @@ export default function Home() {
           </div>
         </aside>
 
+        {/* Overlay mobile */}
+        {isSidebarOpen && (
+          <div 
+            className="fixed inset-0 z-10 bg-black bg-opacity-50 md:hidden" 
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
+
         {/* Contenuto Principale */}
         <div className="flex flex-col flex-1 w-0 overflow-hidden">
           {/* Header mobile */}
           <header className="relative z-10 flex items-center justify-between flex-shrink-0 h-16 px-4 bg-white border-b md:hidden">
-            <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 rounded-md hover:text-slate-900 hover:bg-slate-100">
+            <button 
+              onClick={() => setIsSidebarOpen(true)} 
+              className="p-2 text-slate-500 rounded-md hover:text-slate-900 hover:bg-slate-100 transition-colors"
+              aria-label="Apri menu"
+            >
               <Icon path={icons.menu} />
             </button>
             <h1 className="text-xl font-bold text-blue-600">PMIScout</h1>
@@ -147,32 +269,48 @@ export default function Home() {
               <div className="flex flex-col pb-6 border-b md:flex-row md:items-center md:justify-between border-slate-200">
                 <div>
                   <h1 className="text-2xl font-bold leading-7 text-slate-900 sm:text-3xl sm:truncate">Dashboard</h1>
-                  {/* Messaggio di benvenuto dinamico */}
                   <p className="mt-1 text-sm text-slate-500">
                     {userName ? `Benvenuto, ${userName}!` : 'Benvenuto, qui trovi tutti i tool per la tua crescita.'}
                   </p>
                 </div>
                 <div className="flex items-center mt-4 space-x-3 md:mt-0">
                   <Link href="/profilo">
-                    <a className="flex items-center px-4 py-2 text-sm font-medium bg-white border rounded-lg shadow-sm text-slate-700 border-slate-300 hover:bg-slate-50">
+                    <a className="flex items-center px-4 py-2 text-sm font-medium bg-white border rounded-lg shadow-sm text-slate-700 border-slate-300 hover:bg-slate-50 transition-colors">
                       <Icon path={icons.profile} className="w-5 h-5 mr-2 text-slate-500" />
                       Profilo
                     </a>
                   </Link>
-                  <a href="https://pmiscout.outseta.com/auth?widgetMode=logout" className="flex items-center px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-lg shadow-sm hover:bg-red-700">
+                  <a 
+                    href="https://pmiscout.outseta.com/auth?widgetMode=logout" 
+                    className="flex items-center px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-lg shadow-sm hover:bg-red-700 transition-colors"
+                  >
                     <Icon path={icons.logout} className="w-5 h-5 mr-2" />
                     Logout
                   </a>
                 </div>
               </div>
+
+              {/* Alert di benvenuto */}
+              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center">
+                  <svg className="w-5 h-5 text-blue-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  </svg>
+                  <p className="text-sm text-blue-800">
+                    <strong>Area Protetta:</strong> Questa dashboard è accessibile solo agli utenti registrati.
+                  </p>
+                </div>
+              </div>
+
               <div className="relative p-8 mt-8 overflow-hidden text-white bg-center bg-cover rounded-lg shadow-lg" style={{ backgroundImage: "url('https://www.pmiscout.eu/wp-content/uploads/2022/03/115-business-consulting-agency_blog_4.jpg')" }}>
                 <div className="absolute inset-0 bg-black bg-opacity-50" />
                 <div className="relative z-10">
                   <h2 className="text-2xl font-bold md:text-3xl">Inizia con il Check-UP AI</h2>
                   <p className="mt-2 text-gray-200">Ottieni un'analisi istantanea e approfondita della tua azienda con la nostra intelligenza artificiale.</p>
-                  <a href="#" className="inline-block px-5 py-2 mt-6 font-semibold text-blue-600 bg-white rounded-lg shadow-md hover:bg-blue-50">Esegui Check-UP &rarr;</a>
+                  <a href="#" className="inline-block px-5 py-2 mt-6 font-semibold text-blue-600 bg-white rounded-lg shadow-md hover:bg-blue-50 transition-colors">Esegui Check-UP &rarr;</a>
                 </div>
               </div>
+
               <div className="mt-10">
                 <h2 className="text-lg font-semibold leading-6 text-slate-900">I tuoi Macro Tool</h2>
                 <div className="grid grid-cols-1 gap-6 mt-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -185,7 +323,7 @@ export default function Home() {
                         <h3 className="mt-4 text-lg font-semibold text-slate-900">{card.title}</h3>
                         <p className="mt-1 text-sm text-slate-500">{card.description}</p>
                       </div>
-                      <a href={card.href} className="inline-block mt-4 text-sm font-semibold text-blue-600 hover:text-blue-800">{card.linkText} &rarr;</a>
+                      <a href={card.href} className="inline-block mt-4 text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors">{card.linkText} &rarr;</a>
                     </div>
                   ))}
                 </div>
