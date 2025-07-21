@@ -60,22 +60,22 @@ export default function Home() {
       <Head>
         <title>Dashboard PMIScout</title>
         
-        {/* Script per lo stile con Tailwind CSS */}
         <script src="https://cdn.tailwindcss.com"></script>
         
-        {/* Link per il font 'Inter' */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
 
-        {/* Script Principale di Outseta per la Protezione della Pagina */}
+        {/* Script Principale di Outseta con la nuova opzione */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               var o_options = {
                 domain: 'pmiscout.outseta.com',
-                load: 'nocode'
+                load: 'nocode',
+                /* ▼▼▼ QUESTA È LA RIGA CHE RISOLVE TUTTO ▼▼▼ */
+                tokenStorage: 'cookie'
               };
             `,
           }}
