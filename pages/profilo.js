@@ -356,7 +356,7 @@ export default function ProfilePage() {
                       </div>
                     </div>
                     <p className="mt-3 text-sm text-blue-700">
-                      ✅ I dati sono stati recuperati correttamente da Outseta e sono disponibili per l'utilizzo nel tuo SaaS.
+                      ✅ I tuoi dati sono gestiti secondo la normativa sulla privacy ed utilizzano protocollo di sicurezza Outseta.
                     </p>
                   </div>
                 </div>
