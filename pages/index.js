@@ -67,14 +67,13 @@ export default function Home() {
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
 
-        {/* Script Principale di Outseta con la nuova opzione */}
+        {/* Script Principale di Outseta con l'opzione per i cookie */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               var o_options = {
                 domain: 'pmiscout.outseta.com',
                 load: 'nocode',
-                /* ▼▼▼ QUESTA È LA RIGA CHE RISOLVE TUTTO ▼▼▼ */
                 tokenStorage: 'cookie'
               };
             `,
@@ -129,14 +128,16 @@ export default function Home() {
                   <p className="mt-1 text-sm text-slate-500">Benvenuto, qui trovi tutti i tool per la tua crescita.</p>
                 </div>
                 <div className="flex items-center mt-4 space-x-3 md:mt-0">
-                  <a href="https://pmiscout.outseta.com/profile#o-authenticated" className="flex items-center px-4 py-2 text-sm font-medium bg-white border rounded-lg shadow-sm text-slate-700 border-slate-300 hover:bg-slate-50">
+                  {/* ▼▼▼ LINK PROFILO E LOGOUT AGGIORNATI ▼▼▼ */}
+                  <a href="https://app.pmiscout.eu/profile#o-authenticated" className="flex items-center px-4 py-2 text-sm font-medium bg-white border rounded-lg shadow-sm text-slate-700 border-slate-300 hover:bg-slate-50">
                     <Icon path={icons.profile} className="w-5 h-5 mr-2 text-slate-500" />
                     Profilo
                   </a>
-                  <a href="https://pmiscout.outseta.com/auth?widgetMode=logout" className="flex items-center px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-lg shadow-sm hover:bg-red-700">
+                  <a href="https://app.pmiscout.eu/auth?widgetMode=logout" className="flex items-center px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-lg shadow-sm hover:bg-red-700">
                     <Icon path={icons.logout} className="w-5 h-5 mr-2" />
                     Logout
                   </a>
+                  {/* ▲▲▲ FINE LINK AGGIORNATI ▲▲▲ */}
                 </div>
               </div>
               <div className="relative p-8 mt-8 overflow-hidden text-white bg-center bg-cover rounded-lg shadow-lg" style={{ backgroundImage: "url('https://www.pmiscout.eu/wp-content/uploads/2022/03/115-business-consulting-agency_blog_4.jpg')" }}>
