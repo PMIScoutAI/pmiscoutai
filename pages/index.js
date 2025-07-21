@@ -43,7 +43,7 @@ export default function Home() {
   const navLinks = [
     { href: '#', text: 'Dashboard', icon: icons.dashboard, active: true },
     { href: '#', text: 'Ricerca AI', icon: icons.search },
-    { href: '#', a_text: 'Calcolatori', icon: icons.calculator },
+    { href: '#', text: 'Calcolatori', icon: icons.calculator },
     { href: '#', text: 'Marketplace', icon: icons.marketplace },
   ];
   const toolCards = [
@@ -59,38 +59,55 @@ export default function Home() {
     <>
       <Head>
         <title>Dashboard PMIScout</title>
-        {/* QUESTO È LO SCRIPT MAGICO! */}
+        
+        {/* Script per lo stile con Tailwind CSS */}
         <script src="https://cdn.tailwindcss.com"></script>
+        
+        {/* Link per il font 'Inter' */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+
+        {/* Script Principale di Outseta per la Protezione della Pagina */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              var o_options = {
+                domain: 'pmiscout.outseta.com',
+                load: 'nocode'
+              };
+            `,
+          }}
+        />
+        <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options" />
+        
       </Head>
 
       <div className="relative flex min-h-screen bg-slate-50 text-slate-800">
         {/* Sidebar */}
         <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
-            <div className="flex flex-col h-full">
-              <div className="flex items-center justify-center h-16 border-b">
-                <h1 className="text-2xl font-bold text-blue-600">PMIScout</h1>
-              </div>
-              <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
-                <nav className="flex-1 px-2 pb-4 space-y-1">
-                  {navLinks.map((link) => (
-                    <a key={link.text} href={link.href} className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group ${ link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}>
-                      <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
-                      {link.text}
-                    </a>
-                  ))}
-                </nav>
-                <div className="px-2 py-4 mt-auto border-t">
-                  <a href="mailto:antonio@pmiscout.eu" className="flex items-center px-2 py-2 text-sm font-medium text-slate-600 rounded-md hover:bg-slate-100 hover:text-slate-900 group">
-                    <Icon path={icons.support} className="w-6 h-6 mr-3 text-slate-500" />
-                    Supporto
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-center h-16 border-b">
+              <h1 className="text-2xl font-bold text-blue-600">PMIScout</h1>
+            </div>
+            <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
+              <nav className="flex-1 px-2 pb-4 space-y-1">
+                {navLinks.map((link) => (
+                  <a key={link.text} href={link.href} className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group ${ link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}>
+                    <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
+                    {link.text}
                   </a>
-                </div>
+                ))}
+              </nav>
+              <div className="px-2 py-4 mt-auto border-t">
+                <a href="mailto:antonio@pmiscout.eu" className="flex items-center px-2 py-2 text-sm font-medium text-slate-600 rounded-md hover:bg-slate-100 hover:text-slate-900 group">
+                  <Icon path={icons.support} className="w-6 h-6 mr-3 text-slate-500" />
+                  Supporto
+                </a>
               </div>
             </div>
+          </div>
         </aside>
 
         {/* Contenuto Principale */}
