@@ -1,9 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 
 export default function Home() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [userName, setUserName] = useState('');
+
+  // --- Recupera i dati utente da Outseta al caricamento della pagina ---
+  useEffect(() => {
+    // Questa funzione viene eseguita solo dopo che la pagina è stata caricata nel browser
+    // Controlliamo se l'oggetto Outseta è disponibile
+    if (window.Outseta) {
+      // Usiamo il metodo getUser() per recuperare i dati dell'utente attuale
+      window.Outseta.getUser().then(user => {
+        // Se un utente è loggato, i suoi dati saranno nell'oggetto 'user'
+        if (user) {
+          // Prendiamo il nome dell'utente (FirstName) e aggiorniamo lo stato
+          setUserName(user.FirstName);
+        }
+      });
+    }
+  }, []); // L'array vuoto [] assicura che questo codice venga eseguito solo una volta
 
   // --- Componenti Icona (per pulizia e riusabilità) ---
   const Icon = ({ path, className = 'w-6 h-6' }) => (
@@ -130,7 +147,10 @@ export default function Home() {
               <div className="flex flex-col pb-6 border-b md:flex-row md:items-center md:justify-between border-slate-200">
                 <div>
                   <h1 className="text-2xl font-bold leading-7 text-slate-900 sm:text-3xl sm:truncate">Dashboard</h1>
-                  <p className="mt-1 text-sm text-slate-500">Benvenuto, qui trovi tutti i tool per la tua crescita.</p>
+                  {/* Messaggio di benvenuto dinamico */}
+                  <p className="mt-1 text-sm text-slate-500">
+                    {userName ? `Benvenuto, ${userName}!` : 'Benvenuto, qui trovi tutti i tool per la tua crescita.'}
+                  </p>
                 </div>
                 <div className="flex items-center mt-4 space-x-3 md:mt-0">
                   <Link href="/profilo">
