@@ -68,19 +68,21 @@ export default function Home() {
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
 
-        {/* Script Principale di Outseta */}
+        {/* Script "Quick Start" di Outseta con tokenStorage */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               var o_options = {
                 domain: 'pmiscout.outseta.com',
-                load: 'nocode',
+                load: 'auth,customForm,emailList,leadCapture,nocode,profile,support',
                 tokenStorage: 'cookie'
               };
             `,
           }}
         />
-        <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options" />
+        <script src="https://cdn.outseta.com/outseta.min.js"
+                data-options="o_options">
+        </script>
         
       </Head>
 
@@ -137,7 +139,7 @@ export default function Home() {
                       Profilo
                     </a>
                   </Link>
-                  <a href="https://app.pmiscout.eu/auth?widgetMode=logout" className="flex items-center px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-lg shadow-sm hover:bg-red-700">
+                  <a href="https://pmiscout.outseta.com/auth?widgetMode=logout" className="flex items-center px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-lg shadow-sm hover:bg-red-700">
                     <Icon path={icons.logout} className="w-5 h-5 mr-2" />
                     Logout
                   </a>
