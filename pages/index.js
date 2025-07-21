@@ -41,10 +41,11 @@ export default function Home() {
 
   // --- Dati per la UI ---
   const navLinks = [
-    { href: '#', text: 'Dashboard', icon: icons.dashboard, active: true },
-    { href: '#', text: 'Ricerca AI', icon: icons.search },
-    { href: '#', text: 'Calcolatori', icon: icons.calculator },
-    { href: '#', text: 'Marketplace', icon: icons.marketplace },
+    { href: '/', text: 'Dashboard', icon: icons.dashboard, active: true },
+    { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
+    { href: '#', text: 'Ricerca AI', icon: icons.search, active: false },
+    { href: '#', text: 'Calcolatori', icon: icons.calculator, active: false },
+    { href: '#', text: 'Marketplace', icon: icons.marketplace, active: false },
   ];
   const toolCards = [
     { title: 'Check-UP AI Azienda', description: 'Analisi approfondita della tua azienda tramite intelligenza artificiale.', linkText: 'Inizia analisi', href: '#', icon: icons.checkup },
@@ -93,10 +94,12 @@ export default function Home() {
             <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
               <nav className="flex-1 px-2 pb-4 space-y-1">
                 {navLinks.map((link) => (
-                  <a key={link.text} href={link.href} className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group ${ link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}>
-                    <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
-                    {link.text}
-                  </a>
+                  <Link key={link.text} href={link.href}>
+                    <a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group ${ link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}>
+                      <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
+                      {link.text}
+                    </a>
+                  </Link>
                 ))}
               </nav>
               <div className="px-2 py-4 mt-auto border-t">
@@ -128,16 +131,16 @@ export default function Home() {
                   <p className="mt-1 text-sm text-slate-500">Benvenuto, qui trovi tutti i tool per la tua crescita.</p>
                 </div>
                 <div className="flex items-center mt-4 space-x-3 md:mt-0">
-                  {/* ▼▼▼ LINK PROFILO E LOGOUT AGGIORNATI CON IL DOMINIO PERSONALIZZATO ▼▼▼ */}
-                  <a href="https://app.pmiscout.eu/profile#o-authenticated" className="flex items-center px-4 py-2 text-sm font-medium bg-white border rounded-lg shadow-sm text-slate-700 border-slate-300 hover:bg-slate-50">
-                    <Icon path={icons.profile} className="w-5 h-5 mr-2 text-slate-500" />
-                    Profilo
-                  </a>
+                  <Link href="/profilo">
+                    <a className="flex items-center px-4 py-2 text-sm font-medium bg-white border rounded-lg shadow-sm text-slate-700 border-slate-300 hover:bg-slate-50">
+                      <Icon path={icons.profile} className="w-5 h-5 mr-2 text-slate-500" />
+                      Profilo
+                    </a>
+                  </Link>
                   <a href="https://app.pmiscout.eu/auth?widgetMode=logout" className="flex items-center px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-lg shadow-sm hover:bg-red-700">
                     <Icon path={icons.logout} className="w-5 h-5 mr-2" />
                     Logout
                   </a>
-                  {/* ▲▲▲ FINE LINK AGGIORNATI ▲▲▲ */}
                 </div>
               </div>
               <div className="relative p-8 mt-8 overflow-hidden text-white bg-center bg-cover rounded-lg shadow-lg" style={{ backgroundImage: "url('https://www.pmiscout.eu/wp-content/uploads/2022/03/115-business-consulting-agency_blog_4.jpg')" }}>
