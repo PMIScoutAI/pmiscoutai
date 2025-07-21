@@ -31,6 +31,7 @@ export default function ProfilePage() {
     menu: <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>,
     profile: <><path d="M5.52 19c.64-2.2 1.84-3 3.22-3h6.52c1.38 0 2.58.8 3.22 3" /><circle cx="12" cy="10" r="3" /><circle cx="12" cy="12" r="10" /></>,
     logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>,
+    home: <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></>,
   };
 
   // --- Dati per la UI ---
@@ -46,6 +47,7 @@ export default function ProfilePage() {
     <>
       <Head>
         <title>Il Mio Profilo - PMIScout</title>
+        <meta name="description" content="Gestisci le tue informazioni personali e di fatturazione su PMIScout" />
         
         <script src="https://cdn.tailwindcss.com"></script>
         
@@ -54,14 +56,17 @@ export default function ProfilePage() {
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
 
-        {/* Script Principale di Outseta */}
+        {/* Script Principale di Outseta con configurazione ottimizzata */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               var o_options = {
                 domain: 'pmiscout.outseta.com',
-                load: 'nocode',
-                tokenStorage: 'cookie'
+                load: 'auth,nocode,profile,support',
+                tokenStorage: 'cookie',
+                auth: {
+                  authenticationCallbackUrl: window.location.origin + '/dashboard'
+                }
               };
             `,
           }}
@@ -74,22 +79,38 @@ export default function ProfilePage() {
         {/* Sidebar */}
         <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
           <div className="flex flex-col h-full">
+            {/* Logo */}
             <div className="flex items-center justify-center h-16 border-b">
-              <h1 className="text-2xl font-bold text-blue-600">PMIScout</h1>
+              <Link href="/">
+                <a className="text-2xl font-bold text-blue-600 hover:text-blue-700 transition-colors">
+                  PMIScout
+                </a>
+              </Link>
             </div>
+
+            {/* Navigation */}
             <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
               <nav className="flex-1 px-2 pb-4 space-y-1">
                 {navLinks.map((link) => (
                    <Link key={link.text} href={link.href}>
-                    <a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group ${ link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}>
+                    <a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${ 
+                      link.active 
+                        ? 'bg-blue-600 text-white' 
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' 
+                    }`}>
                       <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
                       {link.text}
                     </a>
                   </Link>
                 ))}
               </nav>
+
+              {/* Footer Support */}
               <div className="px-2 py-4 mt-auto border-t">
-                <a href="mailto:antonio@pmiscout.eu" className="flex items-center px-2 py-2 text-sm font-medium text-slate-600 rounded-md hover:bg-slate-100 hover:text-slate-900 group">
+                <a 
+                  href="mailto:antonio@pmiscout.eu" 
+                  className="flex items-center px-2 py-2 text-sm font-medium text-slate-600 rounded-md hover:bg-slate-100 hover:text-slate-900 group transition-colors"
+                >
                   <Icon path={icons.support} className="w-6 h-6 mr-3 text-slate-500" />
                   Supporto
                 </a>
@@ -98,26 +119,69 @@ export default function ProfilePage() {
           </div>
         </aside>
 
+        {/* Overlay per mobile */}
+        {isSidebarOpen && (
+          <div 
+            className="fixed inset-0 z-10 bg-black bg-opacity-50 md:hidden" 
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
+
         {/* Contenuto Principale */}
         <div className="flex flex-col flex-1 w-0 overflow-hidden">
           {/* Header mobile */}
           <header className="relative z-10 flex items-center justify-between flex-shrink-0 h-16 px-4 bg-white border-b md:hidden">
-            <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 rounded-md hover:text-slate-900 hover:bg-slate-100">
+            <button 
+              onClick={() => setIsSidebarOpen(true)} 
+              className="p-2 text-slate-500 rounded-md hover:text-slate-900 hover:bg-slate-100 transition-colors"
+              aria-label="Apri menu"
+            >
               <Icon path={icons.menu} />
             </button>
-            <h1 className="text-xl font-bold text-blue-600">PMIScout</h1>
+            <Link href="/">
+              <a className="text-xl font-bold text-blue-600">PMIScout</a>
+            </Link>
             <div className="w-8" />
           </header>
 
           <main className="relative flex-1 overflow-y-auto focus:outline-none">
             <div className="py-6 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+              
+              {/* Header della pagina */}
               <div className="flex flex-col pb-6 border-b md:flex-row md:items-center md:justify-between border-slate-200">
                 <div>
-                  <h1 className="text-2xl font-bold leading-7 text-slate-900 sm:text-3xl sm:truncate">Il Mio Profilo</h1>
-                  <p className="mt-1 text-sm text-slate-500">Gestisci le tue informazioni personali e di fatturazione.</p>
+                  {/* Breadcrumb */}
+                  <nav className="flex items-center text-sm mb-2" aria-label="Breadcrumb">
+                    <Link href="/">
+                      <a className="flex items-center text-blue-600 hover:text-blue-800 transition-colors">
+                        <Icon path={icons.home} className="w-4 h-4 mr-1" />
+                        Dashboard
+                      </a>
+                    </Link>
+                    <span className="mx-2 text-slate-400">/</span>
+                    <span className="text-slate-600 font-medium">Profilo</span>
+                  </nav>
+
+                  <h1 className="text-2xl font-bold leading-7 text-slate-900 sm:text-3xl sm:truncate">
+                    Il Mio Profilo
+                  </h1>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Gestisci le tue informazioni personali, di fatturazione e le preferenze dell'account.
+                  </p>
                 </div>
+
                 <div className="flex items-center mt-4 space-x-3 md:mt-0">
-                  <a href="https://app.pmiscout.eu/auth?widgetMode=logout" className="flex items-center px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-lg shadow-sm hover:bg-red-700">
+                  <Link href="/">
+                    <a className="flex items-center px-4 py-2 text-sm font-medium bg-white border rounded-lg shadow-sm text-slate-700 border-slate-300 hover:bg-slate-50 transition-colors">
+                      <Icon path={icons.dashboard} className="w-5 h-5 mr-2 text-slate-500" />
+                      Torna alla Dashboard
+                    </a>
+                  </Link>
+                  
+                  <a 
+                    href="https://pmiscout.outseta.com/auth?widgetMode=logout" 
+                    className="flex items-center px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-lg shadow-sm hover:bg-red-700 transition-colors"
+                  >
                     <Icon path={icons.logout} className="w-5 h-5 mr-2" />
                     Logout
                   </a>
@@ -126,7 +190,71 @@ export default function ProfilePage() {
               
               {/* Widget del Profilo Outseta */}
               <div className="mt-8">
-                <div data-o-profile="1" data-mode="embed"></div>
+                <div className="bg-white rounded-lg shadow-sm border p-6">
+                  <div className="mb-4">
+                    <h2 className="text-lg font-semibold text-slate-900">Informazioni Account</h2>
+                    <p className="text-sm text-slate-600">
+                      Modifica i tuoi dati personali, gestisci la fatturazione e le preferenze dell'account.
+                    </p>
+                  </div>
+                  
+                  {/* Widget Outseta Profile */}
+                  <div data-o-profile="1" data-mode="embed"></div>
+                  
+                  {/* Fallback message */}
+                  <div className="mt-6 p-4 bg-slate-50 rounded-lg">
+                    <p className="text-sm text-slate-600 text-center">
+                      Se il profilo non si carica correttamente, puoi accedere direttamente 
+                      <a 
+                        href="https://pmiscout.outseta.com/profile" 
+                        className="ml-1 text-blue-600 hover:text-blue-800 underline transition-colors"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        cliccando qui
+                      </a>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sezione informazioni aggiuntive */}
+              <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+                {/* Card supporto */}
+                <div className="bg-white rounded-lg shadow-sm border p-6">
+                  <div className="flex items-center mb-4">
+                    <Icon path={icons.support} className="w-6 h-6 text-blue-600 mr-3" />
+                    <h3 className="text-lg font-semibold text-slate-900">Serve aiuto?</h3>
+                  </div>
+                  <p className="text-sm text-slate-600 mb-4">
+                    Il nostro team di supporto è sempre disponibile per aiutarti con qualsiasi domanda o problema.
+                  </p>
+                  <a 
+                    href="mailto:antonio@pmiscout.eu" 
+                    className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Contatta il Supporto
+                  </a>
+                </div>
+
+                {/* Card sicurezza */}
+                <div className="bg-white rounded-lg shadow-sm border p-6">
+                  <div className="flex items-center mb-4">
+                    <svg className="w-6 h-6 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                    <h3 className="text-lg font-semibold text-slate-900">Account Sicuro</h3>
+                  </div>
+                  <p className="text-sm text-slate-600 mb-4">
+                    I tuoi dati sono protetti con crittografia di livello bancario e autenticazione sicura.
+                  </p>
+                  <div className="flex items-center text-sm text-green-600">
+                    <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    Account Verificato
+                  </div>
+                </div>
               </div>
 
             </div>
