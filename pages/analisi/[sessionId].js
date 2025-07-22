@@ -26,54 +26,80 @@ export default function AnalisiReportPage() {
     const router = useRouter();
     const { sessionId } = router.query;
 
+    // Stati di autenticazione e caricamento pagina
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [userName, setUserName] = useState('');
+    const [isAuthenticated, setIsAuthenticated] = useState(null);
+    const [isPageLoading, setIsPageLoading] = useState(true);
+
+    // Stati per i dati dell'analisi
     const [sessionData, setSessionData] = useState(null);
     const [analysisData, setAnalysisData] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isAnalysisLoading, setIsAnalysisLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    // Sidebar e utente (stati e logica simili alle altre pagine)
-    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [userName, setUserName] = useState('Utente'); // Placeholder
+    // Logica di autenticazione (identica alle altre pagine)
+    const checkAuthentication = () => {
+        if (typeof window !== 'undefined' && window.Outseta) {
+            window.Outseta.getUser()
+                .then(user => {
+                    if (user && user.Email) {
+                        setIsAuthenticated(true);
+                        setUserName(user.FirstName || user.Email.split('@')[0]);
+                        setIsPageLoading(false);
+                    } else {
+                        setIsAuthenticated(false);
+                        setIsPageLoading(false);
+                        window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login&returnUrl=' + encodeURIComponent(window.location.href);
+                    }
+                })
+                .catch(() => {
+                    setIsAuthenticated(false);
+                    setIsPageLoading(false);
+                });
+        } else {
+            setTimeout(checkAuthentication, 500);
+        }
+    };
 
     useEffect(() => {
-        if (!sessionId) return;
+        const waitForOutseta = () => {
+            if (typeof window !== 'undefined' && window.Outseta) {
+                checkAuthentication();
+            } else {
+                setTimeout(waitForOutseta, 100);
+            }
+        };
+        waitForOutseta();
+    }, []);
 
-        // --- FUNZIONE PER RECUPERARE I DATI DELL'ANALISI ---
+    // Logica per recuperare i dati dell'analisi
+    useEffect(() => {
+        // Parte solo se la pagina è autenticata e abbiamo un sessionId
+        if (!isAuthenticated || !sessionId) return;
+
         const fetchAnalysisData = async () => {
-            // SIMULAZIONE: In un'applicazione reale, qui interroghi Supabase
+            setIsAnalysisLoading(true);
             console.log(`Recupero dati per la sessione: ${sessionId}`);
             
-            // 1. Recupera lo stato della sessione
-            // const { data: session, error: sessionError } = await supabase
-            //     .from('checkup_sessions')
-            //     .select('*, companies(company_name)')
-            //     .eq('id', sessionId)
-            //     .single();
-            
-            // Simuliamo una risposta da Supabase
+            // SIMULAZIONE DATI
             const session = { 
                 id: sessionId, 
-                status: 'completed', // Cambia in 'processing' o 'failed' per testare gli altri stati
+                status: 'completed', // Cambia in 'processing' o 'failed' per testare
                 session_name: 'Analisi per Rossi SRL',
                 companies: { company_name: 'Rossi SRL' },
                 error_message: 'Estrazione dati fallita a causa della bassa qualità del documento.'
             };
 
-            if (!session) { // o if (sessionError)
+            if (!session) {
                 setError("Sessione di analisi non trovata.");
-                setIsLoading(false);
+                setIsAnalysisLoading(false);
                 return;
             }
 
             setSessionData(session);
 
-            // 2. Se la sessione è completata, recupera tutti i dati correlati
             if (session.status === 'completed') {
-                // Qui faresti le query a `italian_balance_sheets`, `balance_sheet_ratios`, etc.
-                // const { data: balanceData } = await supabase.from(...);
-                // const { data: ratiosData } = await supabase.from(...);
-                
-                // Simuliamo i dati di analisi
                 setAnalysisData({
                     healthScore: 82,
                     summary: "L'azienda mostra una solida redditività (ROE 15%) e una buona liquidità (Current Ratio 1.8), superando la media del settore. Tuttavia, si nota un elevato indebitamento a breve termine che richiede attenzione.",
@@ -83,29 +109,47 @@ export default function AnalisiReportPage() {
                         { name: 'Debt/Equity', value: '2.1', benchmark: '1.2', status: 'warning' },
                     ]
                 });
-                setIsLoading(false);
+                setIsAnalysisLoading(false);
             } else if (session.status === 'failed') {
                 setError(session.error_message || "L'analisi non è riuscita.");
-                setIsLoading(false);
-            } else {
-                // Se è ancora in 'processing', potresti voler fare un refresh periodico
-                setTimeout(fetchAnalysisData, 10000); // Riprova tra 10 secondi
+                setIsAnalysisLoading(false);
+            } else { // 'processing'
+                setTimeout(fetchAnalysisData, 10000);
             }
         };
 
         fetchAnalysisData();
 
-    }, [sessionId]);
+    }, [sessionId, isAuthenticated]); // Dipende anche da isAuthenticated
 
     const navLinks = [
         { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
         { href: '/checkup', text: 'Check-UP AI', icon: icons.checkup, active: true },
         { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
     ];
+    
+    // --- SCHERMATE DI CARICAMENTO E LOGIN ---
+    if (isPageLoading || isAuthenticated === null) {
+        return (
+             <Head>
+                <title>Caricamento Report - PMIScout</title>
+             </Head>
+             /* Puoi inserire qui una schermata di caricamento completa */
+        );
+    }
+
+    if (isAuthenticated === false) {
+        return (
+             <Head>
+                <title>Accesso Richiesto - PMIScout</title>
+             </Head>
+             /* Puoi inserire qui una schermata di login completa */
+        );
+    }
 
     // --- RENDER DEL CONTENUTO DELLA PAGINA ---
     const renderContent = () => {
-        if (isLoading) {
+        if (isAnalysisLoading) {
             return (
                 <div className="text-center py-20">
                     <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
@@ -162,7 +206,6 @@ export default function AnalisiReportPage() {
                             ))}
                         </div>
                     </div>
-                    {/* Aggiungi qui altre sezioni per grafici, predizioni, etc. */}
                 </div>
             );
         }
@@ -181,21 +224,51 @@ export default function AnalisiReportPage() {
         <>
             <Head>
                 <title>Report Analisi - PMIScout</title>
-                {/* ... altri tag Head ... */}
+                <script src="https://cdn.tailwindcss.com"></script>
+                <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+                <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+                <script dangerouslySetInnerHTML={{ __html: `var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,nocode,profile,support', tokenStorage: 'cookie' };` }} />
+                <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
             </Head>
 
             <div className="relative flex min-h-screen bg-slate-50 text-slate-800">
-                {/* --- SIDEBAR (riutilizzata) --- */}
                 <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                    {/* ... Incolla qui il codice della tua sidebar ... */}
+                    <div className="flex flex-col h-full">
+                        <div className="flex items-center justify-center h-16 border-b">
+                            <Link href="/">
+                                <a className="text-2xl font-bold text-blue-600 hover:text-blue-700 transition-colors">PMIScout</a>
+                            </Link>
+                        </div>
+                        <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
+                            <nav className="flex-1 px-2 pb-4 space-y-1">
+                                {navLinks.map((link) => (
+                                    <Link key={link.text} href={link.href}>
+                                        <a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
+                                            <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
+                                            {link.text}
+                                        </a>
+                                    </Link>
+                                ))}
+                            </nav>
+                            <div className="px-2 py-3 border-t border-slate-200">
+                                <div className="flex items-center px-2 py-2 text-xs text-slate-500">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                                    Connesso come {userName}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </aside>
 
                 {isSidebarOpen && <div className="fixed inset-0 z-10 bg-black bg-opacity-50 md:hidden" onClick={() => setIsSidebarOpen(false)} />}
                 
                 <div className="flex flex-col flex-1 w-0 overflow-hidden">
-                    {/* --- HEADER MOBILE (riutilizzato) --- */}
                     <header className="relative z-10 flex items-center justify-between flex-shrink-0 h-16 px-4 bg-white border-b md:hidden">
-                        {/* ... Incolla qui il codice del tuo header mobile ... */}
+                         <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 rounded-md hover:text-slate-900 hover:bg-slate-100 transition-colors">
+                            <Icon path={icons.menu} />
+                        </button>
+                        <Link href="/"><a className="text-xl font-bold text-blue-600">PMIScout</a></Link>
+                        <div className="w-8" />
                     </header>
 
                     <main className="relative flex-1 overflow-y-auto focus:outline-none">
@@ -209,7 +282,6 @@ export default function AnalisiReportPage() {
                                     <p className="text-lg text-slate-600">Risultati per la sessione: <span className="font-mono bg-slate-200 px-1 rounded">{sessionId}</span></p>
                                 </div>
                             </div>
-
                             {renderContent()}
                         </div>
                     </main>
