@@ -6,7 +6,7 @@ import { useRouter } from 'next/router';
 
 // --- COMPONENTI ICONA (da riutilizzare) ---
 const Icon = ({ path, className = 'w-6 h-6' }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="http://www.w.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
         {path}
     </svg>
 );
@@ -148,11 +148,14 @@ export default function AnalisiReportPage() {
                 <Head>
                     <title>Caricamento Report - PMIScout</title>
                     <script src="https://cdn.tailwindcss.com"></script>
+                    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+                     <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
                 </Head>
                 <div className="flex items-center justify-center min-h-screen bg-slate-50">
                     <div className="text-center">
                         <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-                        <p className="text-slate-600">Caricamento...</p>
+                        <h2 className="text-xl font-bold text-blue-600 mb-2">PMIScout</h2>
+                        <p className="text-slate-600">Caricamento Report...</p>
                     </div>
                 </div>
             </>
