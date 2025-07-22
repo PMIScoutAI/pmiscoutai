@@ -288,14 +288,42 @@ export default function AnalisiReportPage() {
 
             <div className="relative flex min-h-screen bg-slate-50 text-slate-800">
                 <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                    {/* ... Incolla qui il codice della tua sidebar ... */}
+                    <div className="flex flex-col h-full">
+                        <div className="flex items-center justify-center h-16 border-b">
+                            <Link href="/">
+                                <a className="text-2xl font-bold text-blue-600 hover:text-blue-700 transition-colors">PMIScout</a>
+                            </Link>
+                        </div>
+                        <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
+                            <nav className="flex-1 px-2 pb-4 space-y-1">
+                                {navLinks.map((link) => (
+                                    <Link key={link.text} href={link.href}>
+                                        <a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
+                                            <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
+                                            {link.text}
+                                        </a>
+                                    </Link>
+                                ))}
+                            </nav>
+                            <div className="px-2 py-3 border-t border-slate-200">
+                                <div className="flex items-center px-2 py-2 text-xs text-slate-500">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                                    Connesso come {userName}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </aside>
 
                 {isSidebarOpen && <div className="fixed inset-0 z-10 bg-black bg-opacity-50 md:hidden" onClick={() => setIsSidebarOpen(false)} />}
                 
                 <div className="flex flex-col flex-1 w-0 overflow-hidden">
                     <header className="relative z-10 flex items-center justify-between flex-shrink-0 h-16 px-4 bg-white border-b md:hidden">
-                         {/* ... Incolla qui il codice del tuo header mobile ... */}
+                         <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 rounded-md hover:text-slate-900 hover:bg-slate-100 transition-colors">
+                            <Icon path={icons.menu} />
+                        </button>
+                        <Link href="/"><a className="text-xl font-bold text-blue-600">PMIScout</a></Link>
+                        <div className="w-8" />
                     </header>
 
                     <main className="relative flex-1 overflow-y-auto focus:outline-none">
