@@ -1,19 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
-// Puoi installare questa libreria per una UI di upload più carina: npm install react-dropzone
 import { useDropzone } from 'react-dropzone';
 
 export default function CheckupPage() {
+    // STATI PRINCIPALI (Sidebar, Autenticazione, Caricamento)
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [userName, setUserName] = useState('');
     const [isAuthenticated, setIsAuthenticated] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
 
-    // --- LOGICA DI CHECKUP ---
+    // STATI SPECIFICI DEL CHECKUP
     const [currentStep, setCurrentStep] = useState(1);
     const [formData, setFormData] = useState({
-        // Dati azienda
         company_name: '',
         vat_number: '',
         industry_sector: '',
@@ -24,7 +23,6 @@ export default function CheckupPage() {
         location_region: '',
         website_url: '',
         description: '',
-        // Dati per analisi
         revenue_range: '',
         main_challenges: '',
         business_goals: ''
@@ -32,9 +30,8 @@ export default function CheckupPage() {
     const [balanceSheetFile, setBalanceSheetFile] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [analysisResult, setAnalysisResult] = useState(null);
-    // --- FINE LOGICA DI CHECKUP ---
 
-    // Verifica autenticazione (invariata)
+    // --- LOGICA DI AUTENTICAZIONE ---
     const checkAuthentication = () => {
         if (typeof window !== 'undefined' && window.Outseta) {
             window.Outseta.getUser()
@@ -71,22 +68,15 @@ export default function CheckupPage() {
         waitForOutseta();
     }, []);
 
-    // Loading screen e Not Authenticated (invariati)
-    if (isLoading || isAuthenticated === null) { /* ... codice invariato ... */ }
-    if (isAuthenticated === false) { /* ... codice invariato ... */ }
-
-    // --- FUNZIONI DI CHECKUP ---
+    // --- FUNZIONI DI GESTIONE DEL FORM A STEP ---
     const handleInputChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
+        setFormData(prev => ({ ...prev, [name]: value }));
     };
 
     const handleNextStep = (e) => {
         e.preventDefault();
-        // Aggiungi qui la validazione per lo step 1 se necessario
+        // Validazione per procedere allo step successivo
         if (formData.company_name && formData.industry_sector && formData.company_size) {
             setCurrentStep(2);
         } else {
@@ -106,25 +96,37 @@ export default function CheckupPage() {
         }
         setIsSubmitting(true);
         setCurrentStep(3); // Vai allo step di analisi
-        console.log('Form submitted:', { ...formData, file: balanceSheetFile.name });
+        console.log('Invio dati per analisi:', { ...formData, file: balanceSheetFile.name });
 
-        // TODO: Implementare invio dati a Supabase (crea sessione) e upload file a Supabase Storage
-        // La Supabase Function `process-balance-sheet` si occuperà del resto.
-        
-        // Simulazione caricamento
+        // QUI VA LA LOGICA DI INVO A SUPABASE
+        // 1. Crea una `checkup_session`
+        // 2. Fai l'upload del `balanceSheetFile` a Supabase Storage
+        // 3. La Supabase Function si occuperà del resto
+
+        // Simulazione del tempo di analisi
         setTimeout(() => {
-            setAnalysisResult({ summary: "Analisi completata con successo! Ecco i tuoi risultati..." });
+            setAnalysisResult({ summary: "Analisi completata con successo! I risultati sono disponibili nella tua dashboard." });
             setIsSubmitting(false);
         }, 5000);
     };
-    
-    // --- COMPONENTI UI ---
+
+    // --- GESTIONE UPLOAD FILE ---
+    const onDrop = useCallback(acceptedFiles => {
+        setBalanceSheetFile(acceptedFiles[0]);
+    }, []);
+
+    const { getRootProps, getInputProps, isDragActive } = useDropzone({
+        onDrop,
+        accept: { 'application/pdf': ['.pdf'] },
+        multiple: false
+    });
+
+    // --- DEFINIZIONE ICONE E LINK NAVIGAZIONE ---
     const Icon = ({ path, className = 'w-6 h-6' }) => (
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
             {path}
         </svg>
     );
-
     const icons = {
         dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
         checkup: <><path d="M12 8V4H8" /><rect x="4" y="12" width="16" height="8" rx="2" /><path d="M2 12h2M20 12h2M12 18v2M12 14v-2" /></>,
@@ -136,49 +138,132 @@ export default function CheckupPage() {
         spark: <><path d="M12 3v6l4-4-4-4" /><path d="M12 21v-6l-4 4 4 4" /><path d="M3 12h6l-4-4 4-4" /><path d="M21 12h-6l4 4-4 4" /></>,
         file: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /></>
     };
-
     const navLinks = [
         { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
         { href: '/checkup', text: 'Check-UP AI', icon: icons.checkup, active: true },
         { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
     ];
 
-    const onDrop = useCallback(acceptedFiles => {
-        setBalanceSheetFile(acceptedFiles[0]);
-    }, []);
-    const { getRootProps, getInputProps, isDragActive } = useDropzone({
-        onDrop,
-        accept: { 'application/pdf': ['.pdf'] },
-        multiple: false
-    });
+    // --- BLOCCHI DI RITORNO ANTICIPATO (ESSENZIALI) ---
+    if (isLoading || isAuthenticated === null) {
+        return (
+            <>
+                <Head>
+                    <title>Caricamento Check-UP - PMIScout</title>
+                    <script src="https://cdn.tailwindcss.com"></script>
+                    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+                    <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+                    <script dangerouslySetInnerHTML={{ __html: `var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,nocode,profile,support', tokenStorage: 'cookie' };` }} />
+                    <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
+                </Head>
+                <div className="flex items-center justify-center min-h-screen bg-slate-50">
+                    <div className="text-center">
+                        <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                        <h2 className="text-xl font-bold text-blue-600 mb-2">PMIScout</h2>
+                        <p className="text-slate-600">Caricamento Check-UP AI...</p>
+                    </div>
+                </div>
+            </>
+        );
+    }
 
-    // RITORNO COMPONENTE PRINCIPALE
+    if (isAuthenticated === false) {
+        return (
+            <>
+                <Head>
+                    <title>Accesso Richiesto - PMIScout</title>
+                    <script src="https://cdn.tailwindcss.com"></script>
+                </Head>
+                <div className="flex items-center justify-center min-h-screen bg-slate-50">
+                    <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
+                        <h2 className="text-2xl font-bold text-slate-900 mb-2">Accesso Richiesto</h2>
+                        <p className="text-slate-600 mb-6">Devi effettuare il login per accedere al Check-UP AI.</p>
+                        <a href="https://pmiscout.outseta.com/auth?widgetMode=login" className="inline-block w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                            Vai al Login
+                        </a>
+                    </div>
+                </div>
+            </>
+        );
+    }
+
+
+    // --- RITORNO DEL COMPONENTE PRINCIPALE (SOLO SE AUTENTICATO) ---
     return (
         <>
             <Head>
-                {/* ... codice head invariato ... */}
+                <title>Check-UP AI Azienda - PMIScout</title>
+                <meta name="description" content="Analisi AI completa della tua azienda con insights e raccomandazioni personalizzate" />
+                <script src="https://cdn.tailwindcss.com"></script>
+                <link rel="preconnect" href="https://fonts.googleapis.com" />
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
+                <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+                <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+                <script dangerouslySetInnerHTML={{ __html: `var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,nocode,profile,support', tokenStorage: 'cookie' };` }} />
+                <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
             </Head>
 
             <div className="relative flex min-h-screen bg-slate-50 text-slate-800">
                 <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                    {/* ... codice sidebar invariato ... */}
+                    <div className="flex flex-col h-full">
+                        <div className="flex items-center justify-center h-16 border-b">
+                            <Link href="/">
+                                <a className="text-2xl font-bold text-blue-600 hover:text-blue-700 transition-colors">PMIScout</a>
+                            </Link>
+                        </div>
+                        <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
+                            <nav className="flex-1 px-2 pb-4 space-y-1">
+                                {navLinks.map((link) => (
+                                    <Link key={link.text} href={link.href}>
+                                        <a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
+                                            <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
+                                            {link.text}
+                                        </a>
+                                    </Link>
+                                ))}
+                            </nav>
+                            <div className="px-2 py-3 border-t border-slate-200">
+                                <div className="flex items-center px-2 py-2 text-xs text-slate-500">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                                    Connesso come {userName}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </aside>
 
                 {isSidebarOpen && <div className="fixed inset-0 z-10 bg-black bg-opacity-50 md:hidden" onClick={() => setIsSidebarOpen(false)} />}
                 
                 <div className="flex flex-col flex-1 w-0 overflow-hidden">
                     <header className="relative z-10 flex items-center justify-between flex-shrink-0 h-16 px-4 bg-white border-b md:hidden">
-                        {/* ... codice header mobile invariato ... */}
+                        <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 rounded-md hover:text-slate-900 hover:bg-slate-100 transition-colors">
+                            <Icon path={icons.menu} />
+                        </button>
+                        <Link href="/"><a className="text-xl font-bold text-blue-600">PMIScout</a></Link>
+                        <div className="w-8" />
                     </header>
 
                     <main className="relative flex-1 overflow-y-auto focus:outline-none">
                         <div className="py-6 mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
                             
                             <div className="mb-8">
-                                {/* ... codice breadcrumb e titolo pagina invariati ... */}
+                                <nav className="flex items-center text-sm mb-4" aria-label="Breadcrumb">
+                                    <Link href="/"><a className="flex items-center text-blue-600 hover:text-blue-800 transition-colors">
+                                        <Icon path={icons.home} className="w-4 h-4 mr-1" />Dashboard</a></Link>
+                                    <span className="mx-2 text-slate-400">/</span>
+                                    <span className="text-slate-600 font-medium">Check-UP AI</span>
+                                </nav>
+                                <div className="flex items-center space-x-4 mb-4">
+                                    <div className="p-3 bg-blue-100 rounded-xl">
+                                        <Icon path={icons.spark} className="w-8 h-8 text-blue-600" />
+                                    </div>
+                                    <div>
+                                        <h1 className="text-3xl font-bold text-slate-900">Check-UP AI Azienda</h1>
+                                        <p className="text-lg text-slate-600">Analisi approfondita della tua azienda con intelligenza artificiale</p>
+                                    </div>
+                                </div>
                                 
-                                {/* Progress Steps DINAMICO */}
-                                <div className="flex items-center justify-center space-x-4 mb-8">
+                                <div className="flex items-center justify-center space-x-4 mt-8 mb-8">
                                     <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm font-medium transition-colors ${currentStep >= 1 ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
                                         <Icon path={icons.building} className="w-4 h-4" />
                                         <span>Dati Azienda</span>
@@ -205,31 +290,77 @@ export default function CheckupPage() {
                                             <div>
                                                 <h3 className="text-xl font-semibold text-slate-900 mb-6 flex items-center">
                                                     <Icon path={icons.building} className="w-6 h-6 mr-3 text-blue-600" />
-                                                    1. Informazioni Azienda
+                                                    Informazioni Azienda
                                                 </h3>
-                                                {/* ... tutto il form da "Nome Azienda" a "Descrizione Attività" ... */}
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                                    {/* Qui vanno tutti i tuoi campi input... li ometto per brevità */}
                                                     <div>
                                                         <label className="block text-sm font-medium text-slate-700 mb-2">Nome Azienda *</label>
-                                                        <input type="text" name="company_name" required value={formData.company_name} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="La tua azienda..." />
+                                                        <input type="text" name="company_name" required value={formData.company_name} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="La tua azienda..." />
                                                     </div>
                                                     <div>
                                                         <label className="block text-sm font-medium text-slate-700 mb-2">Partita IVA</label>
-                                                        <input type="text" name="vat_number" value={formData.vat_number} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="IT..." />
+                                                        <input type="text" name="vat_number" value={formData.vat_number} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="IT..." />
                                                     </div>
-                                                    {/* ... altri campi ... */}
+                                                     <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Settore di Attività *</label>
+                                                        <select name="industry_sector" required value={formData.industry_sector} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                                                            <option value="">Seleziona settore...</option>
+                                                            <option value="Commercio">Commercio</option>
+                                                            <option value="Informatica">Informatica e Software</option>
+                                                            <option value="Consulenza">Consulenza</option>
+                                                            <option value="Manifatturiero">Manifatturiero</option>
+                                                            <option value="Edilizia">Edilizia</option>
+                                                            <option value="Ristorazione">Ristorazione</option>
+                                                            <option value="Turismo">Turismo</option>
+                                                            <option value="Altro">Altro</option>
+                                                        </select>
+                                                     </div>
+                                                     <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Dimensione Azienda *</label>
+                                                        <select name="company_size" required value={formData.company_size} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                                                          <option value="">Seleziona dimensione...</option>
+                                                          <option value="micro">Micro (1-9 dipendenti)</option>
+                                                          <option value="piccola">Piccola (10-49 dipendenti)</option>
+                                                          <option value="media">Media (50-249 dipendenti)</option>
+                                                          <option value="grande">Grande (250+ dipendenti)</option>
+                                                        </select>
+                                                      </div>
+                                                      <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Numero Dipendenti</label>
+                                                        <input type="number" name="employee_count" value={formData.employee_count} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="es. 15" />
+                                                      </div>
+                                                      <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Fatturato Annuo</label>
+                                                        <select name="revenue_range" value={formData.revenue_range} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                                                          <option value="">Seleziona range...</option>
+                                                          <option value="0-100k">0 - 100.000€</option>
+                                                          <option value="100k-500k">100.000€ - 500.000€</option>
+                                                          <option value="500k-2M">500.000€ - 2.000.000€</option>
+                                                          <option value="2M-10M">2.000.000€ - 10.000.000€</option>
+                                                          <option value="10M+">Oltre 10.000.000€</option>
+                                                        </select>
+                                                      </div>
+                                                </div>
+                                                <div className="mt-6">
+                                                    <label className="block text-sm font-medium text-slate-700 mb-2">Descrizione Attività</label>
+                                                    <textarea name="description" rows={4} value={formData.description} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="Descrivi brevemente la tua attività, i prodotti/servizi offerti..."></textarea>
                                                 </div>
                                             </div>
 
                                             <div className="border-t pt-8">
                                                 <h3 className="text-xl font-semibold text-slate-900 mb-6 flex items-center">
                                                     <Icon path={icons.spark} className="w-6 h-6 mr-3 text-blue-600" />
-                                                    2. Obiettivi e Sfide
+                                                    Obiettivi e Sfide
                                                 </h3>
-                                                {/* ... Textarea per Obiettivi e Sfide ... */}
                                                 <div className="space-y-6">
-                                                   {/* ... textarea ... */}
+                                                   <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Principali Sfide Aziendali</label>
+                                                        <textarea name="main_challenges" rows={3} value={formData.main_challenges} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="Quali sono le principali difficoltà che stai affrontando? (es. costi elevati, competizione, mancanza di visibilità...)"></textarea>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Obiettivi di Business</label>
+                                                        <textarea name="business_goals" rows={3} value={formData.business_goals} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="Quali sono i tuoi obiettivi per i prossimi 12-24 mesi? (es. aumentare fatturato, espansione, ottimizzazione costi...)"></textarea>
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -238,7 +369,6 @@ export default function CheckupPage() {
                                                     <button type="button" onClick={handleNextStep}
                                                         className="flex items-center space-x-3 px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors">
                                                         <span>Avanti</span>
-                                                        {/* Icona freccia a destra */}
                                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
                                                     </button>
                                                 </div>
@@ -252,9 +382,10 @@ export default function CheckupPage() {
                                             <div>
                                                 <h3 className="text-xl font-semibold text-slate-900 mb-6 flex items-center">
                                                     <Icon path={icons.upload} className="w-6 h-6 mr-3 text-blue-600" />
-                                                    3. Carica il Bilancio
+                                                    Carica il Bilancio
                                                 </h3>
                                                 <div {...getRootProps()} className={`mt-4 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md cursor-pointer transition-colors ${isDragActive ? 'border-blue-500 bg-blue-50' : 'border-slate-300 hover:border-blue-400'}`}>
+                                                    <input {...getInputProps()} />
                                                     <div className="space-y-1 text-center">
                                                         <Icon path={icons.file} className="mx-auto h-12 w-12 text-slate-400" />
                                                         <div className="flex text-sm text-slate-600">
@@ -262,7 +393,6 @@ export default function CheckupPage() {
                                                         </div>
                                                         <p className="text-xs text-slate-500">PDF fino a 10MB</p>
                                                     </div>
-                                                    <input {...getInputProps()} />
                                                 </div>
                                             </div>
                                             
@@ -282,7 +412,7 @@ export default function CheckupPage() {
                                         </>
                                     )}
 
-                                    {/* --- STEP 3: ANALISI IN CORSO --- */}
+                                    {/* --- STEP 3: ANALISI IN CORSO E RISULTATI --- */}
                                     {currentStep === 3 && (
                                         <div className="text-center py-12">
                                             {isSubmitting ? (
@@ -293,7 +423,9 @@ export default function CheckupPage() {
                                                 </>
                                             ) : (
                                                 <>
-                                                    <h3 className="text-2xl font-bold text-green-600">Analisi Completata!</h3>
+                                                    <div className="p-4 bg-green-100 rounded-lg">
+                                                        <h3 className="text-2xl font-bold text-green-700">Analisi Completata!</h3>
+                                                    </div>
                                                     <p className="text-slate-700 mt-4">{analysisResult?.summary}</p>
                                                     <Link href="/">
                                                       <a className="mt-8 inline-block px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors">
@@ -304,7 +436,6 @@ export default function CheckupPage() {
                                             )}
                                         </div>
                                     )}
-
                                 </form>
                             </div>
                         </div>
