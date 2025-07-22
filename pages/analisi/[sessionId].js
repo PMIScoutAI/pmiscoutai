@@ -6,7 +6,7 @@ import { useRouter } from 'next/router';
 
 // --- COMPONENTI ICONA (da riutilizzare) ---
 const Icon = ({ path, className = 'w-6 h-6' }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="http://www.w.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
         {path}
     </svg>
 );
@@ -75,7 +75,6 @@ export default function AnalisiReportPage() {
 
     // Logica per recuperare i dati dell'analisi
     useEffect(() => {
-        // Parte solo se la pagina è autenticata e abbiamo un sessionId
         if (!isAuthenticated || !sessionId) return;
 
         const fetchAnalysisData = async () => {
@@ -85,9 +84,8 @@ export default function AnalisiReportPage() {
             // SIMULAZIONE DATI
             const session = { 
                 id: sessionId, 
-                status: 'completed', // Cambia in 'processing' o 'failed' per testare
-                session_name: 'Analisi per Rossi SRL',
-                companies: { company_name: 'Rossi SRL' },
+                status: 'completed',
+                companies: { company_name: 'Rossi SRL', industry_sector: 'Retail Telefonia' },
                 error_message: 'Estrazione dati fallita a causa della bassa qualità del documento.'
             };
 
@@ -100,6 +98,7 @@ export default function AnalisiReportPage() {
             setSessionData(session);
 
             if (session.status === 'completed') {
+                // DATI MOCK ESTESI ISPIRATI AL TUO ESEMPIO
                 setAnalysisData({
                     healthScore: 82,
                     summary: "L'azienda mostra una solida redditività (ROE 15%) e una buona liquidità (Current Ratio 1.8), superando la media del settore. Tuttavia, si nota un elevato indebitamento a breve termine che richiede attenzione.",
@@ -107,6 +106,23 @@ export default function AnalisiReportPage() {
                         { name: 'Current Ratio', value: '1.8', benchmark: '1.5', status: 'good' },
                         { name: 'ROE', value: '15%', benchmark: '12%', status: 'good' },
                         { name: 'Debt/Equity', value: '2.1', benchmark: '1.2', status: 'warning' },
+                    ],
+                    marketMetrics: {
+                        marketValue: "€15 Mld",
+                        annualGrowth: "+7.2%",
+                        keySegment: "Servizi VAS"
+                    },
+                    swot: {
+                        strengths: ["Domanda costante per connettività", "Innovazione tecnologica rapida (5G, IoT)"],
+                        weaknesses: ["Margini ridotti sulla vendita hardware", "Elevata pressione competitiva"],
+                        opportunities: ["Espansione dei servizi a valore aggiunto", "Mercato dei ricondizionati"],
+                        threats: ["Ingresso di nuovi operatori virtuali", "Rallentamento del ciclo di sostituzione"]
+                    },
+                    competitors: [
+                        { name: "Leader Settore A", positioning: "Leader di mercato, focus su premium", revenue: "€7.5 Mld" },
+                        { name: "Innovator B", positioning: "Innovatore, forte su e-commerce", revenue: "€6.2 Mld" },
+                        { name: "Tradizionale C", positioning: "Rete fisica capillare", revenue: "€5.8 Mld" },
+                        { name: "Emergente D", positioning: "Aggressivo su prezzo e MVNO", revenue: "€4.9 Mld" }
                     ]
                 });
                 setIsAnalysisLoading(false);
@@ -120,7 +136,7 @@ export default function AnalisiReportPage() {
 
         fetchAnalysisData();
 
-    }, [sessionId, isAuthenticated]); // Dipende anche da isAuthenticated
+    }, [sessionId, isAuthenticated]);
 
     const navLinks = [
         { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
@@ -128,13 +144,11 @@ export default function AnalisiReportPage() {
         { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
     ];
     
-    // --- SCHERMATE DI CARICAMENTO E LOGIN ---
     if (isPageLoading || isAuthenticated === null) {
         return (
              <Head>
                 <title>Caricamento Report - PMIScout</title>
              </Head>
-             /* Puoi inserire qui una schermata di caricamento completa */
         );
     }
 
@@ -143,11 +157,9 @@ export default function AnalisiReportPage() {
              <Head>
                 <title>Accesso Richiesto - PMIScout</title>
              </Head>
-             /* Puoi inserire qui una schermata di login completa */
         );
     }
 
-    // --- RENDER DEL CONTENUTO DELLA PAGINA ---
     const renderContent = () => {
         if (isAnalysisLoading) {
             return (
@@ -178,12 +190,12 @@ export default function AnalisiReportPage() {
                 <div className="space-y-8">
                     {/* SEZIONE 1: Riepilogo e Health Score */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border">
-                        <div className="flex justify-between items-start">
+                        <div className="flex flex-col md:flex-row justify-between items-start">
                             <div>
                                 <h2 className="text-2xl font-bold text-slate-900">Riepilogo Analisi per {sessionData.companies.company_name}</h2>
                                 <p className="text-slate-500">Dati aggiornati al {new Date().toLocaleDateString('it-IT')}</p>
                             </div>
-                            <div className="text-center">
+                            <div className="text-center mt-4 md:mt-0 md:ml-4 flex-shrink-0">
                                 <p className="text-sm font-medium text-slate-600">Health Score</p>
                                 <p className="text-5xl font-bold text-green-600">{analysisData.healthScore}<span className="text-2xl text-slate-400">/100</span></p>
                             </div>
@@ -191,7 +203,7 @@ export default function AnalisiReportPage() {
                         <p className="mt-4 text-slate-700 text-lg">{analysisData.summary}</p>
                     </div>
 
-                    {/* SEZIONE 2: Indici Principali */}
+                    {/* SEZIONE 2: Indici Chiave vs Benchmark */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border">
                         <h3 className="text-xl font-bold text-slate-900 mb-4">Indici Chiave vs Benchmark</h3>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -206,11 +218,74 @@ export default function AnalisiReportPage() {
                             ))}
                         </div>
                     </div>
+
+                    {/* SEZIONE 3: Panorama del Settore */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border">
+                        <h3 className="text-xl font-bold text-slate-900 mb-4">Panorama del Settore: {sessionData.companies.industry_sector}</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-slate-50 border-l-4 border-blue-500 p-4 rounded">
+                                <p className="text-sm text-slate-500">Valore di Mercato Stimato</p>
+                                <p className="text-3xl font-bold text-blue-800">{analysisData.marketMetrics.marketValue}</p>
+                            </div>
+                            <div className="bg-slate-50 border-l-4 border-blue-500 p-4 rounded">
+                                <p className="text-sm text-slate-500">Crescita Annua (CAGR)</p>
+                                <p className="text-3xl font-bold text-blue-800">{analysisData.marketMetrics.annualGrowth}</p>
+                            </div>
+                            <div className="bg-slate-50 border-l-4 border-blue-500 p-4 rounded">
+                                <p className="text-sm text-slate-500">Segmento a Maggior Crescita</p>
+                                <p className="text-3xl font-bold text-blue-800">{analysisData.marketMetrics.keySegment}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* SEZIONE 4: Analisi SWOT del Settore */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border">
+                        <h3 className="text-xl font-bold text-slate-900 mb-4">Analisi SWOT del Settore</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+                                <h4 className="font-bold text-green-800">Punti di Forza</h4>
+                                <ul className="list-disc list-inside text-green-900 mt-2 text-sm">
+                                    {analysisData.swot.strengths.map(item => <li key={item}>{item}</li>)}
+                                </ul>
+                            </div>
+                             <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                                <h4 className="font-bold text-red-800">Punti di Debolezza</h4>
+                                <ul className="list-disc list-inside text-red-900 mt-2 text-sm">
+                                    {analysisData.swot.weaknesses.map(item => <li key={item}>{item}</li>)}
+                                </ul>
+                            </div>
+                             <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+                                <h4 className="font-bold text-blue-800">Opportunità</h4>
+                                <ul className="list-disc list-inside text-blue-900 mt-2 text-sm">
+                                    {analysisData.swot.opportunities.map(item => <li key={item}>{item}</li>)}
+                                </ul>
+                            </div>
+                             <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded">
+                                <h4 className="font-bold text-amber-800">Minacce</h4>
+                                <ul className="list-disc list-inside text-amber-900 mt-2 text-sm">
+                                    {analysisData.swot.threats.map(item => <li key={item}>{item}</li>)}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* SEZIONE 5: Principali Attori del Mercato */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border">
+                        <h3 className="text-xl font-bold text-slate-900 mb-4">Principali Attori del Mercato</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {analysisData.competitors.map(comp => (
+                                <div key={comp.name} className="border rounded-lg p-4">
+                                    <h4 className="font-bold text-slate-800">{comp.name}</h4>
+                                    <p className="text-sm text-slate-600"><strong>Posizionamento:</strong> {comp.positioning}</p>
+                                    <p className="text-sm text-slate-800 font-bold mt-1"><strong>Fatturato Stimato:</strong> {comp.revenue}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             );
         }
 
-        // Stato intermedio se la sessione è ancora in elaborazione
         return (
             <div className="text-center py-20">
                 <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
@@ -225,8 +300,10 @@ export default function AnalisiReportPage() {
             <Head>
                 <title>Report Analisi - PMIScout</title>
                 <script src="https://cdn.tailwindcss.com"></script>
-                <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-                <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+                <link rel="preconnect" href="https://fonts.googleapis.com" />
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
+                <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@500;600;700&display=swap" rel="stylesheet" />
+                <style>{` body { font-family: 'Inter', sans-serif; } h1, h2, h3, h4 { font-family: 'Montserrat', sans-serif; } `}</style>
                 <script dangerouslySetInnerHTML={{ __html: `var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,nocode,profile,support', tokenStorage: 'cookie' };` }} />
                 <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
             </Head>
