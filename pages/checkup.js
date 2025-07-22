@@ -3,8 +3,9 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useDropzone } from 'react-dropzone';
 import { useRouter } from 'next/router';
-// Dovrai creare questo file per inizializzare il client di Supabase
-// import { supabase } from '../utils/supabaseClient';
+// Assicurati di creare questo file per inizializzare il client di Supabase
+// Esempio: /utils/supabaseClient.js
+import { supabase } from '../utils/supabaseClient'; 
 
 export default function CheckupPage() {
     // STATI PRINCIPALI (Sidebar, Autenticazione, Caricamento)
@@ -12,7 +13,7 @@ export default function CheckupPage() {
     const [userName, setUserName] = useState('');
     const [isAuthenticated, setIsAuthenticated] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
-    const router = useRouter(); // Hook per la navigazione
+    const router = useRouter(); 
 
     // STATI SPECIFICI DEL CHECKUP
     const [currentStep, setCurrentStep] = useState(1);
@@ -33,7 +34,6 @@ export default function CheckupPage() {
     });
     const [balanceSheetFile, setBalanceSheetFile] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    // Lo stato analysisResult non è più necessario qui
 
     // --- LOGICA DI AUTENTICAZIONE ---
     const checkAuthentication = () => {
@@ -91,7 +91,7 @@ export default function CheckupPage() {
         setCurrentStep(prev => prev - 1);
     };
 
-    // --- FUNZIONE DI SUBMIT AGGIORNATA ---
+    // --- FUNZIONE DI SUBMIT AGGIORNATA CON LOGICA SUPABASE ---
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!balanceSheetFile) {
@@ -100,22 +100,34 @@ export default function CheckupPage() {
         }
         setIsSubmitting(true);
 
-        // A questo punto non cambiamo più lo step, ma avviamo il processo
-        // e reindirizziamo l'utente.
-        console.log('Avvio processo di analisi:', { ...formData, file: balanceSheetFile.name });
-
         try {
-            // QUI VA LA LOGICA DI INVIO A SUPABASE
-            // Questa parte è una simulazione. Dovrai decommentarla e adattarla.
-            
-            // 1. Crea una `checkup_session` nel database e ottieni il suo ID.
-            //    Dovrai passare l'ID dell'utente e dell'azienda.
-            /*
+            // 1. Recupera l'utente corrente da Supabase Auth
+            const { data: { user }, error: userError } = await supabase.auth.getUser();
+            if (userError || !user) throw new Error("Utente non trovato. Effettua di nuovo il login.");
+
+            // 2. Salva i dati dell'azienda nella tabella `companies`, associandoli all'utente
+            const { data: companyData, error: companyError } = await supabase
+                .from('companies')
+                .insert({
+                    user_id: user.id, // Associa l'azienda all'utente loggato
+                    company_name: formData.company_name,
+                    vat_number: formData.vat_number,
+                    industry_sector: formData.industry_sector,
+                    company_size: formData.company_size,
+                    // ... includi qui tutti gli altri campi del form che vuoi salvare
+                })
+                .select()
+                .single();
+
+            if (companyError) throw companyError;
+            const companyId = companyData.id;
+
+            // 3. Crea una `checkup_session` collegata all'utente e all'azienda
             const { data: sessionData, error: sessionError } = await supabase
                 .from('checkup_sessions')
                 .insert({ 
-                    company_id: 'ID_AZIENDA_DA_RECUPERARE', 
-                    user_id: 'ID_UTENTE_DA_RECUPERARE',
+                    company_id: companyId, 
+                    user_id: user.id,
                     session_name: `Analisi per ${formData.company_name}`,
                     status: 'processing'
                 })
@@ -124,30 +136,21 @@ export default function CheckupPage() {
 
             if (sessionError) throw sessionError;
             const sessionId = sessionData.id;
-            */
             
-            // Simuliamo di aver ricevuto un ID di sessione
-            const sessionId = "12345-simulato-67890";
-
-            // 2. Fai l'upload del `balanceSheetFile` a Supabase Storage.
-            //    La Supabase Function verrà attivata da questo upload.
-            /*
+            // 4. Fai l'upload del file a Supabase Storage
             const filePath = `public/${sessionId}/${balanceSheetFile.name}`;
             const { error: uploadError } = await supabase.storage
-                .from('checkup-documents') // Nome del tuo bucket
+                .from('checkup-documents') // Assicurati che il nome del bucket sia corretto
                 .upload(filePath, balanceSheetFile);
 
             if (uploadError) throw uploadError;
-            */
 
-            // 3. Reindirizza l'utente alla pagina di analisi dedicata.
-            //    La pagina userà l'ID della sessione per mostrare lo stato
-            //    e i risultati quando saranno pronti.
+            // 5. Reindirizza l'utente alla pagina di analisi
             router.push(`/analisi/${sessionId}`);
 
         } catch (error) {
             console.error("Errore durante l'avvio dell'analisi:", error);
-            alert("Si è verificato un errore durante l'invio. Riprova più tardi.");
+            alert(`Si è verificato un errore: ${error.message}. Riprova più tardi.`);
             setIsSubmitting(false);
         }
     };
@@ -367,42 +370,6 @@ export default function CheckupPage() {
                                                           <option value="grande">Grande (250+ dipendenti)</option>
                                                         </select>
                                                       </div>
-                                                      <div>
-                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Numero Dipendenti</label>
-                                                        <input type="number" name="employee_count" value={formData.employee_count} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="es. 15" />
-                                                      </div>
-                                                      <div>
-                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Fatturato Annuo</label>
-                                                        <select name="revenue_range" value={formData.revenue_range} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
-                                                          <option value="">Seleziona range...</option>
-                                                          <option value="0-100k">0 - 100.000€</option>
-                                                          <option value="100k-500k">100.000€ - 500.000€</option>
-                                                          <option value="500k-2M">500.000€ - 2.000.000€</option>
-                                                          <option value="2M-10M">2.000.000€ - 10.000.000€</option>
-                                                          <option value="10M+">Oltre 10.000.000€</option>
-                                                        </select>
-                                                      </div>
-                                                </div>
-                                                <div className="mt-6">
-                                                    <label className="block text-sm font-medium text-slate-700 mb-2">Descrizione Attività</label>
-                                                    <textarea name="description" rows={4} value={formData.description} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="Descrivi brevemente la tua attività, i prodotti/servizi offerti..."></textarea>
-                                                </div>
-                                            </div>
-
-                                            <div className="border-t pt-8">
-                                                <h3 className="text-xl font-semibold text-slate-900 mb-6 flex items-center">
-                                                    <Icon path={icons.spark} className="w-6 h-6 mr-3 text-blue-600" />
-                                                    Obiettivi e Sfide
-                                                </h3>
-                                                <div className="space-y-6">
-                                                   <div>
-                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Principali Sfide Aziendali</label>
-                                                        <textarea name="main_challenges" rows={3} value={formData.main_challenges} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="Quali sono le principali difficoltà che stai affrontando? (es. costi elevati, competizione, mancanza di visibilità...)"></textarea>
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Obiettivi di Business</label>
-                                                        <textarea name="business_goals" rows={3} value={formData.business_goals} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="Quali sono i tuoi obiettivi per i prossimi 12-24 mesi? (es. aumentare fatturato, espansione, ottimizzazione costi...)"></textarea>
-                                                    </div>
                                                 </div>
                                             </div>
 
@@ -457,9 +424,6 @@ export default function CheckupPage() {
                                             </div>
                                         </>
                                     )}
-
-                                    {/* Lo Step 3 è stato rimosso. L'utente verrà reindirizzato. */}
-
                                 </form>
                             </div>
                         </div>
