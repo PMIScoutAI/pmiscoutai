@@ -307,7 +307,7 @@ export default function Home() {
                 <div className="relative z-10">
                   <h2 className="text-2xl font-bold md:text-3xl">Inizia con il Check-UP AI</h2>
                   <p className="mt-2 text-gray-200">Ottieni un'analisi istantanea e approfondita della tua azienda con la nostra intelligenza artificiale.</p>
-                  <a href="#" className="inline-block px-5 py-2 mt-6 font-semibold text-blue-600 bg-white rounded-lg shadow-md hover:bg-blue-50 transition-colors">Esegui Check-UP &rarr;</a>
+                 <a href="/checkup" className="inline-block px-5 py-2 mt-6 font-semibold text-blue-600 bg-white rounded-lg shadow-md hover:bg-blue-50 transition-colors">Esegui Check-UP &rarr;</a>
                 </div>
               </div>
 
