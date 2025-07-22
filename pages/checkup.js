@@ -2,6 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { useDropzone } from 'react-dropzone';
+import { useRouter } from 'next/router';
+// Dovrai creare questo file per inizializzare il client di Supabase
+// import { supabase } from '../utils/supabaseClient';
 
 export default function CheckupPage() {
     // STATI PRINCIPALI (Sidebar, Autenticazione, Caricamento)
@@ -9,6 +12,7 @@ export default function CheckupPage() {
     const [userName, setUserName] = useState('');
     const [isAuthenticated, setIsAuthenticated] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+    const router = useRouter(); // Hook per la navigazione
 
     // STATI SPECIFICI DEL CHECKUP
     const [currentStep, setCurrentStep] = useState(1);
@@ -29,7 +33,7 @@ export default function CheckupPage() {
     });
     const [balanceSheetFile, setBalanceSheetFile] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [analysisResult, setAnalysisResult] = useState(null);
+    // Lo stato analysisResult non è più necessario qui
 
     // --- LOGICA DI AUTENTICAZIONE ---
     const checkAuthentication = () => {
@@ -76,7 +80,6 @@ export default function CheckupPage() {
 
     const handleNextStep = (e) => {
         e.preventDefault();
-        // Validazione per procedere allo step successivo
         if (formData.company_name && formData.industry_sector && formData.company_size) {
             setCurrentStep(2);
         } else {
@@ -88,6 +91,7 @@ export default function CheckupPage() {
         setCurrentStep(prev => prev - 1);
     };
 
+    // --- FUNZIONE DI SUBMIT AGGIORNATA ---
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!balanceSheetFile) {
@@ -95,19 +99,57 @@ export default function CheckupPage() {
             return;
         }
         setIsSubmitting(true);
-        setCurrentStep(3); // Vai allo step di analisi
-        console.log('Invio dati per analisi:', { ...formData, file: balanceSheetFile.name });
 
-        // QUI VA LA LOGICA DI INVO A SUPABASE
-        // 1. Crea una `checkup_session`
-        // 2. Fai l'upload del `balanceSheetFile` a Supabase Storage
-        // 3. La Supabase Function si occuperà del resto
+        // A questo punto non cambiamo più lo step, ma avviamo il processo
+        // e reindirizziamo l'utente.
+        console.log('Avvio processo di analisi:', { ...formData, file: balanceSheetFile.name });
 
-        // Simulazione del tempo di analisi
-        setTimeout(() => {
-            setAnalysisResult({ summary: "Analisi completata con successo! I risultati sono disponibili nella tua dashboard." });
+        try {
+            // QUI VA LA LOGICA DI INVIO A SUPABASE
+            // Questa parte è una simulazione. Dovrai decommentarla e adattarla.
+            
+            // 1. Crea una `checkup_session` nel database e ottieni il suo ID.
+            //    Dovrai passare l'ID dell'utente e dell'azienda.
+            /*
+            const { data: sessionData, error: sessionError } = await supabase
+                .from('checkup_sessions')
+                .insert({ 
+                    company_id: 'ID_AZIENDA_DA_RECUPERARE', 
+                    user_id: 'ID_UTENTE_DA_RECUPERARE',
+                    session_name: `Analisi per ${formData.company_name}`,
+                    status: 'processing'
+                })
+                .select()
+                .single();
+
+            if (sessionError) throw sessionError;
+            const sessionId = sessionData.id;
+            */
+            
+            // Simuliamo di aver ricevuto un ID di sessione
+            const sessionId = "12345-simulato-67890";
+
+            // 2. Fai l'upload del `balanceSheetFile` a Supabase Storage.
+            //    La Supabase Function verrà attivata da questo upload.
+            /*
+            const filePath = `public/${sessionId}/${balanceSheetFile.name}`;
+            const { error: uploadError } = await supabase.storage
+                .from('checkup-documents') // Nome del tuo bucket
+                .upload(filePath, balanceSheetFile);
+
+            if (uploadError) throw uploadError;
+            */
+
+            // 3. Reindirizza l'utente alla pagina di analisi dedicata.
+            //    La pagina userà l'ID della sessione per mostrare lo stato
+            //    e i risultati quando saranno pronti.
+            router.push(`/analisi/${sessionId}`);
+
+        } catch (error) {
+            console.error("Errore durante l'avvio dell'analisi:", error);
+            alert("Si è verificato un errore durante l'invio. Riprova più tardi.");
             setIsSubmitting(false);
-        }, 5000);
+        }
     };
 
     // --- GESTIONE UPLOAD FILE ---
@@ -404,38 +446,20 @@ export default function CheckupPage() {
                                                     </button>
                                                     <button type="submit" disabled={!balanceSheetFile || isSubmitting}
                                                         className="flex items-center space-x-3 px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed">
-                                                        <Icon path={icons.spark} className="w-5 h-5" />
-                                                        <span>Avvia Analisi AI</span>
+                                                        {isSubmitting ? (
+                                                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                                                        ) : (
+                                                            <Icon path={icons.spark} className="w-5 h-5" />
+                                                        )}
+                                                        <span>{isSubmitting ? 'Invio in corso...' : 'Avvia Analisi AI'}</span>
                                                     </button>
                                                 </div>
                                             </div>
                                         </>
                                     )}
 
-                                    {/* --- STEP 3: ANALISI IN CORSO E RISULTATI --- */}
-                                    {currentStep === 3 && (
-                                        <div className="text-center py-12">
-                                            {isSubmitting ? (
-                                                <>
-                                                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-                                                    <h3 className="text-xl font-semibold text-slate-900">Analisi in corso...</h3>
-                                                    <p className="text-slate-600 mt-2">L'AI sta analizzando i tuoi dati. Potrebbero essere necessari alcuni minuti.</p>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <div className="p-4 bg-green-100 rounded-lg">
-                                                        <h3 className="text-2xl font-bold text-green-700">Analisi Completata!</h3>
-                                                    </div>
-                                                    <p className="text-slate-700 mt-4">{analysisResult?.summary}</p>
-                                                    <Link href="/">
-                                                      <a className="mt-8 inline-block px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors">
-                                                          Vai alla Dashboard
-                                                      </a>
-                                                    </Link>
-                                                </>
-                                            )}
-                                        </div>
-                                    )}
+                                    {/* Lo Step 3 è stato rimosso. L'utente verrà reindirizzato. */}
+
                                 </form>
                             </div>
                         </div>
