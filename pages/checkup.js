@@ -3,16 +3,16 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useDropzone } from 'react-dropzone';
 import { useRouter } from 'next/router';
-// Importiamo sia supabase che la nuova funzione di sincronizzazione
-import { supabase, syncSupabaseAuth } from '../utils/supabaseClient'; 
+// Dovrai creare questo file per inizializzare il client di Supabase
+// import { supabase } from '../utils/supabaseClient';
 
 export default function CheckupPage() {
-    // STATI PRINCIPALI
+    // STATI PRINCIPALI (Sidebar, Autenticazione, Caricamento)
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [userName, setUserName] = useState('');
     const [isAuthenticated, setIsAuthenticated] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
-    const router = useRouter(); 
+    const router = useRouter(); // Hook per la navigazione
 
     // STATI SPECIFICI DEL CHECKUP
     const [currentStep, setCurrentStep] = useState(1);
@@ -33,25 +33,16 @@ export default function CheckupPage() {
     });
     const [balanceSheetFile, setBalanceSheetFile] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    // Lo stato analysisResult non è più necessario qui
 
-    // --- LOGICA DI AUTENTICAZIONE AGGIORNATA ---
+    // --- LOGICA DI AUTENTICAZIONE ---
     const checkAuthentication = () => {
         if (typeof window !== 'undefined' && window.Outseta) {
             window.Outseta.getUser()
-                .then(async (user) => { // Aggiunto async per usare await
+                .then(user => {
                     if (user && user.Email) {
-                        // **MODIFICA CHIAVE**: Chiamiamo la funzione per sincronizzare con Supabase
-                        const synced = await syncSupabaseAuth();
-                        if (synced) {
-                            // Se la sincronizzazione ha successo, procediamo
-                            setIsAuthenticated(true);
-                            setUserName(user.FirstName || user.Email.split('@')[0]);
-                        } else {
-                            // Altrimenti, consideriamo l'utente non autenticato correttamente
-                            setIsAuthenticated(false);
-                            // **NUOVO**: Mostra un alert all'utente per informarlo del problema
-                            alert("Impossibile verificare la sessione con il database. Prova a effettuare nuovamente il login o contatta il supporto.");
-                        }
+                        setIsAuthenticated(true);
+                        setUserName(user.FirstName || user.Email.split('@')[0]);
                         setIsLoading(false);
                     } else {
                         setIsAuthenticated(false);
@@ -100,7 +91,7 @@ export default function CheckupPage() {
         setCurrentStep(prev => prev - 1);
     };
 
-    // --- FUNZIONE DI SUBMIT CON LOGICA SUPABASE ---
+    // --- FUNZIONE DI SUBMIT AGGIORNATA ---
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!balanceSheetFile) {
@@ -109,33 +100,22 @@ export default function CheckupPage() {
         }
         setIsSubmitting(true);
 
+        // A questo punto non cambiamo più lo step, ma avviamo il processo
+        // e reindirizziamo l'utente.
+        console.log('Avvio processo di analisi:', { ...formData, file: balanceSheetFile.name });
+
         try {
-            // 1. Recupera l'utente corrente da Supabase Auth (ora dovrebbe funzionare)
-            const { data: { user }, error: userError } = await supabase.auth.getUser();
-            if (userError || !user) throw new Error("Utente non trovato. Effettua di nuovo il login.");
-
-            // 2. Salva i dati dell'azienda nella tabella `companies`
-            const { data: companyData, error: companyError } = await supabase
-                .from('companies')
-                .insert({
-                    user_id: user.id,
-                    company_name: formData.company_name,
-                    vat_number: formData.vat_number,
-                    industry_sector: formData.industry_sector,
-                    company_size: formData.company_size,
-                })
-                .select()
-                .single();
-
-            if (companyError) throw companyError;
-            const companyId = companyData.id;
-
-            // 3. Crea una `checkup_session`
+            // QUI VA LA LOGICA DI INVIO A SUPABASE
+            // Questa parte è una simulazione. Dovrai decommentarla e adattarla.
+            
+            // 1. Crea una `checkup_session` nel database e ottieni il suo ID.
+            //    Dovrai passare l'ID dell'utente e dell'azienda.
+            /*
             const { data: sessionData, error: sessionError } = await supabase
                 .from('checkup_sessions')
                 .insert({ 
-                    company_id: companyId, 
-                    user_id: user.id,
+                    company_id: 'ID_AZIENDA_DA_RECUPERARE', 
+                    user_id: 'ID_UTENTE_DA_RECUPERARE',
                     session_name: `Analisi per ${formData.company_name}`,
                     status: 'processing'
                 })
@@ -144,21 +124,30 @@ export default function CheckupPage() {
 
             if (sessionError) throw sessionError;
             const sessionId = sessionData.id;
+            */
             
-            // 4. Fai l'upload del file
+            // Simuliamo di aver ricevuto un ID di sessione
+            const sessionId = "12345-simulato-67890";
+
+            // 2. Fai l'upload del `balanceSheetFile` a Supabase Storage.
+            //    La Supabase Function verrà attivata da questo upload.
+            /*
             const filePath = `public/${sessionId}/${balanceSheetFile.name}`;
             const { error: uploadError } = await supabase.storage
-                .from('checkup-documents')
+                .from('checkup-documents') // Nome del tuo bucket
                 .upload(filePath, balanceSheetFile);
 
             if (uploadError) throw uploadError;
+            */
 
-            // 5. Reindirizza l'utente
+            // 3. Reindirizza l'utente alla pagina di analisi dedicata.
+            //    La pagina userà l'ID della sessione per mostrare lo stato
+            //    e i risultati quando saranno pronti.
             router.push(`/analisi/${sessionId}`);
 
         } catch (error) {
             console.error("Errore durante l'avvio dell'analisi:", error);
-            alert(`Si è verificato un errore: ${error.message}. Riprova più tardi.`);
+            alert("Si è verificato un errore durante l'invio. Riprova più tardi.");
             setIsSubmitting(false);
         }
     };
@@ -203,10 +192,18 @@ export default function CheckupPage() {
             <>
                 <Head>
                     <title>Caricamento Check-UP - PMIScout</title>
-                    {/* ... altri tag head ... */}
+                    <script src="https://cdn.tailwindcss.com"></script>
+                    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+                    <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+                    <script dangerouslySetInnerHTML={{ __html: `var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,nocode,profile,support', tokenStorage: 'cookie' };` }} />
+                    <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
                 </Head>
                 <div className="flex items-center justify-center min-h-screen bg-slate-50">
-                    {/* ... schermata di caricamento ... */}
+                    <div className="text-center">
+                        <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                        <h2 className="text-xl font-bold text-blue-600 mb-2">PMIScout</h2>
+                        <p className="text-slate-600">Caricamento Check-UP AI...</p>
+                    </div>
                 </div>
             </>
         );
@@ -217,10 +214,16 @@ export default function CheckupPage() {
             <>
                 <Head>
                     <title>Accesso Richiesto - PMIScout</title>
-                    {/* ... altri tag head ... */}
+                    <script src="https://cdn.tailwindcss.com"></script>
                 </Head>
                 <div className="flex items-center justify-center min-h-screen bg-slate-50">
-                    {/* ... schermata di accesso richiesto ... */}
+                    <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
+                        <h2 className="text-2xl font-bold text-slate-900 mb-2">Accesso Richiesto</h2>
+                        <p className="text-slate-600 mb-6">Devi effettuare il login per accedere al Check-UP AI.</p>
+                        <a href="https://pmiscout.outseta.com/auth?widgetMode=login" className="inline-block w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                            Vai al Login
+                        </a>
+                    </div>
                 </div>
             </>
         );
@@ -232,23 +235,93 @@ export default function CheckupPage() {
         <>
             <Head>
                 <title>Check-UP AI Azienda - PMIScout</title>
-                {/* ... altri tag head ... */}
+                <meta name="description" content="Analisi AI completa della tua azienda con insights e raccomandazioni personalizzate" />
+                <script src="https://cdn.tailwindcss.com"></script>
+                <link rel="preconnect" href="https://fonts.googleapis.com" />
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
+                <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+                <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+                <script dangerouslySetInnerHTML={{ __html: `var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,nocode,profile,support', tokenStorage: 'cookie' };` }} />
+                <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
             </Head>
 
             <div className="relative flex min-h-screen bg-slate-50 text-slate-800">
-                {/* ... Sidebar ... */}
                 <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                    {/* ... contenuto sidebar ... */}
+                    <div className="flex flex-col h-full">
+                        <div className="flex items-center justify-center h-16 border-b">
+                            <Link href="/">
+                                <a className="text-2xl font-bold text-blue-600 hover:text-blue-700 transition-colors">PMIScout</a>
+                            </Link>
+                        </div>
+                        <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
+                            <nav className="flex-1 px-2 pb-4 space-y-1">
+                                {navLinks.map((link) => (
+                                    <Link key={link.text} href={link.href}>
+                                        <a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
+                                            <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
+                                            {link.text}
+                                        </a>
+                                    </Link>
+                                ))}
+                            </nav>
+                            <div className="px-2 py-3 border-t border-slate-200">
+                                <div className="flex items-center px-2 py-2 text-xs text-slate-500">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                                    Connesso come {userName}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </aside>
 
-                {/* ... Overlay e Header Mobile ... */}
+                {isSidebarOpen && <div className="fixed inset-0 z-10 bg-black bg-opacity-50 md:hidden" onClick={() => setIsSidebarOpen(false)} />}
                 
                 <div className="flex flex-col flex-1 w-0 overflow-hidden">
-                    {/* ... header ... */}
+                    <header className="relative z-10 flex items-center justify-between flex-shrink-0 h-16 px-4 bg-white border-b md:hidden">
+                        <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 rounded-md hover:text-slate-900 hover:bg-slate-100 transition-colors">
+                            <Icon path={icons.menu} />
+                        </button>
+                        <Link href="/"><a className="text-xl font-bold text-blue-600">PMIScout</a></Link>
+                        <div className="w-8" />
+                    </header>
+
                     <main className="relative flex-1 overflow-y-auto focus:outline-none">
                         <div className="py-6 mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
                             
-                            {/* ... Titolo e Progress Steps ... */}
+                            <div className="mb-8">
+                                <nav className="flex items-center text-sm mb-4" aria-label="Breadcrumb">
+                                    <Link href="/"><a className="flex items-center text-blue-600 hover:text-blue-800 transition-colors">
+                                        <Icon path={icons.home} className="w-4 h-4 mr-1" />Dashboard</a></Link>
+                                    <span className="mx-2 text-slate-400">/</span>
+                                    <span className="text-slate-600 font-medium">Check-UP AI</span>
+                                </nav>
+                                <div className="flex items-center space-x-4 mb-4">
+                                    <div className="p-3 bg-blue-100 rounded-xl">
+                                        <Icon path={icons.spark} className="w-8 h-8 text-blue-600" />
+                                    </div>
+                                    <div>
+                                        <h1 className="text-3xl font-bold text-slate-900">Check-UP AI Azienda</h1>
+                                        <p className="text-lg text-slate-600">Analisi approfondita della tua azienda con intelligenza artificiale</p>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex items-center justify-center space-x-4 mt-8 mb-8">
+                                    <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm font-medium transition-colors ${currentStep >= 1 ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                                        <Icon path={icons.building} className="w-4 h-4" />
+                                        <span>Dati Azienda</span>
+                                    </div>
+                                    <div className={`w-8 h-px transition-colors ${currentStep >= 2 ? 'bg-blue-600' : 'bg-slate-300'}`}></div>
+                                    <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm font-medium transition-colors ${currentStep >= 2 ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                                        <Icon path={icons.upload} className="w-4 h-4" />
+                                        <span>Documenti</span>
+                                    </div>
+                                    <div className={`w-8 h-px transition-colors ${currentStep >= 3 ? 'bg-blue-600' : 'bg-slate-300'}`}></div>
+                                    <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm font-medium transition-colors ${currentStep >= 3 ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                                        <Icon path={icons.spark} className="w-4 h-4" />
+                                        <span>Analisi AI</span>
+                                    </div>
+                                </div>
+                            </div>
 
                             <div className="bg-white rounded-xl shadow-sm border p-8">
                                 <form onSubmit={handleSubmit} className="space-y-8">
@@ -256,7 +329,83 @@ export default function CheckupPage() {
                                     {/* --- STEP 1: DATI AZIENDA --- */}
                                     {currentStep === 1 && (
                                         <>
-                                            {/* ... contenuto form step 1 ... */}
+                                            <div>
+                                                <h3 className="text-xl font-semibold text-slate-900 mb-6 flex items-center">
+                                                    <Icon path={icons.building} className="w-6 h-6 mr-3 text-blue-600" />
+                                                    Informazioni Azienda
+                                                </h3>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Nome Azienda *</label>
+                                                        <input type="text" name="company_name" required value={formData.company_name} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="La tua azienda..." />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Partita IVA</label>
+                                                        <input type="text" name="vat_number" value={formData.vat_number} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="IT..." />
+                                                    </div>
+                                                     <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Settore di Attività *</label>
+                                                        <select name="industry_sector" required value={formData.industry_sector} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                                                            <option value="">Seleziona settore...</option>
+                                                            <option value="Commercio">Commercio</option>
+                                                            <option value="Informatica">Informatica e Software</option>
+                                                            <option value="Consulenza">Consulenza</option>
+                                                            <option value="Manifatturiero">Manifatturiero</option>
+                                                            <option value="Edilizia">Edilizia</option>
+                                                            <option value="Ristorazione">Ristorazione</option>
+                                                            <option value="Turismo">Turismo</option>
+                                                            <option value="Altro">Altro</option>
+                                                        </select>
+                                                     </div>
+                                                     <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Dimensione Azienda *</label>
+                                                        <select name="company_size" required value={formData.company_size} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                                                          <option value="">Seleziona dimensione...</option>
+                                                          <option value="micro">Micro (1-9 dipendenti)</option>
+                                                          <option value="piccola">Piccola (10-49 dipendenti)</option>
+                                                          <option value="media">Media (50-249 dipendenti)</option>
+                                                          <option value="grande">Grande (250+ dipendenti)</option>
+                                                        </select>
+                                                      </div>
+                                                      <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Numero Dipendenti</label>
+                                                        <input type="number" name="employee_count" value={formData.employee_count} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="es. 15" />
+                                                      </div>
+                                                      <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Fatturato Annuo</label>
+                                                        <select name="revenue_range" value={formData.revenue_range} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                                                          <option value="">Seleziona range...</option>
+                                                          <option value="0-100k">0 - 100.000€</option>
+                                                          <option value="100k-500k">100.000€ - 500.000€</option>
+                                                          <option value="500k-2M">500.000€ - 2.000.000€</option>
+                                                          <option value="2M-10M">2.000.000€ - 10.000.000€</option>
+                                                          <option value="10M+">Oltre 10.000.000€</option>
+                                                        </select>
+                                                      </div>
+                                                </div>
+                                                <div className="mt-6">
+                                                    <label className="block text-sm font-medium text-slate-700 mb-2">Descrizione Attività</label>
+                                                    <textarea name="description" rows={4} value={formData.description} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="Descrivi brevemente la tua attività, i prodotti/servizi offerti..."></textarea>
+                                                </div>
+                                            </div>
+
+                                            <div className="border-t pt-8">
+                                                <h3 className="text-xl font-semibold text-slate-900 mb-6 flex items-center">
+                                                    <Icon path={icons.spark} className="w-6 h-6 mr-3 text-blue-600" />
+                                                    Obiettivi e Sfide
+                                                </h3>
+                                                <div className="space-y-6">
+                                                   <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Principali Sfide Aziendali</label>
+                                                        <textarea name="main_challenges" rows={3} value={formData.main_challenges} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="Quali sono le principali difficoltà che stai affrontando? (es. costi elevati, competizione, mancanza di visibilità...)"></textarea>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-700 mb-2">Obiettivi di Business</label>
+                                                        <textarea name="business_goals" rows={3} value={formData.business_goals} onChange={handleInputChange} className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="Quali sono i tuoi obiettivi per i prossimi 12-24 mesi? (es. aumentare fatturato, espansione, ottimizzazione costi...)"></textarea>
+                                                    </div>
+                                                </div>
+                                            </div>
+
                                             <div className="border-t pt-8">
                                                 <div className="flex justify-end">
                                                     <button type="button" onClick={handleNextStep}
@@ -272,7 +421,23 @@ export default function CheckupPage() {
                                     {/* --- STEP 2: UPLOAD DOCUMENTI --- */}
                                     {currentStep === 2 && (
                                         <>
-                                            {/* ... contenuto form step 2 ... */}
+                                            <div>
+                                                <h3 className="text-xl font-semibold text-slate-900 mb-6 flex items-center">
+                                                    <Icon path={icons.upload} className="w-6 h-6 mr-3 text-blue-600" />
+                                                    Carica il Bilancio
+                                                </h3>
+                                                <div {...getRootProps()} className={`mt-4 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md cursor-pointer transition-colors ${isDragActive ? 'border-blue-500 bg-blue-50' : 'border-slate-300 hover:border-blue-400'}`}>
+                                                    <input {...getInputProps()} />
+                                                    <div className="space-y-1 text-center">
+                                                        <Icon path={icons.file} className="mx-auto h-12 w-12 text-slate-400" />
+                                                        <div className="flex text-sm text-slate-600">
+                                                            <p className="pl-1">{balanceSheetFile ? `File selezionato: ${balanceSheetFile.name}` : 'Trascina qui il tuo bilancio in PDF o clicca per selezionarlo'}</p>
+                                                        </div>
+                                                        <p className="text-xs text-slate-500">PDF fino a 10MB</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
                                             <div className="border-t pt-8">
                                                 <div className="flex items-center justify-between">
                                                     <button type="button" onClick={handlePrevStep}
@@ -292,6 +457,9 @@ export default function CheckupPage() {
                                             </div>
                                         </>
                                     )}
+
+                                    {/* Lo Step 3 è stato rimosso. L'utente verrà reindirizzato. */}
+
                                 </form>
                             </div>
                         </div>
