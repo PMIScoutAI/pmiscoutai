@@ -51,27 +51,13 @@ export default function AnalisiReportPage() {
     }
   };
 
-  // Auth check
-  const checkAuth = async () => {
-    try {
-      if (typeof window !== 'undefined' && window.Outseta) {
-        const user = await window.Outseta.getUser();
-        if (user?.Email) {
-          setIsAuthenticated(true);
-          setUserName(user.FirstName || user.Email.split('@')[0]);
-          setIsLoading(false);
-        } else {
-          setIsAuthenticated(false);
-          setIsLoading(false);
-        }
-      } else {
-        timeoutRef.current = setTimeout(checkAuth, 3000);
-      }
-    } catch (err) {
-      setIsAuthenticated(false);
-      setIsLoading(false);
-    }
-  };
+ // Test version - bypassa Outseta
+const checkAuth = async () => {
+  console.log('🔧 TEST MODE: Bypassing Outseta auth');
+  setIsAuthenticated(true);
+  setUserName('Test User');
+  setIsLoading(false);
+};
 
   // Fetch session data
   const fetchSessionData = async () => {
