@@ -76,7 +76,7 @@ const checkAuth = async () => {
   }
 };
 
- // Fetch session data
+// Fetch session data
 const fetchSessionData = async () => {
   if (!sessionId) return;
   
@@ -98,8 +98,9 @@ const fetchSessionData = async () => {
 
     setSessionData(data);
     
-    if (data.analysis_results?.[0]) {
-      setAnalysisData(data.analysis_results[0]);
+    // FIX: analysis_results è un oggetto, non un array
+    if (data.analysis_results) {
+      setAnalysisData(data.analysis_results);
     } else if (data.status === 'completed') {
       setError('Analisi completata ma risultati mancanti');
     } else if (data.status === 'failed') {
