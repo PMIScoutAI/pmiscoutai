@@ -75,7 +75,7 @@ export default function CheckupPage() {
         setCurrentStep(prev => prev - 1);
     };
 
-    // --- FUNZIONE DI SUBMIT FINALE CON RPC ---
+    // --- FUNZIONE DI SUBMIT FINALE CORRETTA ---
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!balanceSheetFile) {
@@ -85,108 +85,148 @@ export default function CheckupPage() {
         setIsSubmitting(true);
 
         try {
+            console.log('🚀 Inizio processo di submit...');
+            
+            // 1. Ottieni utente da Outseta
             const outsetaUser = await window.Outseta.getUser();
+            console.log('👤 Utente Outseta completo:', outsetaUser);
+            
             if (!outsetaUser || !outsetaUser.Email) {
-                alert("Impossibile recuperare i dati dell'utente. Riprova.");
-                setIsSubmitting(false);
-                return;
+                throw new Error("Impossibile recuperare i dati dell'utente");
             }
 
-            // Log di debug per controllare i dati Outseta
-            console.log('👤 Utente Outseta:', {
-                uid: outsetaUser?.Uid,
-                personUid: outsetaUser?.Person?.Uid,
-                email: outsetaUser?.Email,
-                firstName: outsetaUser?.FirstName,
-                lastName: outsetaUser?.LastName
-            });
-
-            // Chiamiamo la funzione "assistente" (RPC) nel database
+            // 2. Usa la stored function per gestire l'utente
+            console.log('🔄 Chiamata RPC get_or_create_user...');
             const { data: userId, error: rpcError } = await supabase.rpc('get_or_create_user', {
                 user_email: outsetaUser.Email,
-                user_first_name: outsetaUser.FirstName || null,
-                user_last_name: outsetaUser.LastName || null,
-                user_full_name: outsetaUser.FullName || null,
-                user_outseta_id: outsetaUser.Person?.Uid || outsetaUser.Uid
+                user_first_name: outsetaUser.FirstName || '',
+                user_last_name: outsetaUser.LastName || '',
+                user_full_name: outsetaUser.FullName || `${outsetaUser.FirstName || ''} ${outsetaUser.LastName || ''}`.trim(),
+                user_outseta_id: outsetaUser.Person?.Uid || outsetaUser.Uid || ''
             });
 
-            if (rpcError) throw new Error(`Errore della funzione DB: ${rpcError.message}`);
+            if (rpcError) {
+                console.error('❌ Errore RPC:', rpcError);
+                throw new Error(`Errore della funzione DB: ${rpcError.message}`);
+            }
             
+            console.log('✅ User ID ottenuto:', userId);
             const userUid = userId;
+
+            // 3. Gestisci azienda con payload CORRETTO
+            console.log('🏢 Gestisco azienda...');
             let companyId;
 
-            // Payload completo e robusto per l'azienda
+            // 🔧 PAYLOAD CORRETTO - Includere main_challenges e business_goals
             const companyPayload = {
                 company_name: formData.company_name,
                 vat_number: formData.vat_number || null,
-                industry_sector: formData.industry_sector,
+                industry_sector: formData.industry_sector || null,
                 ateco_code: formData.ateco_code || null,
-                company_size: formData.company_size,
+                company_size: formData.company_size || null,
+                revenue_range: formData.revenue_range || null,
                 employee_count: formData.employee_count ? parseInt(formData.employee_count, 10) : null,
                 location_city: formData.location_city || null,
                 location_region: formData.location_region || null,
+                location_country: 'Italia',
                 website_url: formData.website_url || null,
                 description: formData.description || null,
-                revenue_range: formData.revenue_range || null,
+                main_challenges: formData.main_challenges || null,  // ✅ Incluso
+                business_goals: formData.business_goals || null,    // ✅ Incluso
                 user_id: userUid,
-                location_country: 'Italia',
                 is_active: true,
                 updated_at: new Date().toISOString()
             };
 
-            // Logica "Trova o Crea" per l'azienda
+            console.log('📝 Payload azienda:', companyPayload);
+
+            // 4. Cerca azienda esistente
             const { data: existingCompany, error: findCompanyError } = await supabase
                 .from('companies')
                 .select('id')
                 .eq('user_id', userUid)
-                .single();
+                .maybeSingle(); // Usa maybeSingle invece di single
 
-            if (findCompanyError && findCompanyError.code !== 'PGRST116') throw findCompanyError;
+            console.log('🔍 Ricerca azienda:', { existingCompany, findCompanyError });
+
+            if (findCompanyError) {
+                console.error('❌ Errore ricerca azienda:', findCompanyError);
+                throw findCompanyError;
+            }
 
             if (existingCompany) {
-                // Aggiorna
+                // Aggiorna azienda esistente
+                console.log('📝 Aggiorno azienda esistente...');
                 const { data: updatedCompany, error: updateError } = await supabase
                     .from('companies')
                     .update(companyPayload)
                     .eq('id', existingCompany.id)
-                    .select('id').single();
-                if (updateError) throw updateError;
+                    .select('id')
+                    .single();
+                
+                if (updateError) {
+                    console.error('❌ Errore aggiornamento:', updateError);
+                    throw updateError;
+                }
                 companyId = updatedCompany.id;
+                console.log('✅ Azienda aggiornata, ID:', companyId);
             } else {
-                // Crea
+                // Crea nuova azienda
+                console.log('🆕 Creo nuova azienda...');
                 const { data: newCompany, error: insertError } = await supabase
                     .from('companies')
                     .insert(companyPayload)
-                    .select('id').single();
-                if (insertError) throw insertError;
+                    .select('id')
+                    .single();
+                
+                if (insertError) {
+                    console.error('❌ Errore creazione azienda:', insertError);
+                    throw insertError;
+                }
                 companyId = newCompany.id;
+                console.log('✅ Azienda creata, ID:', companyId);
             }
-            
-            // Creazione sessione e upload file
+
+            // 5. Crea sessione checkup
+            console.log('📋 Creo sessione checkup...');
             const { data: sessionData, error: sessionError } = await supabase
                 .from('checkup_sessions')
                 .insert({
                     company_id: companyId,
                     user_id: userUid,
                     session_name: `Analisi per ${formData.company_name}`,
-                    status: 'processing'
-                }).select('id').single();
+                    status: 'processing',
+                    created_at: new Date().toISOString()
+                })
+                .select('id')
+                .single();
 
-            if (sessionError) throw sessionError;
+            if (sessionError) {
+                console.error('❌ Errore creazione sessione:', sessionError);
+                throw sessionError;
+            }
+            
             const sessionId = sessionData.id;
+            console.log('✅ Sessione creata, ID:', sessionId);
 
+            // 6. Upload file
+            console.log('📁 Upload file...');
             const filePath = `public/${sessionId}/${balanceSheetFile.name}`;
             const { error: uploadError } = await supabase.storage
                 .from('checkup-documents')
                 .upload(filePath, balanceSheetFile);
 
-            if (uploadError) throw uploadError;
+            if (uploadError) {
+                console.error('❌ Errore upload:', uploadError);
+                throw uploadError;
+            }
 
+            console.log('🎉 Processo completato! Redirect...');
             router.push(`/analisi/${sessionId}`);
 
         } catch (error) {
-            console.error("Errore durante l'avvio dell'analisi:", error);
-            alert(`Si è verificato un errore durante l'invio: ${error.message}. Riprova più tardi.`);
+            console.error("💥 Errore completo durante l'invio:", error);
+            alert(`Si è verificato un errore: ${error.message}. Controlla la console per dettagli.`);
             setIsSubmitting(false);
         }
     };
@@ -202,12 +242,13 @@ export default function CheckupPage() {
         multiple: false
     });
 
-    // --- DEFINIZIONE ICONE E LINK NAVIGAZIONE (invariato) ---
+    // --- DEFINIZIONE ICONE E LINK NAVIGAZIONE ---
     const Icon = ({ path, className = 'w-6 h-6' }) => (
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
             {path}
         </svg>
     );
+
     const icons = {
         dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
         checkup: <><path d="M12 8V4H8" /><rect x="4" y="12" width="16" height="8" rx="2" /><path d="M2 12h2M20 12h2M12 18v2M12 14v-2" /></>,
@@ -219,6 +260,7 @@ export default function CheckupPage() {
         spark: <><path d="M12 3v6l4-4-4-4" /><path d="M12 21v-6l-4 4 4 4" /><path d="M3 12h6l-4-4 4-4" /><path d="M21 12h-6l4 4-4 4" /></>,
         file: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /></>
     };
+
     const navLinks = [
         { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
         { href: '/checkup', text: 'Check-UP AI', icon: icons.checkup, active: true },
