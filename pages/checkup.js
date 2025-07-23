@@ -3,16 +3,16 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useDropzone } from 'react-dropzone';
 import { useRouter } from 'next/router';
-// Dovrai creare questo file per inizializzare il client di Supabase
-// import { supabase } from '../utils/supabaseClient';
+import { supabase } from '../utils/supabaseClient';
 
 export default function CheckupPage() {
     // STATI PRINCIPALI (Sidebar, Autenticazione, Caricamento)
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [userName, setUserName] = useState('');
-    const [isAuthenticated, setIsAuthenticated] = useState(null);
+    // 'isAuthenticated' è stato rimosso per semplificare la logica.
     const [isLoading, setIsLoading] = useState(true);
-    const router = useRouter(); // Hook per la navigazione
+    const [outsetaUser, setOutsetaUser] = useState(null); // Unico stato per i dati utente
+    const router = useRouter();
 
     // STATI SPECIFICI DEL CHECKUP
     const [currentStep, setCurrentStep] = useState(1);
@@ -33,44 +33,35 @@ export default function CheckupPage() {
     });
     const [balanceSheetFile, setBalanceSheetFile] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    // Lo stato analysisResult non è più necessario qui
 
-    // --- LOGICA DI AUTENTICAZIONE ---
-    const checkAuthentication = () => {
-        if (typeof window !== 'undefined' && window.Outseta) {
-            window.Outseta.getUser()
-                .then(user => {
-                    if (user && user.Email) {
-                        setIsAuthenticated(true);
-                        setUserName(user.FirstName || user.Email.split('@')[0]);
-                        setIsLoading(false);
-                    } else {
-                        setIsAuthenticated(false);
-                        setIsLoading(false);
-                        window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login&returnUrl=' + encodeURIComponent(window.location.href);
-                    }
-                })
-                .catch(error => {
-                    console.error('Auth error:', error);
-                    setIsAuthenticated(false);
-                    setIsLoading(false);
-                    window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login';
-                });
-        } else {
-            setTimeout(checkAuthentication, 500);
-        }
-    };
-
+    // --- LOGICA DI AUTENTICAZIONE SEMPLIFICATA ---
     useEffect(() => {
-        const waitForOutseta = () => {
+        const verifyAuth = () => {
             if (typeof window !== 'undefined' && window.Outseta) {
-                checkAuthentication();
+                window.Outseta.getUser()
+                    .then(user => {
+                        // Se l'utente esiste ed ha un Uid, è autenticato.
+                        if (user && user.Uid) {
+                            setUserName(user.FirstName || user.Email.split('@')[0]);
+                            setOutsetaUser(user);
+                            setIsLoading(false); // Stoppa il caricamento, mostra la pagina
+                        } else {
+                            // Altrimenti, reindirizza subito al login.
+                            window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login&returnUrl=' + encodeURIComponent(window.location.href);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Auth error:', error);
+                        // Anche in caso di errore, reindirizza al login.
+                        window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login';
+                    });
             } else {
-                setTimeout(waitForOutseta, 100);
+                // Se Outseta non è ancora pronto, riprova tra poco.
+                setTimeout(verifyAuth, 100);
             }
         };
-        waitForOutseta();
-    }, []);
+        verifyAuth();
+    }, []); // L'array vuoto assicura che venga eseguito solo una volta.
 
     // --- FUNZIONI DI GESTIONE DEL FORM A STEP ---
     const handleInputChange = (e) => {
@@ -91,31 +82,53 @@ export default function CheckupPage() {
         setCurrentStep(prev => prev - 1);
     };
 
-    // --- FUNZIONE DI SUBMIT AGGIORNATA ---
+    // --- FUNZIONE DI SUBMIT ---
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!balanceSheetFile) {
             alert('Per favore, carica un documento di bilancio.');
             return;
         }
+        // Questo controllo rimane una sicurezza fondamentale prima di scrivere sul DB.
+        if (!outsetaUser || !outsetaUser.Uid) {
+            alert("Errore di autenticazione, impossibile procedere. Ricarica la pagina e riprova.");
+            setIsSubmitting(false);
+            return;
+        }
         setIsSubmitting(true);
 
-        // A questo punto non cambiamo più lo step, ma avviamo il processo
-        // e reindirizziamo l'utente.
-        console.log('Avvio processo di analisi:', { ...formData, file: balanceSheetFile.name });
-
         try {
-            // QUI VA LA LOGICA DI INVIO A SUPABASE
-            // Questa parte è una simulazione. Dovrai decommentarla e adattarla.
-            
-            // 1. Crea una `checkup_session` nel database e ottieni il suo ID.
-            //    Dovrai passare l'ID dell'utente e dell'azienda.
-            /*
+            // STEP 1: Salva i dati dell'azienda nel database e ottieni l'ID
+            const { data: companyData, error: companyError } = await supabase
+                .from('companies')
+                .insert({
+                    company_name: formData.company_name,
+                    vat_number: formData.vat_number,
+                    industry_sector: formData.industry_sector,
+                    ateco_code: formData.ateco_code,
+                    company_size: formData.company_size,
+                    employee_count: formData.employee_count ? parseInt(formData.employee_count, 10) : null,
+                    location_city: formData.location_city,
+                    location_region: formData.location_region,
+                    website_url: formData.website_url,
+                    description: formData.description,
+                    revenue_range: formData.revenue_range,
+                    main_challenges: formData.main_challenges,
+                    business_goals: formData.business_goals,
+                    owner_uid: outsetaUser.Uid
+                })
+                .select()
+                .single();
+
+            if (companyError) throw companyError;
+            const companyId = companyData.id;
+
+            // STEP 2: Crea la sessione di checkup collegata all'azienda e all'utente
             const { data: sessionData, error: sessionError } = await supabase
                 .from('checkup_sessions')
-                .insert({ 
-                    company_id: 'ID_AZIENDA_DA_RECUPERARE', 
-                    user_id: 'ID_UTENTE_DA_RECUPERARE',
+                .insert({
+                    company_id: companyId,
+                    user_id: outsetaUser.Uid,
                     session_name: `Analisi per ${formData.company_name}`,
                     status: 'processing'
                 })
@@ -124,30 +137,22 @@ export default function CheckupPage() {
 
             if (sessionError) throw sessionError;
             const sessionId = sessionData.id;
-            */
-            
-            // Simuliamo di aver ricevuto un ID di sessione
-            const sessionId = "12345-simulato-67890";
 
-            // 2. Fai l'upload del `balanceSheetFile` a Supabase Storage.
-            //    La Supabase Function verrà attivata da questo upload.
-            /*
+            // STEP 3: Carica il file PDF nello Storage di Supabase
             const filePath = `public/${sessionId}/${balanceSheetFile.name}`;
             const { error: uploadError } = await supabase.storage
-                .from('checkup-documents') // Nome del tuo bucket
+                .from('checkup-documents')
                 .upload(filePath, balanceSheetFile);
 
             if (uploadError) throw uploadError;
-            */
 
-            // 3. Reindirizza l'utente alla pagina di analisi dedicata.
-            //    La pagina userà l'ID della sessione per mostrare lo stato
-            //    e i risultati quando saranno pronti.
+            // STEP 4: Reindirizza alla pagina di analisi con il vero ID di sessione
+            console.log(`Redirect alla sessione: /analisi/${sessionId}`);
             router.push(`/analisi/${sessionId}`);
 
         } catch (error) {
             console.error("Errore durante l'avvio dell'analisi:", error);
-            alert("Si è verificato un errore durante l'invio. Riprova più tardi.");
+            alert(`Si è verificato un errore durante l'invio: ${error.message}. Riprova più tardi.`);
             setIsSubmitting(false);
         }
     };
@@ -163,7 +168,7 @@ export default function CheckupPage() {
         multiple: false
     });
 
-    // --- DEFINIZIONE ICONE E LINK NAVIGAZIONE ---
+    // --- DEFINIZIONE ICONE E LINK NAVIGAZIONE (invariato) ---
     const Icon = ({ path, className = 'w-6 h-6' }) => (
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
             {path}
@@ -186,8 +191,10 @@ export default function CheckupPage() {
         { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
     ];
 
-    // --- BLOCCHI DI RITORNO ANTICIPATO (ESSENZIALI) ---
-    if (isLoading || isAuthenticated === null) {
+    // --- BLOCCO DI CARICAMENTO ---
+    // Mostra lo spinner finché `verifyAuth` non ha finito.
+    // Se l'utente non è loggato, viene reindirizzato prima che questo blocco cambi.
+    if (isLoading) {
         return (
             <>
                 <Head>
@@ -208,28 +215,7 @@ export default function CheckupPage() {
             </>
         );
     }
-
-    if (isAuthenticated === false) {
-        return (
-            <>
-                <Head>
-                    <title>Accesso Richiesto - PMIScout</title>
-                    <script src="https://cdn.tailwindcss.com"></script>
-                </Head>
-                <div className="flex items-center justify-center min-h-screen bg-slate-50">
-                    <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
-                        <h2 className="text-2xl font-bold text-slate-900 mb-2">Accesso Richiesto</h2>
-                        <p className="text-slate-600 mb-6">Devi effettuare il login per accedere al Check-UP AI.</p>
-                        <a href="https://pmiscout.outseta.com/auth?widgetMode=login" className="inline-block w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors font-medium">
-                            Vai al Login
-                        </a>
-                    </div>
-                </div>
-            </>
-        );
-    }
-
-
+    
     // --- RITORNO DEL COMPONENTE PRINCIPALE (SOLO SE AUTENTICATO) ---
     return (
         <>
@@ -457,9 +443,6 @@ export default function CheckupPage() {
                                             </div>
                                         </>
                                     )}
-
-                                    {/* Lo Step 3 è stato rimosso. L'utente verrà reindirizzato. */}
-
                                 </form>
                             </div>
                         </div>
