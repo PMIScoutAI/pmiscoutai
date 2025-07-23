@@ -6,13 +6,13 @@ import { useRouter } from 'next/router';
 import { supabase } from '../utils/supabaseClient';
 
 export default function CheckupPage() {
-    // STATI PRINCIPALI (Sidebar, Autenticazione, Caricamento)
+    // STATI PRINCIPALI
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [userName, setUserName] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
 
-    // STATI SPECIFICI DEL CHECKUP
+    // STATI DEL FORM
     const [currentStep, setCurrentStep] = useState(1);
     const [formData, setFormData] = useState({
         company_name: '',
@@ -32,7 +32,7 @@ export default function CheckupPage() {
     const [balanceSheetFile, setBalanceSheetFile] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // --- LOGICA DI AUTENTICAZIONE SEMPLIFICATA ---
+    // --- LOGICA DI AUTENTICAZIONE ---
     useEffect(() => {
         const verifyAuth = () => {
             if (typeof window !== 'undefined' && window.Outseta) {
@@ -56,7 +56,7 @@ export default function CheckupPage() {
         verifyAuth();
     }, []);
 
-    // --- FUNZIONI DI GESTIONE DEL FORM A STEP ---
+    // --- GESTIONE INPUT FORM ---
     const handleInputChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
@@ -75,7 +75,7 @@ export default function CheckupPage() {
         setCurrentStep(prev => prev - 1);
     };
 
-    // --- FUNZIONE DI SUBMIT CON LOGICA "TROVA O CREA" (UPSERT) ---
+    // --- FUNZIONE DI SUBMIT FINALE CON RPC ---
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!balanceSheetFile) {
@@ -85,101 +85,84 @@ export default function CheckupPage() {
         setIsSubmitting(true);
 
         try {
-            // 1. Prendiamo l'utente da Outseta per avere l'email e i dati anagrafici.
             const outsetaUser = await window.Outseta.getUser();
             if (!outsetaUser || !outsetaUser.Email) {
-                alert("Impossibile recuperare l'email dell'utente. Riprova.");
+                alert("Impossibile recuperare i dati dell'utente. Riprova.");
                 setIsSubmitting(false);
                 return;
             }
 
-            let userUid;
+            // Log di debug per controllare i dati Outseta
+            console.log('👤 Utente Outseta:', {
+                uid: outsetaUser?.Uid,
+                personUid: outsetaUser?.Person?.Uid,
+                email: outsetaUser?.Email,
+                firstName: outsetaUser?.FirstName,
+                lastName: outsetaUser?.LastName
+            });
 
-            // 2. Usiamo l'email per trovare il nostro ID utente interno su Supabase.
-            // === LA TUA CORREZIONE APPLICATA CORRETTAMENTE ===
-            let { data: supabaseUser, error: findUserError } = await supabase
-                .from('users')
-                .select('id')
-                .eq('email', outsetaUser.Email)
-                .single();
+            // Chiamiamo la funzione "assistente" (RPC) nel database
+            const { data: userId, error: rpcError } = await supabase.rpc('get_or_create_user', {
+                user_email: outsetaUser.Email,
+                user_first_name: outsetaUser.FirstName || null,
+                user_last_name: outsetaUser.LastName || null,
+                user_full_name: outsetaUser.FullName || null,
+                user_outseta_id: outsetaUser.Person?.Uid || outsetaUser.Uid
+            });
 
-            // 3. Se l'utente non viene trovato (errore specifico "nessuna riga"), lo creiamo.
-            if (findUserError && findUserError.code === 'PGRST116') {
-                console.log("Utente non trovato nel DB, lo creo...");
-                const { data: newUser, error: createUserError } = await supabase
-                    .from('users')
-                    .insert({
-                        email: outsetaUser.Email,
-                        first_name: outsetaUser.FirstName,
-                        last_name: outsetaUser.LastName,
-                        full_name: outsetaUser.FullName,
-                    })
-                    .select('id')
-                    .single();
-                
-                if (createUserError) {
-                    throw new Error(`Errore durante la creazione dell'utente: ${createUserError.message}`);
-                }
-                supabaseUser = newUser;
-            } else if (findUserError) {
-                throw findUserError;
-            }
+            if (rpcError) throw new Error(`Errore della funzione DB: ${rpcError.message}`);
             
-            userUid = supabaseUser.id;
+            const userUid = userId;
             let companyId;
 
-            // Dati dell'azienda da inserire o aggiornare
+            // Payload completo e robusto per l'azienda
             const companyPayload = {
                 company_name: formData.company_name,
-                vat_number: formData.vat_number,
+                vat_number: formData.vat_number || null,
                 industry_sector: formData.industry_sector,
-                ateco_code: formData.ateco_code,
+                ateco_code: formData.ateco_code || null,
                 company_size: formData.company_size,
                 employee_count: formData.employee_count ? parseInt(formData.employee_count, 10) : null,
-                location_city: formData.location_city,
-                location_region: formData.location_region,
-                website_url: formData.website_url,
-                description: formData.description,
-                revenue_range: formData.revenue_range,
+                location_city: formData.location_city || null,
+                location_region: formData.location_region || null,
+                website_url: formData.website_url || null,
+                description: formData.description || null,
+                revenue_range: formData.revenue_range || null,
                 user_id: userUid,
+                location_country: 'Italia',
+                is_active: true,
+                updated_at: new Date().toISOString()
             };
 
-            // 4. La logica "Trova o Crea" per l'azienda ora usa l'ID corretto.
+            // Logica "Trova o Crea" per l'azienda
             const { data: existingCompany, error: findCompanyError } = await supabase
                 .from('companies')
                 .select('id')
                 .eq('user_id', userUid)
                 .single();
 
-            if (findCompanyError && findCompanyError.code !== 'PGRST116') {
-                throw findCompanyError;
-            }
+            if (findCompanyError && findCompanyError.code !== 'PGRST116') throw findCompanyError;
 
             if (existingCompany) {
-                console.log('Azienda trovata. Aggiornamento in corso...');
+                // Aggiorna
                 const { data: updatedCompany, error: updateError } = await supabase
                     .from('companies')
                     .update(companyPayload)
                     .eq('id', existingCompany.id)
-                    .select()
-                    .single();
-                
+                    .select('id').single();
                 if (updateError) throw updateError;
                 companyId = updatedCompany.id;
             } else {
-                console.log('Nessuna azienda trovata. Creazione in corso...');
+                // Crea
                 const { data: newCompany, error: insertError } = await supabase
                     .from('companies')
                     .insert(companyPayload)
-                    .select()
-                    .single();
-
+                    .select('id').single();
                 if (insertError) throw insertError;
                 companyId = newCompany.id;
             }
             
-            console.log(`ID Azienda ottenuto: ${companyId}`);
-
+            // Creazione sessione e upload file
             const { data: sessionData, error: sessionError } = await supabase
                 .from('checkup_sessions')
                 .insert({
@@ -187,9 +170,7 @@ export default function CheckupPage() {
                     user_id: userUid,
                     session_name: `Analisi per ${formData.company_name}`,
                     status: 'processing'
-                })
-                .select()
-                .single();
+                }).select('id').single();
 
             if (sessionError) throw sessionError;
             const sessionId = sessionData.id;
@@ -201,7 +182,6 @@ export default function CheckupPage() {
 
             if (uploadError) throw uploadError;
 
-            console.log(`Redirect alla sessione: /analisi/${sessionId}`);
             router.push(`/analisi/${sessionId}`);
 
         } catch (error) {
@@ -268,7 +248,7 @@ export default function CheckupPage() {
         );
     }
     
-    // --- RITORNO DEL COMPONENTE PRINCIPALE (SOLO SE AUTENTICATO) ---
+    // --- RITORNO DEL COMPONENTE PRINCIPALE ---
     return (
         <>
             <Head>
