@@ -75,56 +75,52 @@ export default function AnalisiReportPage() {
     }
   };
 
-  // Fetch session data
-  const fetchSessionData = async () => {
-    if (!sessionId) return;
-    
-    try {
-      const { data, error: sessionError } = await supabase
-        .from('checkup_sessions')
-        .select(`
-          *,
-          companies (*),
-          analysis_results (*)
-        `)
-        .eq('id', sessionId)
+ // Fetch session data
+const fetchSessionData = async () => {
+  if (!sessionId) return;
+  
+  try {
+    // 1. Recupera i dati della sessione
+    const { data: sessionResult, error: sessionError } = await supabase
+      .from('checkup_sessions')
+      .select('*, companies (*)')
+      .eq('id', sessionId)
+      .single();
+
+    if (sessionError) {
+      setError('Sessione non trovata');
+      return;
+    }
+
+    setSessionData(sessionResult);
+    console.log('📊 Session data:', sessionResult);
+
+    // 2. Recupera sempre i risultati dell'analisi se la sessione è completed
+    if (sessionResult.status === 'completed') {
+      const { data: analysisResult, error: analysisError } = await supabase
+        .from('analysis_results')
+        .select('*')
+        .eq('session_id', sessionId)
         .single();
 
-      if (sessionError) {
-        setError('Sessione non trovata');
-        return;
-      }
+      console.log('🔍 Analysis result:', analysisResult);
 
-setSessionData(data);
-
-// Analysis results handling
-if (data.analysis_id) {
-  // Recupera i dati dalla tabella analysis_results separatamente
-  const { data: analysisResult, error: analysisError } = await supabase
-    .from('analysis_results')
-    .select('*')
-    .eq('id', data.analysis_id)
-    .single();
-  
-  if (analysisError) {
-    console.error('Errore recupero analisi:', analysisError);
-    setError('Errore nel recupero dei risultati');
-  } else {
-    setAnalysisData(analysisResult);
-  }
-} else if (data.status === 'completed') {
-  setError('Analisi completata ma risultati mancanti');
-} else if (data.status === 'failed') {
-  setError(data.error_message || 'Analisi fallita');
-} else {
-  // Status is processing - setup realtime
-  setupRealtime();
+      if (analysisError) {
+        console.error('❌ Analysis error:', analysisError);
+        setError('Risultati di analisi non trovati');
+      } else {
+        setAnalysisData(analysisResult);
+        console.log('✅ Analysis data set:', analysisResult);
       }
-    } catch (err) {
-      setError(`Errore: ${err.message}`);
+    } else if (sessionResult.status === 'failed') {
+      setError(sessionResult.error_message || 'Analisi fallita');
+    } else {
+      setupRealtime();
     }
-  };
-
+  } catch (err) {
+    setError(`Errore: ${err.message}`);
+  }
+};
   // Setup realtime subscription
   const setupRealtime = () => {
     cleanup();
