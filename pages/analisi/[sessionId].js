@@ -73,42 +73,42 @@ const checkAuth = async () => {
   }
 };
 
-  // Fetch session data
-  const fetchSessionData = async () => {
-    if (!sessionId) return;
-    
-    try {
-      const { data, error: sessionError } = await supabase
-        .from('checkup_sessions')
-        .select(`
-          *,
-          companies (*),
-          analysis_results (*)
-        `)
-        .eq('id', sessionId)
-        .single();
+ // Fetch session data
+const fetchSessionData = async () => {
+  if (!sessionId) return;
+  
+  try {
+    const { data, error: sessionError } = await supabase
+      .from('checkup_sessions')
+      .select(`
+        *,
+        companies (*),
+        analysis_results (*)
+      `)
+      .eq('id', sessionId)
+      .single();
 
-      if (sessionError) {
-        setError('Sessione non trovata');
-        return;
-      }
-
-      setSessionData(data);
-      
-      if (data.analysis_results?.[0]) {
-        setAnalysisData(data.analysis_results[0]);
-      } else if (data.status === 'completed') {
-        setError('Analisi completata ma risultati mancanti');
-      } else if (data.status === 'failed') {
-        setError(data.error_message || 'Analisi fallita');
-      } else {
-        // Status is processing - setup realtime
-        setupRealtime();
-      }
-    } catch (err) {
-      setError(`Errore: ${err.message}`);
+    if (sessionError) {
+      setError('Sessione non trovata');
+      return;
     }
-  };
+
+    setSessionData(data);
+    
+    if (data.analysis_results?.[0]) {
+      setAnalysisData(data.analysis_results[0]);
+    } else if (data.status === 'completed') {
+      setError('Analisi completata ma risultati mancanti');
+    } else if (data.status === 'failed') {
+      setError(data.error_message || 'Analisi fallita');
+    } else {
+      // Status is processing - setup realtime
+      setupRealtime();
+    }
+  } catch (err) {
+    setError(`Errore: ${err.message}`);
+  }
+};
 
   // Setup realtime subscription
   const setupRealtime = () => {
