@@ -393,7 +393,82 @@ export default function AnalisiReportPage() {
                 <title>{companyData?.company_name ? `Report ${companyData.company_name} - PMIScout` : 'Report Analisi - PMIScout'}</title>
                 <script src="https://cdn.tailwindcss.com"></script>
                 <link rel="preconnect" href="https://fonts.googleapis.com" />
-                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />import React, { useState, useEffect } from 'react';
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
+                <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@500;600;700&display=swap" rel="stylesheet" />
+                <style>{` 
+                    body { font-family: 'Inter', sans-serif; } 
+                    h1, h2, h3, h4 { font-family: 'Montserrat', sans-serif; }
+                    @media print {
+                        .no-print { display: none !important; }
+                        body { background: white !important; }
+                        .bg-slate-50 { background: white !important; }
+                    }
+                `}</style>
+                <script dangerouslySetInnerHTML={{ __html: `var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,nocode,profile,support', tokenStorage: 'cookie' };` }} />
+                <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
+            </Head>
+
+            <div className="relative flex min-h-screen bg-slate-50 text-slate-800">
+                <aside className={`no-print absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                    <div className="flex flex-col h-full">
+                        <div className="flex items-center justify-center h-16 border-b">
+                            <Link href="/">
+                                <a className="text-2xl font-bold text-blue-600 hover:text-blue-700 transition-colors">PMIScout</a>
+                            </Link>
+                        </div>
+                        <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
+                            <nav className="flex-1 px-2 pb-4 space-y-1">
+                                {navLinks.map((link) => (
+                                    <Link key={link.text} href={link.href}>
+                                        <a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
+                                            <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
+                                            {link.text}
+                                        </a>
+                                    </Link>
+                                ))}
+                            </nav>
+                            <div className="px-2 py-3 border-t border-slate-200">
+                                <div className="flex items-center px-2 py-2 text-xs text-slate-500">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                                    Connesso come {userName}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                {isSidebarOpen && <div className="no-print fixed inset-0 z-10 bg-black bg-opacity-50 md:hidden" onClick={() => setIsSidebarOpen(false)} />}
+                
+                <div className="flex flex-col flex-1 w-0 overflow-hidden">
+                    <header className="no-print relative z-10 flex items-center justify-between flex-shrink-0 h-16 px-4 bg-white border-b md:hidden">
+                         <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 rounded-md hover:text-slate-900 hover:bg-slate-100 transition-colors">
+                            <Icon path={icons.menu} />
+                        </button>
+                        <Link href="/"><a className="text-xl font-bold text-blue-600">PMIScout</a></Link>
+                        <div className="w-8" />
+                    </header>
+
+                    <main className="relative flex-1 overflow-y-auto focus:outline-none">
+                        <div className="py-6 mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+                            <div className="no-print flex items-center space-x-4 mb-6">
+                                <div className="p-3 bg-blue-100 rounded-xl">
+                                    <Icon path={icons.checkup} className="w-8 h-8 text-blue-600" />
+                                </div>
+                                <div>
+                                    <h1 className="text-3xl font-bold text-slate-900">Report Analisi AI</h1>
+                                    <p className="text-lg text-slate-600">
+                                        {companyData ? `Analisi per ${companyData.company_name}` : 'Caricamento dati...'}
+                                    </p>
+                                </div>
+                            </div>
+                            {renderContent()}
+                        </div>
+                    </main>
+                </div>
+            </div>
+        </>
+    );
+}import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
