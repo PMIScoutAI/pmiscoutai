@@ -39,7 +39,10 @@ export default function CheckupPage() {
             if (typeof window !== 'undefined' && window.Outseta) {
                 window.Outseta.getUser()
                     .then(user => {
-                        if (user && user.Person && user.Person.Uid) {
+                        // === MODIFICA QUI ===
+                        // Controllo generico per vedere se un utente è loggato.
+                        // Questo previene il loop di redirect.
+                        if (user && user.Uid) {
                             setUserName(user.FirstName || user.Email.split('@')[0]);
                             setOutsetaUser(user);
                             setIsLoading(false);
@@ -84,6 +87,7 @@ export default function CheckupPage() {
             alert('Per favore, carica un documento di bilancio.');
             return;
         }
+        // Il controllo specifico e severo rimane qui, al momento del bisogno.
         if (!outsetaUser || !outsetaUser.Person || !outsetaUser.Person.Uid) {
             alert("Errore di autenticazione, impossibile procedere. Ricarica la pagina e riprova.");
             setIsSubmitting(false);
