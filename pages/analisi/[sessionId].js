@@ -119,7 +119,6 @@ if (data.analysis_id) {
 } else {
   // Status is processing - setup realtime
   setupRealtime();
-}
       }
     } catch (err) {
       setError(`Errore: ${err.message}`);
