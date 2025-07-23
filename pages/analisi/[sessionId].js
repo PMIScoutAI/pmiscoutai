@@ -1,8 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
+console.log('✅ STEP 1: React imports OK');
+
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+console.log('✅ STEP 2: Next imports OK');
+
 import { supabase } from '../../utils/supabaseClient';
+console.log('✅ STEP 3: Supabase import OK');
 
 // Icone SVG
 const Icon = ({ path, className = 'w-6 h-6' }) => (
