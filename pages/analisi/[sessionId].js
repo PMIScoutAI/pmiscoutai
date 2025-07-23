@@ -65,7 +65,7 @@ export default function AnalisiReportPage() {
           setIsLoading(false);
         }
       } else {
-        timeoutRef.current = setTimeout(checkAuth, 500);
+        timeoutRef.current = setTimeout(checkAuth, 3000);
       }
     } catch (err) {
       setIsAuthenticated(false);
