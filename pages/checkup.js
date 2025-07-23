@@ -10,7 +10,8 @@ export default function CheckupPage() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [userName, setUserName] = useState('');
     const [isLoading, setIsLoading] = useState(true);
-    const [outsetaUser, setOutsetaUser] = useState(null);
+    // Rimuoviamo outsetaUser dallo stato, lo prenderemo al momento del bisogno.
+    // const [outsetaUser, setOutsetaUser] = useState(null);
     const router = useRouter();
 
     // STATI SPECIFICI DEL CHECKUP
@@ -39,12 +40,9 @@ export default function CheckupPage() {
             if (typeof window !== 'undefined' && window.Outseta) {
                 window.Outseta.getUser()
                     .then(user => {
-                        // === MODIFICA QUI ===
-                        // Controllo generico per vedere se un utente è loggato.
-                        // Questo previene il loop di redirect.
                         if (user && user.Uid) {
                             setUserName(user.FirstName || user.Email.split('@')[0]);
-                            setOutsetaUser(user);
+                            // Non salviamo più l'utente nello stato, basta sapere il nome.
                             setIsLoading(false);
                         } else {
                             window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login&returnUrl=' + encodeURIComponent(window.location.href);
@@ -87,16 +85,21 @@ export default function CheckupPage() {
             alert('Per favore, carica un documento di bilancio.');
             return;
         }
-        // Il controllo specifico e severo rimane qui, al momento del bisogno.
-        if (!outsetaUser || !outsetaUser.Person || !outsetaUser.Person.Uid) {
-            alert("Errore di autenticazione, impossibile procedere. Ricarica la pagina e riprova.");
-            setIsSubmitting(false);
-            return;
-        }
         setIsSubmitting(true);
 
         try {
-            const userUid = outsetaUser.Person.Uid;
+            // === MODIFICA CHIAVE QUI ===
+            // Richiediamo i dati utente FRESCHI al momento del submit.
+            const freshOutsetaUser = await window.Outseta.getUser();
+
+            // Eseguiamo il controllo sui dati appena ottenuti.
+            if (!freshOutsetaUser || !freshOutsetaUser.Person || !freshOutsetaUser.Person.Uid) {
+                alert("Errore di autenticazione, impossibile procedere. Ricarica la pagina e riprova.");
+                setIsSubmitting(false);
+                return;
+            }
+
+            const userUid = freshOutsetaUser.Person.Uid;
             let companyId;
 
             // Dati dell'azienda da inserire o aggiornare
