@@ -4,12 +4,15 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { supabase } from '../../utils/supabaseClient';
 
+console.log('✅ STEP 1: All imports OK');
+
 // Icone SVG
 const Icon = ({ path, className = 'w-6 h-6' }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     {path}
   </svg>
 );
+console.log('✅ STEP 4: Icon component OK');
 
 const icons = {
   dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
@@ -19,11 +22,7 @@ const icons = {
   home: <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></>,
   spark: <><path d="M12 3v6l4-4-4-4" /><path d="M12 21v-6l-4 4 4 4" /><path d="M3 12h6l-4-4 4-4" /><path d="M21 12h-6l4 4-4 4" /></>,
   warning: <><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
-  download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>,
-  trendingUp: <><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></>,
-  dollarSign: <><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></>,
-  target: <><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></>,
-  alertCircle: <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>
+  download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>
 };
 
 export default function AnalisiReportPage() {
@@ -38,7 +37,6 @@ export default function AnalisiReportPage() {
   const [sessionData, setSessionData] = useState(null);
   const [analysisData, setAnalysisData] = useState(null);
   const [error, setError] = useState(null);
-  const [aiProgress, setAiProgress] = useState('');
   
   // Ref per cleanup
   const channelRef = useRef(null);
@@ -56,98 +54,83 @@ export default function AnalisiReportPage() {
     }
   };
   
-  // Outseta authentication
-  const checkAuth = async () => {
-    try {
-      if (typeof window !== 'undefined' && window.Outseta) {
-        const user = await window.Outseta.getUser();
-        if (user?.Email) {
-          setIsAuthenticated(true);
-          setUserName(user.FirstName || user.Email.split('@')[0]);
-          setIsLoading(false);
-        } else {
-          setIsAuthenticated(false);
-          setIsLoading(false);
-        }
+// Outseta
+const checkAuth = async () => {
+  try {
+    if (typeof window !== 'undefined' && window.Outseta) {
+      const user = await window.Outseta.getUser();
+      if (user?.Email) {
+        setIsAuthenticated(true);
+        setUserName(user.FirstName || user.Email.split('@')[0]);
+        setIsLoading(false);
       } else {
-        timeoutRef.current = setTimeout(checkAuth, 3000);
+        setIsAuthenticated(false);
+        setIsLoading(false);
       }
-    } catch (err) {
-      setIsAuthenticated(false);
-      setIsLoading(false);
+    } else {
+      timeoutRef.current = setTimeout(checkAuth, 3000);
     }
-  };
+  } catch (err) {
+    setIsAuthenticated(false);
+    setIsLoading(false);
+  }
+};
 
-  // 🆕 NUOVA FUNZIONE: Chiama Edge Function AI
-  const triggerAIAnalysis = async () => {
-    try {
-      setAiProgress('Avvio analisi AI...');
-      
-      const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/ai-analysis`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({
-          session_id: sessionId
-        })
-      });
+// Fetch session data
+const fetchSessionData = async () => {
+  if (!sessionId) return;
+  
+  try {
+    const { data, error: sessionError } = await supabase
+      .from('checkup_sessions')
+      .select(`
+        *,
+        companies (*),
+        analysis_results (*)
+      `)
+      .eq('id', sessionId)
+      .single();
 
-      const result = await response.json();
-      
-      if (result.success) {
-        setAiProgress('Analisi completata! Caricamento risultati...');
-        // Ricarica i dati dopo il successo
-        setTimeout(() => fetchSessionData(), 2000);
-      } else {
-        throw new Error(result.error || 'Errore durante l\'analisi AI');
-      }
-    } catch (error) {
-      console.error('Errore AI Analysis:', error);
-      setError(`Errore durante l'analisi: ${error.message}`);
-      setAiProgress('');
+    if (sessionError) {
+      setError('Sessione non trovata');
+      return;
     }
-  };
 
-  // Fetch session data
-  const fetchSessionData = async () => {
-    if (!sessionId) return;
+    setSessionData(data);
     
-    try {
-      const { data, error: sessionError } = await supabase
-        .from('checkup_sessions')
-        .select(`
-          *,
-          companies (*),
-          analysis_results (*)
-        `)
-        .eq('id', sessionId)
-        .single();
-
-      if (sessionError) {
-        setError('Sessione non trovata');
-        return;
-      }
-
-      setSessionData(data);
-      
-      // 🆕 LOGICA MIGLIORATA per gestire i risultati
-      if (data.analysis_results && data.analysis_results.length > 0) {
-        setAnalysisData(data.analysis_results[0]);
-        setAiProgress('');
-      } else if (data.status === 'completed') {
-        setError('Analisi completata ma risultati mancanti');
-      } else if (data.status === 'failed') {
-        setError(data.error_message || 'Analisi fallita');
-      } else if (data.status === 'processing' && !aiProgress) {
-        // 🆕 AUTO-TRIGGER dell'AI se status è processing
-        console.log('🤖 Status processing detected, triggering AI analysis...');
-        triggerAIAnalysis();
-      }
-    } catch (err) {
-      setError(`Errore: ${err.message}`);
+    // FIX: analysis_results è un oggetto, non un array
+    if (data.analysis_results) {
+      setAnalysisData(data.analysis_results);
+    } else if (data.status === 'completed') {
+      setError('Analisi completata ma risultati mancanti');
+    } else if (data.status === 'failed') {
+      setError(data.error_message || 'Analisi fallita');
+    } else {
+      // Status is processing - setup realtime
+      setupRealtime();
     }
+  } catch (err) {
+    setError(`Errore: ${err.message}`);
+  }
+};
+
+  // Setup realtime subscription
+  const setupRealtime = () => {
+    cleanup(); // Clean existing channel
+    
+    const channel = supabase
+      .channel(`session_${sessionId}`)
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'checkup_sessions', filter: `id=eq.${sessionId}` },
+        () => fetchSessionData()
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'analysis_results', filter: `session_id=eq.${sessionId}` },
+        () => fetchSessionData()
+      )
+      .subscribe();
+      
+    channelRef.current = channel;
   };
 
   // Effects
@@ -169,25 +152,6 @@ export default function AnalisiReportPage() {
     { href: '/checkup', text: 'Check-UP AI', icon: icons.checkup, active: true },
     { href: '/profile', text: 'Profilo', icon: icons.profile, active: false },
   ];
-
-  // 🆕 FUNZIONE per ottenere colore Health Score
-  const getHealthScoreColor = (score) => {
-    if (score >= 80) return 'text-green-600';
-    if (score >= 60) return 'text-yellow-600'; 
-    if (score >= 40) return 'text-orange-600';
-    return 'text-red-600';
-  };
-
-  // 🆕 FUNZIONE per ottenere colore status metric
-  const getMetricStatusColor = (status) => {
-    switch(status) {
-      case 'excellent': return 'bg-green-100 text-green-800 border-green-200';
-      case 'good': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'warning': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'poor': return 'bg-red-100 text-red-800 border-red-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
 
   // Loading state
   if (isLoading) {
@@ -231,7 +195,7 @@ export default function AnalisiReportPage() {
     );
   }
 
-  // Main content rendering
+  // Main content
   const renderContent = () => {
     if (error) {
       return (
@@ -268,17 +232,22 @@ export default function AnalisiReportPage() {
       );
     }
 
-    // 🆕 LOADING STATE migliorato per AI processing
     if (!analysisData) {
       return (
         <div className="text-center py-20">
           <div className="inline-block animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mb-6"></div>
           <h3 className="text-2xl font-bold text-slate-800 mb-2">Analisi in corso...</h3>
           <p className="text-slate-600 mb-4">L'IA sta elaborando il documento.</p>
-          {aiProgress && (
+          {sessionData.progress_percentage && (
             <div className="max-w-md mx-auto">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm text-blue-800">{aiProgress}</p>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-blue-800">Progresso</span>
+                  <span className="text-sm text-blue-600">{sessionData.progress_percentage}%</span>
+                </div>
+                <div className="w-full bg-blue-200 rounded-full h-2">
+                  <div className="bg-blue-600 h-2 rounded-full transition-all duration-500" style={{ width: `${sessionData.progress_percentage}%` }}></div>
+                </div>
               </div>
             </div>
           )}
@@ -286,198 +255,51 @@ export default function AnalisiReportPage() {
       );
     }
 
-    // 🆕 MOSTRA RISULTATI con design professionale
+    // Show results
     const company = sessionData.companies;
-    const healthScore = analysisData.health_score || 0;
-    const keyMetrics = analysisData.key_metrics || {};
-    const swot = analysisData.swot || {};
-    const recommendations = analysisData.recommendations || [];
+    const healthScore = analysisData.health_score || 75;
     
     return (
       <div className="space-y-8">
-        {/* 🆕 HEADER con Health Score prominente */}
-        <div className="bg-white p-8 rounded-xl shadow-sm border">
-          <div className="flex flex-col lg:flex-row justify-between items-start mb-6">
-            <div className="flex-1">
-              <h2 className="text-3xl font-bold text-slate-900 mb-3">{company?.company_name || 'Azienda'}</h2>
-              <div className="flex flex-wrap gap-4 text-sm text-slate-600 mb-4">
-                <span className="flex items-center">
-                  <Icon path={icons.target} className="w-4 h-4 mr-1" />
-                  {company?.industry_sector}
-                </span>
-                <span className="flex items-center">
-                  👥 {company?.company_size}
-                </span>
-                {company?.employee_count && (
-                  <span className="flex items-center">
-                    🧑‍💼 {company.employee_count} dipendenti
-                  </span>
-                )}
-                <span className="flex items-center">
-                  📅 {new Date(sessionData.created_at).toLocaleDateString('it-IT')}
-                </span>
+        {/* Header */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border">
+          <div className="flex flex-col md:flex-row justify-between items-start mb-4">
+            <div>
+              <h2 className="text-3xl font-bold text-slate-900 mb-2">{company?.company_name || 'Azienda'}</h2>
+              <div className="flex flex-wrap gap-4 text-sm text-slate-600">
+                <span>📍 {company?.industry_sector}</span>
+                <span>👥 {company?.company_size}</span>
+                {company?.employee_count && <span>🧑‍💼 {company.employee_count} dipendenti</span>}
+                <span>📅 {new Date(sessionData.created_at).toLocaleDateString('it-IT')}</span>
               </div>
-              {analysisData.summary && (
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-slate-900 mb-2">📋 Sintesi Esecutiva</h4>
-                  <p className="text-slate-700">{analysisData.summary}</p>
-                </div>
-              )}
             </div>
-            
-            {/* Health Score grande e visibile */}
-            <div className="text-center mt-6 lg:mt-0 lg:ml-8">
-              <p className="text-sm font-medium text-slate-600 mb-2">Health Score</p>
-              <div className={`text-6xl font-bold ${getHealthScoreColor(healthScore)}`}>
+            <div className="text-center mt-4 md:mt-0">
+              <p className="text-sm font-medium text-slate-600 mb-1">Health Score</p>
+              <div className={`text-6xl font-bold ${healthScore >= 80 ? 'text-green-600' : healthScore >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>
                 {healthScore}
                 <span className="text-2xl text-slate-400">/100</span>
               </div>
-              <div className={`mt-2 px-3 py-1 rounded-full text-sm font-medium ${
-                healthScore >= 80 ? 'bg-green-100 text-green-800' :
-                healthScore >= 60 ? 'bg-yellow-100 text-yellow-800' :
-                healthScore >= 40 ? 'bg-orange-100 text-orange-800' :
-                'bg-red-100 text-red-800'
-              }`}>
-                {healthScore >= 80 ? 'Eccellente' :
-                 healthScore >= 60 ? 'Buono' :
-                 healthScore >= 40 ? 'Discreto' : 'Da migliorare'}
-              </div>
             </div>
+          </div>
+          <div className="bg-slate-50 rounded-lg p-4">
+            <h4 className="font-semibold text-slate-900 mb-2">📋 Riepilogo</h4>
+            <p className="text-slate-700">{analysisData.summary || 'Analisi completata con successo.'}</p>
           </div>
         </div>
 
-        {/* 🆕 METRICHE CHIAVE in card */}
-        {Object.keys(keyMetrics).length > 0 && (
-          <div className="bg-white p-8 rounded-xl shadow-sm border">
-            <h3 className="text-xl font-semibold text-slate-900 mb-6 flex items-center">
-              <Icon path={icons.trendingUp} className="w-6 h-6 mr-3 text-blue-600" />
-              Indicatori Finanziari Chiave
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {Object.entries(keyMetrics).map(([key, metric]) => (
-                <div key={key} className="text-center">
-                  <div className="bg-slate-50 rounded-lg p-6 border-2 border-transparent hover:border-blue-200 transition-colors">
-                    <h4 className="text-sm font-medium text-slate-600 mb-2">
-                      {key === 'roe' ? 'ROE' :
-                       key === 'liquidity' ? 'Liquidità' :
-                       key === 'debt_ratio' ? 'Indebitamento' :
-                       key === 'profit_margin' ? 'Margine Profitto' : key}
-                    </h4>
-                    <div className="text-2xl font-bold text-slate-900 mb-1">
-                      {typeof metric.value === 'number' ? 
-                        (key === 'liquidity' ? metric.value.toFixed(1) : `${metric.value}%`) :
-                        metric.value
-                      }
-                    </div>
-                    <div className="text-xs text-slate-500 mb-2">
-                      Benchmark: {metric.benchmark_range}
-                    </div>
-                    <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium border ${getMetricStatusColor(metric.status)}`}>
-                      {metric.status === 'excellent' ? '🚀 Eccellente' :
-                       metric.status === 'good' ? '✅ Buono' :
-                       metric.status === 'warning' ? '⚠️ Attenzione' :
-                       '🔴 Critico'}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 🆕 ANALISI SWOT migliorata */}
-        {(swot.strengths || swot.weaknesses) && (
-          <div className="bg-white p-8 rounded-xl shadow-sm border">
-            <h3 className="text-xl font-semibold text-slate-900 mb-6 flex items-center">
-              <Icon path={icons.target} className="w-6 h-6 mr-3 text-blue-600" />
-              Analisi SWOT
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {swot.strengths && (
-                <div className="bg-green-50 border-l-4 border-green-500 p-6 rounded-lg">
-                  <h4 className="font-semibold text-green-900 mb-3 flex items-center">
-                    💪 Punti di Forza
-                  </h4>
-                  <ul className="space-y-2">
-                    {swot.strengths.map((strength, index) => (
-                      <li key={index} className="text-green-800 text-sm flex items-start">
-                        <span className="text-green-600 mr-2">•</span>
-                        {strength}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              
-              {swot.weaknesses && (
-                <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-lg">
-                  <h4 className="font-semibold text-red-900 mb-3 flex items-center">
-                    ⚠️ Aree di Miglioramento
-                  </h4>
-                  <ul className="space-y-2">
-                    {swot.weaknesses.map((weakness, index) => (
-                      <li key={index} className="text-red-800 text-sm flex items-start">
-                        <span className="text-red-600 mr-2">•</span>
-                        {weakness}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* 🆕 RACCOMANDAZIONI con priorità */}
-        {recommendations.length > 0 && (
-          <div className="bg-white p-8 rounded-xl shadow-sm border">
-            <h3 className="text-xl font-semibold text-slate-900 mb-6 flex items-center">
-              <Icon path={icons.spark} className="w-6 h-6 mr-3 text-blue-600" />
-              Raccomandazioni Strategiche
-            </h3>
-            <div className="space-y-4">
-              {recommendations.map((rec, index) => (
-                <div key={index} className="border rounded-lg p-6 hover:shadow-md transition-shadow">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1">
-                      <p className="text-slate-800 font-medium">{rec.text}</p>
-                    </div>
-                    <div className="ml-4 flex flex-col items-end space-y-2">
-                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                        rec.priority === 'alta' ? 'bg-red-100 text-red-800' :
-                        rec.priority === 'media' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-green-100 text-green-800'
-                      }`}>
-                        {rec.priority === 'alta' ? '🔥 Alta Priorità' :
-                         rec.priority === 'media' ? '⚡ Media Priorità' :
-                         '📅 Bassa Priorità'}
-                      </span>
-                      {rec.timeframe && (
-                        <span className="text-xs text-slate-500">
-                          Entro {rec.timeframe}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 🆕 AZIONI FINALI */}
+        {/* Actions */}
         <div className="bg-white p-6 rounded-xl shadow-sm border">
           <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
             <div>
               <p className="text-sm text-slate-600">
                 Completata: {sessionData.completed_at ? new Date(sessionData.completed_at).toLocaleString('it-IT') : 'In corso...'}
               </p>
-              <p className="text-xs text-slate-500">ID Sessione: {sessionId}</p>
+              <p className="text-xs text-slate-500">ID: {sessionId}</p>
             </div>
             <div className="flex space-x-3">
               <button onClick={() => window.print()} className="flex items-center space-x-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors">
                 <Icon path={icons.download} className="w-4 h-4" />
-                <span>Stampa Report</span>
+                <span>Stampa</span>
               </button>
               <Link href="/checkup">
                 <a className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
@@ -495,7 +317,7 @@ export default function AnalisiReportPage() {
   return (
     <>
       <Head>
-        <title>Report Analisi AI - PMIScout</title>
+        <title>Report Analisi - PMIScout</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <script dangerouslySetInnerHTML={{ __html: `var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,nocode,profile,support', tokenStorage: 'cookie' };` }} />
         <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
