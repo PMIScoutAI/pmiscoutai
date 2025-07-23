@@ -85,8 +85,7 @@ export default function CheckupPage() {
         setIsSubmitting(true);
 
         try {
-            // === MODIFICA DEFINITIVA QUI ===
-            // 1. Prendiamo l'utente da Outseta solo per avere l'email.
+            // 1. Prendiamo l'utente da Outseta per avere l'email e i dati anagrafici.
             const outsetaUser = await window.Outseta.getUser();
             if (!outsetaUser || !outsetaUser.Email) {
                 alert("Impossibile recuperare l'email dell'utente. Riprova.");
@@ -94,18 +93,42 @@ export default function CheckupPage() {
                 return;
             }
 
+            let userUid;
+
             // 2. Usiamo l'email per trovare il nostro ID utente interno su Supabase.
-            const { data: supabaseUser, error: userError } = await supabase
+            let { data: supabaseUser, error: findUserError } = await supabase
                 .from('users')
                 .select('id')
                 .eq('email', outsetaUser.Email)
                 .single();
 
-            if (userError || !supabaseUser) {
-                throw new Error("Utente non trovato nel nostro database. Contatta il supporto.");
+            // 3. Se l'utente non viene trovato (errore specifico "nessuna riga"), lo creiamo.
+            if (findUserError && findUserError.code === 'PGRST116') {
+                console.log("Utente non trovato nel DB, lo creo...");
+                const { data: newUser, error: createUserError } = await supabase
+                    .from('users')
+                    .insert({
+                        email: outsetaUser.Email,
+                        first_name: outsetaUser.FirstName,
+                        last_name: outsetaUser.LastName,
+                        full_name: outsetaUser.FullName,
+                        // Aggiungi altri campi se necessario, es. outseta_user_id
+                    })
+                    .select('id')
+                    .single();
+                
+                if (createUserError) {
+                    throw new Error(`Errore durante la creazione dell'utente: ${createUserError.message}`);
+                }
+                // Usiamo i dati dell'utente appena creato.
+                supabaseUser = newUser;
+            } else if (findUserError) {
+                // Se c'è un errore diverso, lo lanciamo.
+                throw findUserError;
             }
             
-            const userUid = supabaseUser.id; // Questo è l'ID UUID corretto!
+            // A questo punto, abbiamo per forza un utente valido.
+            userUid = supabaseUser.id;
             let companyId;
 
             // Dati dell'azienda da inserire o aggiornare
@@ -124,15 +147,15 @@ export default function CheckupPage() {
                 user_id: userUid,
             };
 
-            // 3. La logica "Trova o Crea" ora usa l'ID corretto.
-            const { data: existingCompany, error: findError } = await supabase
+            // 4. La logica "Trova o Crea" per l'azienda ora usa l'ID corretto.
+            const { data: existingCompany, error: findCompanyError } = await supabase
                 .from('companies')
                 .select('id')
                 .eq('user_id', userUid)
                 .single();
 
-            if (findError && findError.code !== 'PGRST116') {
-                throw findError;
+            if (findCompanyError && findCompanyError.code !== 'PGRST116') {
+                throw findCompanyError;
             }
 
             if (existingCompany) {
