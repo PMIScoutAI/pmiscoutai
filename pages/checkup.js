@@ -9,9 +9,8 @@ export default function CheckupPage() {
     // STATI PRINCIPALI (Sidebar, Autenticazione, Caricamento)
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [userName, setUserName] = useState('');
-    // 'isAuthenticated' è stato rimosso per semplificare la logica.
     const [isLoading, setIsLoading] = useState(true);
-    const [outsetaUser, setOutsetaUser] = useState(null); // Unico stato per i dati utente
+    const [outsetaUser, setOutsetaUser] = useState(null);
     const router = useRouter();
 
     // STATI SPECIFICI DEL CHECKUP
@@ -40,28 +39,24 @@ export default function CheckupPage() {
             if (typeof window !== 'undefined' && window.Outseta) {
                 window.Outseta.getUser()
                     .then(user => {
-                        // Se l'utente esiste ed ha un Uid, è autenticato.
-                        if (user && user.Uid) {
+                        if (user && user.Person && user.Person.Uid) {
                             setUserName(user.FirstName || user.Email.split('@')[0]);
                             setOutsetaUser(user);
-                            setIsLoading(false); // Stoppa il caricamento, mostra la pagina
+                            setIsLoading(false);
                         } else {
-                            // Altrimenti, reindirizza subito al login.
                             window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login&returnUrl=' + encodeURIComponent(window.location.href);
                         }
                     })
                     .catch(error => {
                         console.error('Auth error:', error);
-                        // Anche in caso di errore, reindirizza al login.
                         window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login';
                     });
             } else {
-                // Se Outseta non è ancora pronto, riprova tra poco.
                 setTimeout(verifyAuth, 100);
             }
         };
         verifyAuth();
-    }, []); // L'array vuoto assicura che venga eseguito solo una volta.
+    }, []);
 
     // --- FUNZIONI DI GESTIONE DEL FORM A STEP ---
     const handleInputChange = (e) => {
@@ -82,15 +77,14 @@ export default function CheckupPage() {
         setCurrentStep(prev => prev - 1);
     };
 
-    // --- FUNZIONE DI SUBMIT ---
+    // --- FUNZIONE DI SUBMIT CON LOGICA "TROVA O CREA" (UPSERT) ---
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!balanceSheetFile) {
             alert('Per favore, carica un documento di bilancio.');
             return;
         }
-        // Questo controllo rimane una sicurezza fondamentale prima di scrivere sul DB.
-        if (!outsetaUser || !outsetaUser.Uid) {
+        if (!outsetaUser || !outsetaUser.Person || !outsetaUser.Person.Uid) {
             alert("Errore di autenticazione, impossibile procedere. Ricarica la pagina e riprova.");
             setIsSubmitting(false);
             return;
@@ -98,38 +92,71 @@ export default function CheckupPage() {
         setIsSubmitting(true);
 
         try {
-            // STEP 1: Salva i dati dell'azienda nel database e ottieni l'ID
-            const { data: companyData, error: companyError } = await supabase
+            const userUid = outsetaUser.Person.Uid;
+            let companyId;
+
+            // Dati dell'azienda da inserire o aggiornare
+            const companyPayload = {
+                company_name: formData.company_name,
+                vat_number: formData.vat_number,
+                industry_sector: formData.industry_sector,
+                ateco_code: formData.ateco_code,
+                company_size: formData.company_size,
+                employee_count: formData.employee_count ? parseInt(formData.employee_count, 10) : null,
+                location_city: formData.location_city,
+                location_region: formData.location_region,
+                website_url: formData.website_url,
+                description: formData.description,
+                revenue_range: formData.revenue_range,
+                user_id: userUid,
+            };
+
+            // STEP 1: CERCA se l'azienda esiste già per questo utente
+            const { data: existingCompany, error: findError } = await supabase
                 .from('companies')
-                .insert({
-                    company_name: formData.company_name,
-                    vat_number: formData.vat_number,
-                    industry_sector: formData.industry_sector,
-                    ateco_code: formData.ateco_code,
-                    company_size: formData.company_size,
-                    employee_count: formData.employee_count ? parseInt(formData.employee_count, 10) : null,
-                    location_city: formData.location_city,
-                    location_region: formData.location_region,
-                    website_url: formData.website_url,
-                    description: formData.description,
-                    revenue_range: formData.revenue_range,
-                    // === MODIFICHE CHIAVE QUI ===
-                    // 1. Il nome della colonna è 'user_id', non 'owner_uid'
-                    user_id: outsetaUser.Uid, 
-                    // 2. Rimossi 'main_challenges' e 'business_goals' perché non esistono nella tabella
-                })
-                .select()
+                .select('id')
+                .eq('user_id', userUid)
                 .single();
 
-            if (companyError) throw companyError;
-            const companyId = companyData.id;
+            if (findError && findError.code !== 'PGRST116') {
+                // Errore diverso da "nessuna riga trovata"
+                throw findError;
+            }
 
-            // STEP 2: Crea la sessione di checkup collegata all'azienda e all'utente
+            if (existingCompany) {
+                // SE ESISTE: Aggiorna l'azienda esistente
+                console.log('Azienda trovata. Aggiornamento in corso...');
+                const { data: updatedCompany, error: updateError } = await supabase
+                    .from('companies')
+                    .update(companyPayload)
+                    .eq('id', existingCompany.id)
+                    .select()
+                    .single();
+                
+                if (updateError) throw updateError;
+                companyId = updatedCompany.id;
+
+            } else {
+                // SE NON ESISTE: Crea una nuova azienda
+                console.log('Nessuna azienda trovata. Creazione in corso...');
+                const { data: newCompany, error: insertError } = await supabase
+                    .from('companies')
+                    .insert(companyPayload)
+                    .select()
+                    .single();
+
+                if (insertError) throw insertError;
+                companyId = newCompany.id;
+            }
+            
+            console.log(`ID Azienda ottenuto: ${companyId}`);
+
+            // STEP 2: Crea una NUOVA sessione di checkup (questo è sempre un nuovo evento)
             const { data: sessionData, error: sessionError } = await supabase
                 .from('checkup_sessions')
                 .insert({
                     company_id: companyId,
-                    user_id: outsetaUser.Uid, // Anche qui usiamo user_id per coerenza
+                    user_id: userUid,
                     session_name: `Analisi per ${formData.company_name}`,
                     status: 'processing'
                 })
@@ -139,7 +166,7 @@ export default function CheckupPage() {
             if (sessionError) throw sessionError;
             const sessionId = sessionData.id;
 
-            // STEP 3: Carica il file PDF nello Storage di Supabase
+            // STEP 3: Carica il file PDF nello Storage
             const filePath = `public/${sessionId}/${balanceSheetFile.name}`;
             const { error: uploadError } = await supabase.storage
                 .from('checkup-documents')
@@ -147,7 +174,7 @@ export default function CheckupPage() {
 
             if (uploadError) throw uploadError;
 
-            // STEP 4: Reindirizza alla pagina di analisi con il vero ID di sessione
+            // STEP 4: Reindirizza alla pagina di analisi
             console.log(`Redirect alla sessione: /analisi/${sessionId}`);
             router.push(`/analisi/${sessionId}`);
 
@@ -193,8 +220,6 @@ export default function CheckupPage() {
     ];
 
     // --- BLOCCO DI CARICAMENTO ---
-    // Mostra lo spinner finché `verifyAuth` non ha finito.
-    // Se l'utente non è loggato, viene reindirizzato prima che questo blocco cambi.
     if (isLoading) {
         return (
             <>
