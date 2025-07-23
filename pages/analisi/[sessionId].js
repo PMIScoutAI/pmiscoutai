@@ -255,37 +255,228 @@ const fetchSessionData = async () => {
       );
     }
 
-    // Show results
-    const company = sessionData.companies;
-    const healthScore = analysisData.health_score || 75;
-    
-    return (
-      <div className="space-y-8">
-        {/* Header */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border">
-          <div className="flex flex-col md:flex-row justify-between items-start mb-4">
-            <div>
-              <h2 className="text-3xl font-bold text-slate-900 mb-2">{company?.company_name || 'Azienda'}</h2>
-              <div className="flex flex-wrap gap-4 text-sm text-slate-600">
-                <span>📍 {company?.industry_sector}</span>
-                <span>👥 {company?.company_size}</span>
-                {company?.employee_count && <span>🧑‍💼 {company.employee_count} dipendenti</span>}
-                <span>📅 {new Date(sessionData.created_at).toLocaleDateString('it-IT')}</span>
-              </div>
-            </div>
-            <div className="text-center mt-4 md:mt-0">
-              <p className="text-sm font-medium text-slate-600 mb-1">Health Score</p>
-              <div className={`text-6xl font-bold ${healthScore >= 80 ? 'text-green-600' : healthScore >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>
-                {healthScore}
-                <span className="text-2xl text-slate-400">/100</span>
-              </div>
-            </div>
+  // 🆕 SOSTITUISCI la parte "// Show results" in renderContent() con questo:
+
+// Show results - VERSIONE COMPLETA
+const company = sessionData.companies;
+const healthScore = analysisData.health_score || 75;
+const keyMetrics = analysisData.key_metrics || {};
+const swot = analysisData.swot || {};
+const recommendations = Array.isArray(analysisData.recommendations) 
+  ? analysisData.recommendations 
+  : (typeof analysisData.recommendations === 'string' 
+      ? JSON.parse(analysisData.recommendations) 
+      : []);
+
+// Funzione per colori Health Score
+const getHealthScoreColor = (score) => {
+  if (score >= 80) return 'text-green-600';
+  if (score >= 60) return 'text-yellow-600'; 
+  if (score >= 40) return 'text-orange-600';
+  return 'text-red-600';
+};
+
+// Funzione per colori metriche
+const getMetricStatusColor = (status) => {
+  switch(status) {
+    case 'excellent': return 'bg-green-100 text-green-800 border-green-200';
+    case 'good': return 'bg-blue-100 text-blue-800 border-blue-200';
+    case 'warning': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    case 'poor': return 'bg-red-100 text-red-800 border-red-200';
+    default: return 'bg-gray-100 text-gray-800 border-gray-200';
+  }
+};
+
+return (
+  <div className="space-y-8">
+    {/* 🆕 HEADER MIGLIORATO con Health Score prominente */}
+    <div className="bg-white p-8 rounded-xl shadow-sm border">
+      <div className="flex flex-col lg:flex-row justify-between items-start mb-6">
+        <div className="flex-1">
+          <h2 className="text-3xl font-bold text-slate-900 mb-3">{company?.company_name || 'Azienda'}</h2>
+          <div className="flex flex-wrap gap-4 text-sm text-slate-600 mb-4">
+            <span className="flex items-center">📍 {company?.industry_sector}</span>
+            <span className="flex items-center">👥 {company?.company_size}</span>
+            {company?.employee_count && (
+              <span className="flex items-center">🧑‍💼 {company.employee_count} dipendenti</span>
+            )}
+            <span className="flex items-center">📅 {new Date(sessionData.created_at).toLocaleDateString('it-IT')}</span>
           </div>
-          <div className="bg-slate-50 rounded-lg p-4">
-            <h4 className="font-semibold text-slate-900 mb-2">📋 Riepilogo</h4>
-            <p className="text-slate-700">{analysisData.summary || 'Analisi completata con successo.'}</p>
+          {analysisData.summary && (
+            <div className="bg-slate-50 rounded-lg p-4">
+              <h4 className="font-semibold text-slate-900 mb-2">📋 Sintesi Esecutiva</h4>
+              <p className="text-slate-700">{analysisData.summary}</p>
+            </div>
+          )}
+        </div>
+        
+        {/* Health Score grande e visibile */}
+        <div className="text-center mt-6 lg:mt-0 lg:ml-8">
+          <p className="text-sm font-medium text-slate-600 mb-2">Health Score</p>
+          <div className={`text-6xl font-bold ${getHealthScoreColor(healthScore)}`}>
+            {healthScore}
+            <span className="text-2xl text-slate-400">/100</span>
+          </div>
+          <div className={`mt-2 px-3 py-1 rounded-full text-sm font-medium ${
+            healthScore >= 80 ? 'bg-green-100 text-green-800' :
+            healthScore >= 60 ? 'bg-yellow-100 text-yellow-800' :
+            healthScore >= 40 ? 'bg-orange-100 text-orange-800' :
+            'bg-red-100 text-red-800'
+          }`}>
+            {healthScore >= 80 ? 'Eccellente' :
+             healthScore >= 60 ? 'Buono' :
+             healthScore >= 40 ? 'Discreto' : 'Da migliorare'}
           </div>
         </div>
+      </div>
+    </div>
+
+    {/* 🆕 METRICHE CHIAVE in card eleganti */}
+    {Object.keys(keyMetrics).length > 0 && (
+      <div className="bg-white p-8 rounded-xl shadow-sm border">
+        <h3 className="text-xl font-semibold text-slate-900 mb-6 flex items-center">
+          <Icon path={icons.spark} className="w-6 h-6 mr-3 text-blue-600" />
+          Indicatori Finanziari Chiave
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {Object.entries(keyMetrics).map(([key, metric]) => (
+            <div key={key} className="text-center">
+              <div className="bg-slate-50 rounded-lg p-6 border-2 border-transparent hover:border-blue-200 transition-all">
+                <h4 className="text-sm font-medium text-slate-600 mb-2 uppercase tracking-wide">
+                  {key === 'roe' ? 'ROE (Return on Equity)' :
+                   key === 'liquidity' ? 'Indice di Liquidità' :
+                   key === 'debt_ratio' ? 'Rapporto di Indebitamento' :
+                   key === 'profit_margin' ? 'Margine di Profitto' : key}
+                </h4>
+                <div className="text-3xl font-bold text-slate-900 mb-2">
+                  {key === 'liquidity' ? 
+                    metric.value.toFixed(2) : 
+                    `${metric.value}%`
+                  }
+                </div>
+                <div className="text-xs text-slate-500 mb-3">
+                  Benchmark settore: {metric.benchmark_range}
+                </div>
+                <div className={`inline-flex px-3 py-1 rounded-full text-xs font-medium border ${getMetricStatusColor(metric.status)}`}>
+                  {metric.status === 'excellent' ? '🚀 Eccellente' :
+                   metric.status === 'good' ? '✅ Buono' :
+                   metric.status === 'warning' ? '⚠️ Attenzione' :
+                   '🔴 Critico'}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {/* 🆕 ANALISI SWOT completa */}
+    {(swot.strengths || swot.weaknesses) && (
+      <div className="bg-white p-8 rounded-xl shadow-sm border">
+        <h3 className="text-xl font-semibold text-slate-900 mb-6 flex items-center">
+          <Icon path={icons.warning} className="w-6 h-6 mr-3 text-blue-600" />
+          Analisi SWOT
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Punti di Forza */}
+          {swot.strengths && (
+            <div className="bg-green-50 border-l-4 border-green-500 p-6 rounded-lg">
+              <h4 className="font-semibold text-green-900 mb-4 flex items-center text-lg">
+                💪 Punti di Forza
+              </h4>
+              <ul className="space-y-3">
+                {swot.strengths.map((strength, index) => (
+                  <li key={index} className="text-green-800 flex items-start">
+                    <span className="text-green-600 mr-3 mt-1">✓</span>
+                    <span className="flex-1">{strength}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
+          {/* Aree di Miglioramento */}
+          {swot.weaknesses && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-lg">
+              <h4 className="font-semibold text-red-900 mb-4 flex items-center text-lg">
+                ⚠️ Aree di Miglioramento
+              </h4>
+              <ul className="space-y-3">
+                {swot.weaknesses.map((weakness, index) => (
+                  <li key={index} className="text-red-800 flex items-start">
+                    <span className="text-red-600 mr-3 mt-1">⚡</span>
+                    <span className="flex-1">{weakness}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+
+    {/* 🆕 RACCOMANDAZIONI STRATEGICHE con priorità */}
+    {recommendations.length > 0 && (
+      <div className="bg-white p-8 rounded-xl shadow-sm border">
+        <h3 className="text-xl font-semibold text-slate-900 mb-6 flex items-center">
+          <Icon path={icons.spark} className="w-6 h-6 mr-3 text-blue-600" />
+          Raccomandazioni Strategiche
+        </h3>
+        <div className="space-y-4">
+          {recommendations.map((rec, index) => (
+            <div key={index} className="border border-slate-200 rounded-lg p-6 hover:shadow-md transition-all hover:border-blue-200">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex-1 pr-4">
+                  <p className="text-slate-800 font-medium text-lg mb-2">{rec.text}</p>
+                </div>
+                <div className="flex flex-col items-end space-y-2">
+                  <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium border ${
+                    rec.priority === 'alta' ? 'bg-red-50 text-red-800 border-red-200' :
+                    rec.priority === 'media' ? 'bg-yellow-50 text-yellow-800 border-yellow-200' :
+                    'bg-green-50 text-green-800 border-green-200'
+                  }`}>
+                    {rec.priority === 'alta' ? '🔥 Alta Priorità' :
+                     rec.priority === 'media' ? '⚡ Media Priorità' :
+                     '📅 Bassa Priorità'}
+                  </span>
+                  {rec.timeframe && (
+                    <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                      ⏱️ Entro {rec.timeframe}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {/* 🆕 AZIONI FINALI */}
+    <div className="bg-white p-6 rounded-xl shadow-sm border">
+      <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
+        <div>
+          <p className="text-sm text-slate-600">
+            Completata: {sessionData.completed_at ? new Date(sessionData.completed_at).toLocaleString('it-IT') : 'In corso...'}
+          </p>
+          <p className="text-xs text-slate-500">ID Sessione: {sessionId}</p>
+        </div>
+        <div className="flex space-x-3">
+          <button onClick={() => window.print()} className="flex items-center space-x-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors">
+            <Icon path={icons.download} className="w-4 h-4" />
+            <span>Stampa Report</span>
+          </button>
+          <Link href="/checkup">
+            <a className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              <Icon path={icons.spark} className="w-4 h-4" />
+              <span>Nuova Analisi</span>
+            </a>
+          </Link>
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
         {/* Actions */}
         <div className="bg-white p-6 rounded-xl shadow-sm border">
