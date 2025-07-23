@@ -113,9 +113,10 @@ export default function CheckupPage() {
                     website_url: formData.website_url,
                     description: formData.description,
                     revenue_range: formData.revenue_range,
-                    main_challenges: formData.main_challenges,
-                    business_goals: formData.business_goals,
-                    owner_uid: outsetaUser.Uid
+                    // === MODIFICHE CHIAVE QUI ===
+                    // 1. Il nome della colonna è 'user_id', non 'owner_uid'
+                    user_id: outsetaUser.Uid, 
+                    // 2. Rimossi 'main_challenges' e 'business_goals' perché non esistono nella tabella
                 })
                 .select()
                 .single();
@@ -128,7 +129,7 @@ export default function CheckupPage() {
                 .from('checkup_sessions')
                 .insert({
                     company_id: companyId,
-                    user_id: outsetaUser.Uid,
+                    user_id: outsetaUser.Uid, // Anche qui usiamo user_id per coerenza
                     session_name: `Analisi per ${formData.company_name}`,
                     status: 'processing'
                 })
