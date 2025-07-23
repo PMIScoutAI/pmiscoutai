@@ -96,10 +96,8 @@ export default function CheckupPage() {
             let userUid;
 
             // 2. Usiamo l'email per trovare il nostro ID utente interno su Supabase.
-            // === MODIFICA SUGGERITA DA TE ===
-            // Specifichiamo lo schema 'public' per essere più espliciti.
             let { data: supabaseUser, error: findUserError } = await supabase
-                .from('users') // Supabase JS V2+ gestisce lo schema a livello di client, non qui. Lasciamo 'users'.
+                .from('public.users') // ← SOLUZIONE: specifica public.users
                 .select('id')
                 .eq('email', outsetaUser.Email)
                 .single();
@@ -108,7 +106,7 @@ export default function CheckupPage() {
             if (findUserError && findUserError.code === 'PGRST116') {
                 console.log("Utente non trovato nel DB, lo creo...");
                 const { data: newUser, error: createUserError } = await supabase
-                    .from('users') // Anche qui, lasciamo 'users'.
+                    .from('public.users') // ← SPECIFICA public.users
                     .insert({
                         email: outsetaUser.Email,
                         first_name: outsetaUser.FirstName,
