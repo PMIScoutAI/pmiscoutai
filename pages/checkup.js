@@ -96,8 +96,10 @@ export default function CheckupPage() {
             let userUid;
 
             // 2. Usiamo l'email per trovare il nostro ID utente interno su Supabase.
+            // === MODIFICA SUGGERITA DA TE ===
+            // Specifichiamo lo schema 'public' per essere più espliciti.
             let { data: supabaseUser, error: findUserError } = await supabase
-                .from('users')
+                .from('users') // Supabase JS V2+ gestisce lo schema a livello di client, non qui. Lasciamo 'users'.
                 .select('id')
                 .eq('email', outsetaUser.Email)
                 .single();
@@ -106,13 +108,12 @@ export default function CheckupPage() {
             if (findUserError && findUserError.code === 'PGRST116') {
                 console.log("Utente non trovato nel DB, lo creo...");
                 const { data: newUser, error: createUserError } = await supabase
-                    .from('users')
+                    .from('users') // Anche qui, lasciamo 'users'.
                     .insert({
                         email: outsetaUser.Email,
                         first_name: outsetaUser.FirstName,
                         last_name: outsetaUser.LastName,
                         full_name: outsetaUser.FullName,
-                        // Aggiungi altri campi se necessario, es. outseta_user_id
                     })
                     .select('id')
                     .single();
@@ -120,14 +121,11 @@ export default function CheckupPage() {
                 if (createUserError) {
                     throw new Error(`Errore durante la creazione dell'utente: ${createUserError.message}`);
                 }
-                // Usiamo i dati dell'utente appena creato.
                 supabaseUser = newUser;
             } else if (findUserError) {
-                // Se c'è un errore diverso, lo lanciamo.
                 throw findUserError;
             }
             
-            // A questo punto, abbiamo per forza un utente valido.
             userUid = supabaseUser.id;
             let companyId;
 
@@ -159,7 +157,6 @@ export default function CheckupPage() {
             }
 
             if (existingCompany) {
-                // SE ESISTE: Aggiorna l'azienda esistente
                 console.log('Azienda trovata. Aggiornamento in corso...');
                 const { data: updatedCompany, error: updateError } = await supabase
                     .from('companies')
@@ -171,7 +168,6 @@ export default function CheckupPage() {
                 if (updateError) throw updateError;
                 companyId = updatedCompany.id;
             } else {
-                // SE NON ESISTE: Crea una nuova azienda
                 console.log('Nessuna azienda trovata. Creazione in corso...');
                 const { data: newCompany, error: insertError } = await supabase
                     .from('companies')
@@ -185,7 +181,6 @@ export default function CheckupPage() {
             
             console.log(`ID Azienda ottenuto: ${companyId}`);
 
-            // Il resto del flusso rimane invariato...
             const { data: sessionData, error: sessionError } = await supabase
                 .from('checkup_sessions')
                 .insert({
