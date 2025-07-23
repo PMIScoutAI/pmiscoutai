@@ -10,8 +10,6 @@ export default function CheckupPage() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [userName, setUserName] = useState('');
     const [isLoading, setIsLoading] = useState(true);
-    // Rimuoviamo outsetaUser dallo stato, lo prenderemo al momento del bisogno.
-    // const [outsetaUser, setOutsetaUser] = useState(null);
     const router = useRouter();
 
     // STATI SPECIFICI DEL CHECKUP
@@ -42,7 +40,6 @@ export default function CheckupPage() {
                     .then(user => {
                         if (user && user.Uid) {
                             setUserName(user.FirstName || user.Email.split('@')[0]);
-                            // Non salviamo più l'utente nello stato, basta sapere il nome.
                             setIsLoading(false);
                         } else {
                             window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login&returnUrl=' + encodeURIComponent(window.location.href);
@@ -88,18 +85,27 @@ export default function CheckupPage() {
         setIsSubmitting(true);
 
         try {
-            // === MODIFICA CHIAVE QUI ===
-            // Richiediamo i dati utente FRESCHI al momento del submit.
-            const freshOutsetaUser = await window.Outseta.getUser();
-
-            // Eseguiamo il controllo sui dati appena ottenuti.
-            if (!freshOutsetaUser || !freshOutsetaUser.Person || !freshOutsetaUser.Person.Uid) {
-                alert("Errore di autenticazione, impossibile procedere. Ricarica la pagina e riprova.");
+            // === MODIFICA DEFINITIVA QUI ===
+            // 1. Prendiamo l'utente da Outseta solo per avere l'email.
+            const outsetaUser = await window.Outseta.getUser();
+            if (!outsetaUser || !outsetaUser.Email) {
+                alert("Impossibile recuperare l'email dell'utente. Riprova.");
                 setIsSubmitting(false);
                 return;
             }
 
-            const userUid = freshOutsetaUser.Person.Uid;
+            // 2. Usiamo l'email per trovare il nostro ID utente interno su Supabase.
+            const { data: supabaseUser, error: userError } = await supabase
+                .from('users')
+                .select('id')
+                .eq('email', outsetaUser.Email)
+                .single();
+
+            if (userError || !supabaseUser) {
+                throw new Error("Utente non trovato nel nostro database. Contatta il supporto.");
+            }
+            
+            const userUid = supabaseUser.id; // Questo è l'ID UUID corretto!
             let companyId;
 
             // Dati dell'azienda da inserire o aggiornare
@@ -118,7 +124,7 @@ export default function CheckupPage() {
                 user_id: userUid,
             };
 
-            // STEP 1: CERCA se l'azienda esiste già per questo utente
+            // 3. La logica "Trova o Crea" ora usa l'ID corretto.
             const { data: existingCompany, error: findError } = await supabase
                 .from('companies')
                 .select('id')
@@ -126,7 +132,6 @@ export default function CheckupPage() {
                 .single();
 
             if (findError && findError.code !== 'PGRST116') {
-                // Errore diverso da "nessuna riga trovata"
                 throw findError;
             }
 
@@ -142,7 +147,6 @@ export default function CheckupPage() {
                 
                 if (updateError) throw updateError;
                 companyId = updatedCompany.id;
-
             } else {
                 // SE NON ESISTE: Crea una nuova azienda
                 console.log('Nessuna azienda trovata. Creazione in corso...');
@@ -158,7 +162,7 @@ export default function CheckupPage() {
             
             console.log(`ID Azienda ottenuto: ${companyId}`);
 
-            // STEP 2: Crea una NUOVA sessione di checkup (questo è sempre un nuovo evento)
+            // Il resto del flusso rimane invariato...
             const { data: sessionData, error: sessionError } = await supabase
                 .from('checkup_sessions')
                 .insert({
@@ -173,7 +177,6 @@ export default function CheckupPage() {
             if (sessionError) throw sessionError;
             const sessionId = sessionData.id;
 
-            // STEP 3: Carica il file PDF nello Storage
             const filePath = `public/${sessionId}/${balanceSheetFile.name}`;
             const { error: uploadError } = await supabase.storage
                 .from('checkup-documents')
@@ -181,7 +184,6 @@ export default function CheckupPage() {
 
             if (uploadError) throw uploadError;
 
-            // STEP 4: Reindirizza alla pagina di analisi
             console.log(`Redirect alla sessione: /analisi/${sessionId}`);
             router.push(`/analisi/${sessionId}`);
 
