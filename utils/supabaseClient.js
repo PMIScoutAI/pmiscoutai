@@ -1,51 +1,151 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-/**
- * Sincronizza e VERIFICA la sessione di Outseta con Supabase Auth.
- * @returns {Promise<boolean>} - Restituisce true se la sincronizzazione e la verifica hanno successo.
- */
-export const syncSupabaseAuth = async () => {
+// Funzione helper per ottenere l'utente corrente da Outseta
+export const getCurrentOutsetaUser = () => {
+  return new Promise((resolve, reject) => {
+    if (typeof window !== 'undefined' && window.Outseta) {
+      window.Outseta.getUser()
+        .then(user => resolve(user))
+        .catch(error => reject(error))
+    } else {
+      reject(new Error('Outseta non disponibile'))
+    }
+  })
+}
+
+// Funzione per ottenere o creare l'utente nel database Supabase
+export const getOrCreateSupabaseUser = async (outsetaUser) => {
   try {
-    if (typeof window.Outseta?.getAccessToken !== 'function') {
-      throw new Error('Outseta non è disponibile.');
+    // Prima cerca se l'utente esiste già
+    const { data: existingUser, error: searchError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('outseta_user_id', outsetaUser.Uid)
+      .single()
+
+    if (existingUser && !searchError) {
+      return { data: existingUser, error: null }
     }
-    
-    const token = await window.Outseta.getAccessToken();
-    if (!token) {
-      throw new Error('Token di accesso di Outseta non trovato.');
+
+    // Se non esiste, lo crea
+    const newUser = {
+      outseta_user_id: outsetaUser.Uid,
+      email: outsetaUser.Email,
+      first_name: outsetaUser.FirstName || '',
+      last_name: outsetaUser.LastName || '',
+      full_name: `${outsetaUser.FirstName || ''} ${outsetaUser.LastName || ''}`.trim(),
+      subscription_plan: 'free', // Default
+      subscription_status: 'active'
     }
 
-    // 1. Imposta la sessione con il token di Outseta
-    const { error: sessionError } = await supabase.auth.setSession({
-      access_token: token,
-      refresh_token: token, // Usiamo lo stesso token, potrebbe scadere prima.
-    });
-    if (sessionError) throw sessionError;
+    const { data: createdUser, error: createError } = await supabase
+      .from('users')
+      .insert(newUser)
+      .select()
+      .single()
 
-    // 2. **VERIFICA IMMEDIATA**: Prova a recuperare l'utente con la nuova sessione.
-    // Questo passaggio fallirà se il JWT Provider non è configurato correttamente in Supabase,
-    // dandoci un errore chiaro e immediato.
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError) throw userError;
-    if (!user) throw new Error("La sessione impostata con il token di Outseta non è valida. L'utente Supabase è nullo.");
-
-    console.log('Sessione Supabase sincronizzata e verificata con successo.');
-    return true;
-
+    return { data: createdUser, error: createError }
   } catch (error) {
-    console.error('Errore durante la sincronizzazione della sessione Supabase:', error.message);
-    // Aggiungiamo un log più specifico per il debug nella console del browser
-    if (error.message.includes('JWT') || error.message.includes('token')) {
-        console.error("--- HINT PER LO SVILUPPATORE ---");
-        console.error("Questo errore è tipico di una mancata configurazione del JWT Provider in Supabase.");
-        console.error("Assicurati di aver aggiunto Outseta come provider di autenticazione JWT nelle impostazioni di Supabase.");
-        console.error("--- FINE HINT ---");
-    }
-    return false;
+    return { data: null, error }
   }
-};
+}
+
+// Funzione per ottenere le aziende di un utente
+export const getUserCompanies = async (userId) => {
+  return supabase
+    .from('companies')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+}
+
+// Funzione per ottenere le sessioni di un utente con dettagli azienda
+export const getUserSessions = async (userId) => {
+  return supabase
+    .from('checkup_sessions')
+    .select(`
+      *,
+      companies (*)
+    `)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+}
+
+// Funzione per ottenere una sessione specifica con azienda e risultati
+export const getSessionWithResults = async (sessionId) => {
+  return supabase
+    .from('checkup_sessions')
+    .select(`
+      *,
+      companies (*),
+      analysis_results (*)
+    `)
+    .eq('id', sessionId)
+    .single()
+}
+
+// Funzione per creare una nuova azienda
+export const createCompany = async (userId, companyData) => {
+  const newCompany = {
+    user_id: userId,
+    ...companyData
+  }
+
+  return supabase
+    .from('companies')
+    .insert(newCompany)
+    .select()
+    .single()
+}
+
+// Funzione per creare una nuova sessione
+export const createCheckupSession = async (sessionData) => {
+  return supabase
+    .from('checkup_sessions')
+    .insert(sessionData)
+    .select()
+    .single()
+}
+
+// Funzione per aggiornare lo stato di una sessione
+export const updateSessionStatus = async (sessionId, updates) => {
+  return supabase
+    .from('checkup_sessions')
+    .update(updates)
+    .eq('id', sessionId)
+    .select()
+    .single()
+}
+
+// Funzione per sottoscriversi ai cambiamenti in tempo reale di una sessione
+export const subscribeToSession = (sessionId, callback) => {
+  return supabase
+    .channel(`session_${sessionId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'checkup_sessions',
+        filter: `id=eq.${sessionId}`
+      },
+      callback
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'analysis_results',
+        filter: `session_id=eq.${sessionId}`
+      },
+      callback
+    )
+    .subscribe()
+}
