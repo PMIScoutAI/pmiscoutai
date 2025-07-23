@@ -95,18 +95,31 @@ export default function AnalisiReportPage() {
         return;
       }
 
-      setSessionData(data);
-      
-      // Analysis results handling
-      if (data.analysis_results && data.analysis_results.length > 0) {
-        setAnalysisData(data.analysis_results[0]);
-      } else if (data.status === 'completed') {
-        setError('Analisi completata ma risultati mancanti');
-      } else if (data.status === 'failed') {
-        setError(data.error_message || 'Analisi fallita');
-      } else {
-        // Status is processing - setup realtime
-        setupRealtime();
+setSessionData(data);
+
+// Analysis results handling
+if (data.analysis_id) {
+  // Recupera i dati dalla tabella analysis_results separatamente
+  const { data: analysisResult, error: analysisError } = await supabase
+    .from('analysis_results')
+    .select('*')
+    .eq('id', data.analysis_id)
+    .single();
+  
+  if (analysisError) {
+    console.error('Errore recupero analisi:', analysisError);
+    setError('Errore nel recupero dei risultati');
+  } else {
+    setAnalysisData(analysisResult);
+  }
+} else if (data.status === 'completed') {
+  setError('Analisi completata ma risultati mancanti');
+} else if (data.status === 'failed') {
+  setError(data.error_message || 'Analisi fallita');
+} else {
+  // Status is processing - setup realtime
+  setupRealtime();
+}
       }
     } catch (err) {
       setError(`Errore: ${err.message}`);
