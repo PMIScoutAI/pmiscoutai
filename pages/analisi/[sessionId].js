@@ -512,7 +512,7 @@ return (
       <Head>
         <title>Report Analisi - PMIScout</title>
         <script src="https://cdn.tailwindcss.com"></script>
-        <script dangerouslySetInnerHTML={{ __html: `var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,nocode,profile,support', tokenStorage: 'cookie' };` }} />
+    <script dangerouslySetInnerHTML={{ __html: `var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,nocode,profile,support', tokenStorage: 'cookie' };` }} />
         <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
       </Head>
 
