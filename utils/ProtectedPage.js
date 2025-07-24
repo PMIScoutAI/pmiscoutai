@@ -1,12 +1,15 @@
 // /utils/ProtectedPage.js
-// Contiene la logica React per la protezione delle pagine e la gestione dell'utente.
+// Versione semplificata secondo l'architettura BFF.
+// Ora si occupa solo di verificare l'autenticazione Outseta sul client.
 
 import { useState, useEffect } from 'react';
-import { api } from './api'; // Importa il nostro API layer
+// L'import di 'api' non è più necessario qui, perché la sincronizzazione
+// avverrà sul backend.
+// import { api } from './api'; 
 
 /**
- * Hook React per la gestione dell'utente autenticato.
- * Sincronizza l'utente Outseta con il backend e fornisce i dati all'app.
+ * Hook React per la gestione dell'utente autenticato con Outseta.
+ * Non sincronizza più l'utente, ma si limita a verificare la sessione Outseta.
  */
 export function useUser() {
   const [user, setUser] = useState(null);
@@ -29,19 +32,20 @@ export function useUser() {
 
         const outsetaUser = await window.Outseta.getUser();
         if (!outsetaUser?.Email) {
+          // Se non c'è utente, reindirizza alla pagina di login
           window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login&returnUrl=' + encodeURIComponent(window.location.href);
           return;
         }
 
-        // Chiama la funzione 'syncUser' dal nostro file api.js
-        const result = await api.syncUser(outsetaUser);
-        
+        // MODIFICA CHIAVE:
+        // Non chiamiamo più api.syncUser(). Il nostro "utente" è semplicemente
+        // l'utente restituito da Outseta. La sincronizzazione avverrà sul server.
         if (mounted) {
           setUser({
-            id: result.userId,
+            // Usiamo i dati direttamente da Outseta
+            uid: outsetaUser.Uid, // ID univoco di Outseta
             email: outsetaUser.Email,
             name: outsetaUser.FirstName || outsetaUser.Email.split('@')[0],
-            outseta: outsetaUser
           });
         }
       } catch (err) {
@@ -75,7 +79,7 @@ export function ProtectedPage({ children, loadingComponent }) {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-          <p>Caricamento utente...</p>
+          <p>Verifica autenticazione...</p>
         </div>
       </div>
     );
