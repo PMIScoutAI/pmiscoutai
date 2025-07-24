@@ -26,15 +26,26 @@ const icons = {
 };
 
 // --- Componente Wrapper ---
+// Spostiamo qui l'Head per caricarlo insieme a ProtectedPage
 export default function CheckupPageWrapper() {
   return (
-    <ProtectedPage>
-      {(user) => <CheckupPage user={user} />}
-    </ProtectedPage>
+    <>
+      <Head>
+        <title>Check-UP AI - PMIScout</title>
+        {/* --- SCRIPT OUTSETA (FONDAMENTALE) --- */}
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script dangerouslySetInnerHTML={{ __html: "var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,nocode,profile,support', tokenStorage: 'cookie' };" }} />
+        <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
+      </Head>
+      <ProtectedPage>
+        {(user) => <CheckupPage user={user} />}
+      </ProtectedPage>
+    </>
   );
 }
 
 // --- Componente Principale della Pagina ---
+// Ora non ha più bisogno di contenere l'Head
 function CheckupPage({ user }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -68,15 +79,6 @@ function CheckupPage({ user }) {
   };
 
   return (
-    <>
-      <Head>
-        <title>Check-UP AI - PMIScout</title>
-        {/* --- SCRIPT OUTSETA (FONDAMENTALE) --- */}
-        <script src="https://cdn.tailwindcss.com"></script>
-        <script dangerouslySetInnerHTML={{ __html: "var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,nocode,profile,support', tokenStorage: 'cookie' };" }} />
-        <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
-      </Head>
-
       <div className="relative flex min-h-screen bg-slate-50 text-slate-800">
         {/* Sidebar */}
         <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -141,6 +143,5 @@ function CheckupPage({ user }) {
           </main>
         </div>
       </div>
-    </>
   );
 }
