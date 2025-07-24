@@ -1,41 +1,37 @@
 // /pages/api/start-checkup.js
-// Versione ultra-semplificata. Unico scopo: verificare il token Outseta
-// e sincronizzare l'utente nel nostro database Supabase.
+// Versione ultra-semplificata con la correzione del nome della variabile d'ambiente.
 
 import { createClient } from '@supabase/supabase-js';
 
-// Inizializza il client Supabase con la chiave di servizio sicura.
+// --- MODIFICA CHIAVE ---
+// Usiamo i nomi corretti delle variabili d'ambiente che hai impostato su Vercel.
 const supabase = createClient(
-  process.env.SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_URL, // Corretto da SUPABASE_URL
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 export default async function handler(req, res) {
-  // Accetta solo richieste di tipo POST.
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Metodo non permesso' });
   }
 
   try {
-    // 1. Estrai il token di autenticazione dall'header della richiesta.
+    // 1. Estrai il token di autenticazione dall'header.
     const outsetaToken = req.headers.authorization?.split(' ')[1];
-
     if (!outsetaToken) {
       return res.status(401).json({ error: 'Token di autenticazione mancante.' });
     }
 
-    // 2. Verifica che il token sia valido chiamando l'API di Outseta.
+    // 2. Verifica il token con Outseta.
     const outsetaResponse = await fetch(`https://pmiscout.outseta.com/api/v1/profile`, {
       headers: { Authorization: `Bearer ${outsetaToken}` },
     });
-    
     if (!outsetaResponse.ok) {
       return res.status(401).json({ error: 'Token Outseta non valido o scaduto.' });
     }
     const outsetaUser = await outsetaResponse.json();
 
-    // 3. Chiama la nostra funzione nel database Supabase per trovare o creare l'utente.
-    // Questa è la "trasmissione" che registra l'utente.
+    // 3. Chiama la funzione nel database per sincronizzare l'utente.
     const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', {
       p_outseta_id: outsetaUser.Uid,
       p_email: outsetaUser.Email,
@@ -44,17 +40,16 @@ export default async function handler(req, res) {
     });
 
     if (userError) {
-      // Se la funzione del database fallisce, restituisci un errore dettagliato.
       throw new Error(`Errore durante la sincronizzazione con il database: ${userError.message}`);
     }
 
     console.log(`✅ Utente sincronizzato con successo. ID Supabase: ${userId}`);
 
-    // 4. Se tutto è andato a buon fine, rispondi con un messaggio di successo.
+    // 4. Rispondi con un messaggio di successo.
     return res.status(200).json({
       success: true,
       message: 'Utente verificato e registrato con successo.',
-      userId: userId // Restituiamo l'ID del nostro database per usi futuri.
+      userId: userId
     });
 
   } catch (error) {
