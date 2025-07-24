@@ -1,9 +1,13 @@
 // /utils/api.js
-// Versione che propaga i messaggi di errore dettagliati dal server.
+// Versione che usa 'fetch' per un controllo più diretto sulle chiamate API.
 
+// Il client supabase non è più usato per le chiamate alle funzioni in questo file,
+// ma potrebbe servire se aggiungerai altre funzioni che non usano 'fetch'.
 import { supabase } from './supabaseClient';
 
-const API_FUNCTION_NAME = 'api-router';
+// Definiamo l'URL completo della nostra Edge Function
+const API_FUNCTION_URL = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/api-router`;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 /**
  * Sincronizza l'utente di Outseta con il database Supabase.
@@ -12,28 +16,31 @@ const API_FUNCTION_NAME = 'api-router';
  */
 async function syncUser(outsetaUser) {
   try {
-    const { data, error } = await supabase.functions.invoke(API_FUNCTION_NAME, {
-      body: {
+    const response = await fetch(API_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // Le chiavi di Supabase sono necessarie per l'autenticazione della richiesta
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'apikey': SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({
         action: 'sync-user',
         outsetaUser,
-      },
+      }),
     });
 
-    // Se la chiamata alla funzione ha successo ma la logica interna fallisce,
-    // la funzione potrebbe restituire un errore nel corpo della risposta.
-    // Il client Supabase lo cattura nell'oggetto 'error'.
-    if (error) {
-      throw error;
+    const result = await response.json();
+    if (!response.ok) {
+      // Se la risposta non è OK, lancia un errore con il messaggio dal server
+      throw new Error(result.error || `Errore API (status: ${response.status})`);
     }
-    
-    return data;
+    return result;
 
   } catch (err) {
-    // MODIFICA CHIAVE:
-    // Invece di creare un nuovo errore generico, propaghiamo il messaggio
-    // di errore originale proveniente da Supabase.
-    console.error(`Errore dettagliato dalla funzione API [sync-user]:`, err);
-    throw new Error(err.message || 'Si è verificato un errore sconosciuto durante la sincronizzazione.');
+    console.error(`Errore di rete o fetch [sync-user]:`, err);
+    // Questo errore ora cattura problemi di rete come CORS o fallimenti di connessione
+    throw new Error(err.message || 'Failed to send a request to the Edge Function');
   }
 }
 
@@ -52,15 +59,25 @@ async function processCheckup(userId, formData, file) {
     submissionData.append('formData', JSON.stringify(formData));
     submissionData.append('file', file);
 
-    const { data, error } = await supabase.functions.invoke(API_FUNCTION_NAME, {
+    const response = await fetch(API_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        // Con FormData, il browser imposta 'Content-Type' automaticamente. Non specificarlo qui.
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'apikey': SUPABASE_ANON_KEY,
+      },
       body: submissionData,
     });
 
-    if (error) throw error;
-    return data;
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || `Errore API (status: ${response.status})`);
+    }
+    return result;
+
   } catch (err) {
-    console.error(`Errore API [process-checkup]:`, err);
-    throw new Error(err.message || "Si è verificato un errore durante l'avvio dell'analisi.");
+    console.error(`Errore di rete o fetch [process-checkup]:`, err);
+    throw new Error(err.message || "Failed to send a request to the Edge Function");
   }
 }
 
