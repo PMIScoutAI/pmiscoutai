@@ -1,12 +1,11 @@
 // /utils/ProtectedPage.js
-// Contiene la logica React per la protezione delle pagine e la gestione dell'utente.
+// Questo file non contiene errori ma viene aggiornato per coerenza.
 
 import { useState, useEffect } from 'react';
-import { api } from './api'; // Importa il nostro API layer
+import { api } from './api';
 
 /**
  * Hook React per la gestione dell'utente autenticato.
- * Sincronizza l'utente Outseta con il backend e fornisce i dati all'app.
  */
 export function useUser() {
   const [user, setUser] = useState(null);
@@ -19,11 +18,13 @@ export function useUser() {
     async function initUser() {
       try {
         let attempts = 0;
-        while (!window.Outseta && attempts < 30) {
+        while (!window.Outseta && attempts < 50) { // Aumentato leggermente il timeout
           await new Promise(resolve => setTimeout(resolve, 100));
           attempts++;
         }
-        if (!window.Outseta) throw new Error('Outseta non caricato');
+        if (!window.Outseta) {
+          throw new Error('Outseta non caricato in tempo.');
+        }
 
         const outsetaUser = await window.Outseta.getUser();
         if (!outsetaUser?.Email) {
@@ -31,6 +32,7 @@ export function useUser() {
           return;
         }
 
+        // Questa chiamata ora dovrebbe funzionare grazie alla correzione in api.js
         const result = await api.syncUser(outsetaUser);
         
         if (mounted) {
@@ -40,12 +42,14 @@ export function useUser() {
             name: outsetaUser.FirstName || outsetaUser.Email.split('@')[0],
             outseta: outsetaUser
           });
-          setLoading(false);
         }
       } catch (err) {
         console.error('Errore inizializzazione utente:', err);
         if (mounted) {
           setError(err.message);
+        }
+      } finally {
+        if (mounted) {
           setLoading(false);
         }
       }
@@ -60,7 +64,6 @@ export function useUser() {
 
 /**
  * Componente wrapper per proteggere le pagine.
- * Usa l'hook useUser per verificare l'autenticazione prima di renderizzare i children.
  */
 export function ProtectedPage({ children, loadingComponent }) {
   const { user, loading, error } = useUser();
@@ -70,7 +73,7 @@ export function ProtectedPage({ children, loadingComponent }) {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-          <p>Caricamento...</p>
+          <p>Caricamento utente...</p>
         </div>
       </div>
     );
@@ -79,8 +82,8 @@ export function ProtectedPage({ children, loadingComponent }) {
   if (error) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center text-red-600">
-          <p>Errore: {error}</p>
+        <div className="text-center text-red-600 p-4 bg-red-50 rounded-lg border border-red-200">
+          <p className="font-bold">Errore: {error}</p>
           <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded">
             Ricarica
           </button>
@@ -89,8 +92,7 @@ export function ProtectedPage({ children, loadingComponent }) {
     );
   }
 
-  if (!user) return null; // Redirect gestito da useUser
+  if (!user) return null;
 
-  // Passa l'utente come prop ai children se è una funzione (render prop pattern)
   return typeof children === 'function' ? children(user) : children;
 }
