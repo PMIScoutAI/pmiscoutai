@@ -1,9 +1,8 @@
 // /pages/api/start-checkup.js
-// Versione definitiva che usa i metodi ufficiali e più robusti di Supabase.
+// Versione definitiva che usa la nuova architettura con tabella 'users' autonoma.
 
 import { createClient } from '@supabase/supabase-js';
 
-// Inizializza il client di amministrazione di Supabase.
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
   process.env.SUPABASE_SERVICE_ROLE_KEY || ''
@@ -15,7 +14,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // --- 1. Verifica l'autenticazione dell'utente tramite Outseta ---
+    // 1. Verifica l'autenticazione dell'utente tramite Outseta
     const outsetaToken = req.headers.authorization?.split(' ')[1];
     if (!outsetaToken) {
       return res.status(401).json({ error: 'Authentication token missing' });
@@ -26,42 +25,13 @@ export default async function handler(req, res) {
     });
 
     if (!outsetaResponse.ok) {
-      console.error('Outseta token validation failed:', await outsetaResponse.text());
       return res.status(401).json({ error: 'Invalid Outseta token' });
     }
     const outsetaUser = await outsetaResponse.json();
     const { Uid: outsetaUid, Email, FirstName, LastName } = outsetaUser;
 
-    // --- 2. Cerca o crea l'utente in Supabase Auth TRAMITE L'API UFFICIALE ---
-    let authUserId;
-    const adminAuth = supabaseAdmin.auth.admin;
-
-    // Questo è il metodo corretto e supportato per cercare un utente.
-    const { data: { user: existingUser }, error: findError } = await adminAuth.getUserByEmail(Email);
-
-    if (findError && findError.name === 'UserNotFoundError') {
-      // L'utente non esiste, lo creiamo usando l'Admin API.
-      const { data: { user: newUser }, error: createError } = await adminAuth.createUser({
-        email: Email,
-        email_confirm: true, // Lo consideriamo già verificato da Outseta
-        user_metadata: {
-          first_name: FirstName,
-          last_name: LastName,
-        }
-      });
-      if (createError) throw createError;
-      authUserId = newUser.id;
-    } else if (findError) {
-      // Altro tipo di errore durante la ricerca.
-      throw findError;
-    } else {
-      // L'utente esiste già.
-      authUserId = existingUser.id;
-    }
-
-    // --- 3. Sincronizza il profilo chiamando la nostra funzione RPC ---
-    const { error: rpcError } = await supabaseAdmin.rpc('upsert_user_profile', {
-      user_id: authUserId,
+    // 2. Sincronizza il profilo chiamando la nostra nuova e semplice funzione RPC
+    const { data: userId, error: rpcError } = await supabaseAdmin.rpc('get_or_create_user', {
       user_email: Email,
       user_first_name: FirstName || '',
       user_last_name: LastName || '',
@@ -69,12 +39,13 @@ export default async function handler(req, res) {
     });
     if (rpcError) throw rpcError;
 
-    // --- 4. Procedi con la logica di creazione della sessione e della Signed URL ---
+    // 3. Procedi con la logica di creazione della sessione e della Signed URL
     const { companyData, fileName, prompt_name } = req.body;
 
+    // La colonna 'user_id' in 'companies' e 'checkup_sessions' ora si riferisce a 'public.users.id'
     const { data: company, error: companyError } = await supabaseAdmin
       .from('companies')
-      .upsert({ user_id: authUserId, ...companyData }, { onConflict: 'user_id' })
+      .upsert({ user_id: userId, ...companyData }, { onConflict: 'user_id' })
       .select('id').single();
     if (companyError) throw companyError;
 
@@ -82,7 +53,7 @@ export default async function handler(req, res) {
       .from('checkup_sessions')
       .insert({ 
         company_id: company.id, 
-        user_id: authUserId, 
+        user_id: userId, 
         status: 'waiting_for_file',
         prompt_name: prompt_name
       })
