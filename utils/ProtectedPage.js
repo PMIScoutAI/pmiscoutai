@@ -1,18 +1,15 @@
 // /utils/ProtectedPage.js
-// Versione che ripristina la logica di polling (che funziona)
-// e mantiene gli altri miglioramenti (variabili d'ambiente, replace).
+// Versione definitiva che usa la logica di polling (che funziona)
+// e integra i miglioramenti di robustezza e best practice.
 
 import { useState, useEffect } from 'react';
-// L'import di 'api' non è più necessario qui, perché la sincronizzazione
-// avverrà sul backend.
-// import { api } from './api'; 
 
 // Recupera l'URL di login di Outseta dalle variabili d'ambiente per flessibilità.
 const OUTSETA_LOGIN_URL = process.env.NEXT_PUBLIC_OUTSETA_LOGIN_URL || 'https://pmiscout.outseta.com/auth?widgetMode=login';
 
 /**
  * Hook React per la gestione dell'utente autenticato con Outseta.
- * Non sincronizza più l'utente, ma si limita a verificare la sessione Outseta.
+ * Si limita a verificare la sessione Outseta sul client.
  */
 export function useUser() {
   const [user, setUser] = useState(null);
@@ -20,11 +17,11 @@ export function useUser() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    let mounted = true;
+    let isMounted = true;
 
     async function initUser() {
       try {
-        // Ripristiniamo il sistema di polling che hai confermato funzionare.
+        // Usiamo il sistema di polling che hai confermato essere affidabile.
         let attempts = 0;
         while (!window.Outseta && attempts < 50) { // Timeout di 5 secondi
           await new Promise(resolve => setTimeout(resolve, 100));
@@ -36,7 +33,7 @@ export function useUser() {
 
         const outsetaUser = await window.Outseta.getUser();
         if (!outsetaUser?.Email) {
-          // Se non c'è utente, reindirizza alla pagina di login usando replace
+          // Se non c'è utente, reindirizza usando 'replace' per una migliore UX.
           const returnUrl = encodeURIComponent(window.location.href);
           window.location.replace(`${OUTSETA_LOGIN_URL}&returnUrl=${returnUrl}`);
           return;
@@ -44,7 +41,7 @@ export function useUser() {
 
         // Il nostro "utente" è semplicemente l'utente restituito da Outseta.
         // La sincronizzazione avverrà sul server quando necessario.
-        if (mounted) {
+        if (isMounted) {
           setUser({
             uid: outsetaUser.Uid, // ID univoco di Outseta
             email: outsetaUser.Email,
@@ -53,18 +50,18 @@ export function useUser() {
         }
       } catch (err) {
         console.error('Errore durante l\'inizializzazione dell\'utente:', err);
-        if (mounted) {
+        if (isMounted) {
           setError(err.message);
         }
       } finally {
-        if (mounted) {
+        if (isMounted) {
           setLoading(false);
         }
       }
     }
 
     initUser();
-    return () => { mounted = false; };
+    return () => { isMounted = false; };
   }, []);
 
   return { user, loading, error };
