@@ -1,77 +1,85 @@
 // /utils/api.js
-// Orchestra il nuovo flusso di checkup a 3 passaggi.
+// Versione che implementa le best practice: usa il client Supabase per l'auth,
+// controlla la dimensione del file e gestisce gli errori in modo robusto.
 
 import { supabase } from './supabaseClient';
 
+const API_FUNCTION_NAME = 'api-router';
+// Definiamo un limite massimo per la dimensione del file (es. 5MB)
 const MAX_FILE_SIZE_MB = 5;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 /**
- * Processo completo per avviare un checkup.
- * @param {object} companyData - Dati dell'azienda dal form.
- * @param {File} file - Il file PDF da analizzare.
- * @returns {Promise<string>} L'ID della sessione creata.
+ * Sincronizza l'utente di Outseta con il database Supabase.
+ * Usa supabase.functions.invoke per gestire automaticamente il token utente.
+ * @param {object} outsetaUser - L'oggetto utente recuperato da Outseta.
+ * @returns {Promise<object>}
  */
-async function startCheckupProcess(companyData, file) {
-  // 1. Validazione client-side
-  if (file.size > MAX_FILE_SIZE_BYTES) {
-    throw new Error(`Il file è troppo grande. La dimensione massima è ${MAX_FILE_SIZE_MB} MB.`);
-  }
-
-  // Ottieni il token di accesso di Outseta per autenticare la nostra richiesta
-  const outsetaToken = await window.Outseta.getAccessToken();
-  if (!outsetaToken) {
-    throw new Error('Impossibile ottenere il token di autenticazione. Effettua nuovamente il login.');
-  }
-
-  // --- Step 1: Chiama la nostra API per preparare la sessione e ottenere la Signed URL ---
-  const startResponse = await fetch('/api/start-checkup', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${outsetaToken}`,
-    },
-    body: JSON.stringify({ companyData, fileName: file.name }),
-  });
-
-  const startResult = await startResponse.json();
-  if (!startResponse.ok) {
-    throw new Error(startResult.error || 'Errore durante la creazione della sessione.');
-  }
-  const { sessionId, signedUploadUrl } = startResult;
-
-  // --- Step 2: Carica il file direttamente su Supabase Storage usando la Signed URL ---
-  const uploadResponse = await fetch(signedUploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': file.type || 'application/pdf' },
-    body: file,
-  });
-
-  if (!uploadResponse.ok) {
-    const uploadError = await uploadResponse.text();
-    console.error("Supabase Upload Error:", uploadError);
-    throw new Error('Errore durante il caricamento del file su Supabase.');
-  }
-
-  // --- Step 3: Chiama la nostra API per avviare l'analisi AI in background ---
-  const triggerResponse = await fetch('/api/trigger-analysis', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${outsetaToken}`,
+async function syncUser(outsetaUser) {
+  try {
+    // supabase.functions.invoke allega automaticamente l'header 'Authorization'
+    // con il token JWT dell'utente loggato. È il metodo più sicuro.
+    const { data, error } = await supabase.functions.invoke(API_FUNCTION_NAME, {
+      body: {
+        action: 'sync-user',
+        outsetaUser,
       },
-      body: JSON.stringify({ sessionId }),
-  });
+    });
 
-  if (!triggerResponse.ok) {
-      const triggerError = await triggerResponse.json();
-      throw new Error(triggerError.error || 'Errore durante l\'avvio dell\'analisi.');
+    if (error) {
+      // Se la funzione restituisce un errore, lo lanciamo per gestirlo nell'UI.
+      throw error;
+    }
+    return data;
+  } catch (err) {
+    console.error(`Errore API [sync-user]:`, err);
+    // Propaga il messaggio di errore originale per un debug più facile.
+    throw new Error(err.message || 'Impossibile sincronizzare il profilo utente.');
   }
-
-  // Se tutto è andato a buon fine, restituisci l'ID della sessione
-  return sessionId;
 }
 
+/**
+ * Avvia il processo di checkup.
+ * Controlla la dimensione del file prima di inviarlo.
+ * @param {string} userId - L'ID dell'utente dal nostro database.
+ * @param {object} formData - I dati del form dell'azienda.
+ * @param {File} file - Il file PDF del bilancio.
+ * @returns {Promise<object>}
+ */
+async function processCheckup(userId, formData, file) {
+  // 1. Controllo sulla dimensione del file prima di qualsiasi chiamata di rete.
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    const errorMessage = `Il file è troppo grande. La dimensione massima è ${MAX_FILE_SIZE_MB} MB.`;
+    console.error(errorMessage);
+    // Rifiuta la Promise con un errore chiaro per l'utente.
+    return Promise.reject(new Error(errorMessage));
+  }
+
+  try {
+    const submissionData = new FormData();
+    submissionData.append('action', 'process-checkup');
+    submissionData.append('userId', userId);
+    submissionData.append('formData', JSON.stringify(formData));
+    submissionData.append('file', file);
+
+    // Anche per FormData, supabase.functions.invoke è il metodo preferito.
+    // Gestisce l'autenticazione e gli header corretti.
+    const { data, error } = await supabase.functions.invoke(API_FUNCTION_NAME, {
+      body: submissionData,
+    });
+
+    if (error) {
+      throw error;
+    }
+    return data;
+  } catch (err) {
+    console.error(`Errore API [process-checkup]:`, err);
+    throw new Error(err.message || "Si è verificato un errore durante l'avvio dell'analisi.");
+  }
+}
+
+// Esporta l'oggetto api per un uso pulito in tutta l'app
 export const api = {
-  startCheckupProcess,
+  syncUser,
+  processCheckup,
 };
