@@ -1,12 +1,9 @@
 // /pages/api/start-checkup.js
-// Questa è la versione definitiva della funzione Vercel.
-// Implementa la logica corretta: prima crea l'utente via API,
-// poi sincronizza il profilo tramite una funzione RPC.
+// Versione aggiornata per risolvere l'errore "is not a function".
 
 import { createClient } from '@supabase/supabase-js';
 
 // Inizializza il client di amministrazione di Supabase.
-// Queste chiavi sono lette in modo sicuro dalle variabili d'ambiente di Vercel.
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
   process.env.SUPABASE_SERVICE_ROLE_KEY || ''
@@ -35,15 +32,19 @@ export default async function handler(req, res) {
     const outsetaUser = await outsetaResponse.json();
     const { Uid: outsetaUid, Email, FirstName, LastName } = outsetaUser;
 
-    // --- 2. Cerca o crea l'utente in Supabase Auth TRAMITE API (Metodo Corretto) ---
+    // --- 2. Cerca o crea l'utente in Supabase Auth TRAMITE API ---
     let authUserId;
-    const { data: { user: existingUser }, error: findError } = await supabaseAdmin.auth.admin.getUserByEmail(Email);
+    
+    // Creiamo un riferimento esplicito al client di amministrazione per chiarezza
+    const adminAuth = supabaseAdmin.auth.admin;
+
+    const { data: { user: existingUser }, error: findError } = await adminAuth.getUserByEmail(Email);
 
     if (findError && findError.status === 404) {
-      // L'utente non esiste, lo creiamo usando l'Admin API
-      const { data: { user: newUser }, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      // L'utente non esiste, lo creiamo
+      const { data: { user: newUser }, error: createError } = await adminAuth.createUser({
         email: Email,
-        email_confirm: true, // Lo consideriamo già verificato da Outseta
+        email_confirm: true,
         user_metadata: {
           first_name: FirstName,
           last_name: LastName,
@@ -52,14 +53,14 @@ export default async function handler(req, res) {
       if (createError) throw createError;
       authUserId = newUser.id;
     } else if (findError) {
-      // Altro tipo di errore durante la ricerca
+      // Altro tipo di errore
       throw findError;
     } else {
       // L'utente esiste già
       authUserId = existingUser.id;
     }
 
-    // --- 3. Sincronizza il profilo chiamando la nostra nuova, semplice funzione RPC ---
+    // --- 3. Sincronizza il profilo chiamando la nostra funzione RPC ---
     const { error: rpcError } = await supabaseAdmin.rpc('upsert_user_profile', {
       user_id: authUserId,
       user_email: Email,
@@ -69,7 +70,7 @@ export default async function handler(req, res) {
     });
     if (rpcError) throw rpcError;
 
-    // --- 4. Procedi con la logica di creazione della sessione e della Signed URL ---
+    // --- 4. Procedi con la logica di creazione della sessione ---
     const { companyData, fileName } = req.body;
 
     const { data: company, error: companyError } = await supabaseAdmin
