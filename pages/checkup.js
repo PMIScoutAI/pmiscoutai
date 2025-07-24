@@ -274,9 +274,9 @@ function CheckupForm({ user }) {
                 )}
               </form>
             </div>
-          </main>
-        </div>
+          </div>
+        </main>
       </div>
-    </>
+    </div>
   );
 }
