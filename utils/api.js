@@ -1,5 +1,5 @@
 // /utils/api.js
-// Versione che usa il client Supabase nel modo corretto per le chiamate.
+// Versione che propaga i messaggi di errore dettagliati dal server.
 
 import { supabase } from './supabaseClient';
 
@@ -12,19 +12,28 @@ const API_FUNCTION_NAME = 'api-router';
  */
 async function syncUser(outsetaUser) {
   try {
-    // La libreria supabase.functions.invoke gestisce la stringa JSON da sola.
-    // Passare un oggetto direttamente è il modo corretto.
     const { data, error } = await supabase.functions.invoke(API_FUNCTION_NAME, {
-      body: { // NON usiamo più JSON.stringify qui
+      body: {
         action: 'sync-user',
         outsetaUser,
       },
     });
-    if (error) throw error;
+
+    // Se la chiamata alla funzione ha successo ma la logica interna fallisce,
+    // la funzione potrebbe restituire un errore nel corpo della risposta.
+    // Il client Supabase lo cattura nell'oggetto 'error'.
+    if (error) {
+      throw error;
+    }
+    
     return data;
+
   } catch (err) {
-    console.error(`Errore API [sync-user]:`, err);
-    throw new Error('Impossibile sincronizzare il profilo utente.');
+    // MODIFICA CHIAVE:
+    // Invece di creare un nuovo errore generico, propaghiamo il messaggio
+    // di errore originale proveniente da Supabase.
+    console.error(`Errore dettagliato dalla funzione API [sync-user]:`, err);
+    throw new Error(err.message || 'Si è verificato un errore sconosciuto durante la sincronizzazione.');
   }
 }
 
@@ -44,14 +53,14 @@ async function processCheckup(userId, formData, file) {
     submissionData.append('file', file);
 
     const { data, error } = await supabase.functions.invoke(API_FUNCTION_NAME, {
-      body: submissionData, // Per FormData, il body è corretto così
+      body: submissionData,
     });
 
     if (error) throw error;
     return data;
   } catch (err) {
     console.error(`Errore API [process-checkup]:`, err);
-    throw new Error("Si è verificato un errore durante l'avvio dell'analisi.");
+    throw new Error(err.message || "Si è verificato un errore durante l'avvio dell'analisi.");
   }
 }
 
