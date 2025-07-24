@@ -1,5 +1,5 @@
 // /pages/api/start-checkup.js
-// Versione con il trigger per l'analisi AI correttamente implementato.
+// Versione aggiornata che riceve e salva il prompt selezionato dall'utente.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -29,25 +29,31 @@ export default async function handler(req, res) {
   try {
     console.log('🚀 Start checkup API chiamata');
 
-    // 1. Parsing della richiesta
+    // 1. PARSING DELLA RICHIESTA
     const { fields, files } = await parseForm(req);
+    
+    // Estrai i dati dal form
     const formData = JSON.parse(fields.formData || '{}');
     const outsetaToken = fields.outsetaToken;
+    // --- MODIFICA: Estrai anche il nome del prompt ---
+    const promptName = fields.promptName;
+    
+    // ... (Validazione base come prima) ...
     const file = Array.isArray(files.file) ? files.file[0] : files.file;
-
-    // ... (Validazione dei dati del form e del file come prima) ...
-    if (!outsetaToken || !formData.company_name || !file) {
+    if (!outsetaToken || !formData.company_name || !file || !promptName) {
         return res.status(400).json({ error: 'Dati mancanti nella richiesta.' });
     }
+    
+    console.log(`✅ Dati form validati. Prompt scelto: ${promptName}`);
 
-    // 2. Verifica del token Outseta
+    // 2. VERIFICA TOKEN OUTSETA
     const outsetaUser = await verifyOutsetaToken(outsetaToken);
     if (!outsetaUser) {
       return res.status(401).json({ error: 'Token non valido o scaduto' });
     }
     console.log('✅ Utente Outseta verificato:', outsetaUser.Email);
 
-    // 3. Sincronizzazione dell'utente
+    // 3. SINCRONIZZA UTENTE NEL DATABASE
     const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', {
       p_outseta_id: outsetaUser.Uid,
       p_email: outsetaUser.Email,
@@ -58,7 +64,7 @@ export default async function handler(req, res) {
     if (userError) throw new Error('Errore sincronizzazione utente: ' + userError.message);
     console.log('✅ Utente sincronizzato, ID:', userId);
 
-    // 4. Controllo del limite di utilizzo
+    // 4. CONTROLLA LIMITE UTILIZZO
     const { data: sessionCount, error: countError } = await supabase.rpc('count_user_sessions', { p_user_id: userId });
     if (countError) throw new Error('Errore verifica limite: ' + countError.message);
 
@@ -67,7 +73,7 @@ export default async function handler(req, res) {
     }
     console.log(`✅ Controllo limite OK: ${sessionCount}/${USER_CHECKUP_LIMIT}`);
 
-    // 5. Gestione dell'azienda (Upsert)
+    // 5. GESTISCI AZIENDA (UPSERT)
     const { data: company, error: companyError } = await supabase
       .from('companies')
       .upsert({ user_id: userId, ...formData }, { onConflict: 'user_id' })
@@ -76,17 +82,24 @@ export default async function handler(req, res) {
     if (companyError) throw new Error('Errore gestione azienda: ' + companyError.message);
     console.log('✅ Azienda gestita:', company.id);
 
-    // 6. Creazione della sessione di checkup
+    // 6. CREA SESSIONE DI CHECKUP
     const { data: session, error: sessionError } = await supabase
       .from('checkup_sessions')
-      .insert({ user_id: userId, company_id: company.id, session_name: `Analisi per ${formData.company_name}` })
+      .insert({
+        user_id: userId,
+        company_id: company.id,
+        session_name: `Analisi per ${formData.company_name}`,
+        status: 'waiting_for_file',
+        // --- MODIFICA: Salva il prompt scelto nel database ---
+        prompt_name: promptName 
+      })
       .select('id')
       .single();
     if (sessionError) throw new Error('Errore creazione sessione: ' + sessionError.message);
     const sessionId = session.id;
     console.log('✅ Sessione creata:', sessionId);
 
-    // 7. Upload del file su Supabase Storage
+    // 7. UPLOAD DEL FILE
     const fileBuffer = fs.readFileSync(file.filepath);
     const fileName = `${sessionId}/${file.originalFilename || 'bilancio.pdf'}`;
     const { error: uploadError } = await supabase.storage
@@ -98,21 +111,17 @@ export default async function handler(req, res) {
     }
     console.log('✅ File caricato con successo');
 
-    // 8. Aggiornamento dello stato della sessione
+    // 8. AGGIORNA STATO SESSIONE E AVVIA ANALISI
     await supabase
       .from('checkup_sessions')
       .update({ file_path: fileName, status: 'processing', started_at: new Date().toISOString() })
       .eq('id', sessionId);
 
-    // --- ✅ SOLUZIONE: Trigger Reale dell'Analisi AI ---
-    // Sostituiamo il placeholder con una vera chiamata "fire-and-forget"
-    // alla nostra Edge Function di Supabase.
     triggerAIAnalysis(sessionId).catch(err => {
-      // Logghiamo l'errore ma non blocchiamo la risposta all'utente
       console.error(`[BACKGROUND_ERROR] Errore avvio analisi per sessione ${sessionId}:`, err);
     });
 
-    // 10. Risposta di successo al frontend
+    // 9. RISPOSTA DI SUCCESSO
     return res.status(200).json({
       success: true,
       sessionId: sessionId,
@@ -150,15 +159,12 @@ async function verifyOutsetaToken(token) {
   }
 }
 
-// --- ✅ FUNZIONE TRIGGER REALE ---
 async function triggerAIAnalysis(sessionId) {
   console.log(`🤖 Avvio reale dell'analisi AI per la sessione: ${sessionId}`);
-  // Usiamo il client Supabase per invocare la nostra Edge Function
   const { error } = await supabase.functions.invoke('ai-analysis', {
     body: { session_id: sessionId },
   });
   if (error) {
-    // Se c'è un errore, lo logghiamo. La funzione chiamante lo gestirà.
     throw error;
   }
   console.log(`✅ Chiamata di avvio per l'analisi della sessione ${sessionId} inviata con successo.`);
