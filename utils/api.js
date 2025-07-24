@@ -1,11 +1,9 @@
 // /utils/api.js
-// Versione aggiornata che usa il client Supabase e FormData per l'upload.
+// Versione che usa il client Supabase nel modo corretto per le chiamate.
 
-import { supabase } from './supabaseClient'; // Importa il client Supabase
+import { supabase } from './supabaseClient';
 
 const API_FUNCTION_NAME = 'api-router';
-
-// --- Funzioni API specifiche ---
 
 /**
  * Sincronizza l'utente di Outseta con il database Supabase.
@@ -14,11 +12,13 @@ const API_FUNCTION_NAME = 'api-router';
  */
 async function syncUser(outsetaUser) {
   try {
+    // La libreria supabase.functions.invoke gestisce la stringa JSON da sola.
+    // Passare un oggetto direttamente è il modo corretto.
     const { data, error } = await supabase.functions.invoke(API_FUNCTION_NAME, {
-      body: JSON.stringify({
+      body: { // NON usiamo più JSON.stringify qui
         action: 'sync-user',
         outsetaUser,
-      }),
+      },
     });
     if (error) throw error;
     return data;
@@ -29,7 +29,7 @@ async function syncUser(outsetaUser) {
 }
 
 /**
- * Avvia il processo di checkup inviando i dati del form e il file tramite FormData.
+ * Avvia il processo di checkup inviando i dati del form e il file.
  * @param {string} userId - L'ID dell'utente dal nostro database.
  * @param {object} formData - I dati del form dell'azienda.
  * @param {File} file - Il file PDF del bilancio.
@@ -37,18 +37,14 @@ async function syncUser(outsetaUser) {
  */
 async function processCheckup(userId, formData, file) {
   try {
-    // 1. Prepara il corpo della richiesta usando FormData.
-    // Questo è il modo corretto e più efficiente per caricare file.
     const submissionData = new FormData();
     submissionData.append('action', 'process-checkup');
     submissionData.append('userId', userId);
     submissionData.append('formData', JSON.stringify(formData));
     submissionData.append('file', file);
 
-    // 2. Chiama la Edge Function. Il client Supabase imposterà
-    // automaticamente l'header 'Content-Type' corretto per FormData.
     const { data, error } = await supabase.functions.invoke(API_FUNCTION_NAME, {
-      body: submissionData,
+      body: submissionData, // Per FormData, il body è corretto così
     });
 
     if (error) throw error;
@@ -59,33 +55,8 @@ async function processCheckup(userId, formData, file) {
   }
 }
 
-/**
- * Recupera i risultati di un'analisi completata.
- * @param {string} sessionId
- * @returns {Promise<object>}
- */
-async function getAnalysis(sessionId) {
-    // Questa funzione può rimanere come l'avevi scritta, ma per coerenza
-    // la adattiamo per usare il client Supabase.
-    try {
-        const { data, error } = await supabase.functions.invoke(API_FUNCTION_NAME, {
-            body: JSON.stringify({
-                action: 'get-analysis',
-                sessionId,
-            })
-        });
-        if (error) throw error;
-        return data;
-    } catch (err) {
-        console.error(`Errore API [get-analysis]:`, err);
-        throw new Error("Impossibile recuperare i risultati dell'analisi.");
-    }
-}
-
-
 // Esporta l'oggetto api per un uso pulito in tutta l'app
 export const api = {
   syncUser,
   processCheckup,
-  getAnalysis,
 };
