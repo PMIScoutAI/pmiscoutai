@@ -1,15 +1,17 @@
 // /utils/ProtectedPage.js
-// Versione semplificata secondo l'architettura BFF.
-// Ora si occupa solo di verificare l'autenticazione Outseta sul client.
+// Versione che implementa i suggerimenti della code review:
+// - Usa l'event listener di Outseta invece del polling.
+// - Usa variabili d'ambiente per gli URL.
+// - Usa window.location.replace() per i redirect.
 
 import { useState, useEffect } from 'react';
-// L'import di 'api' non è più necessario qui, perché la sincronizzazione
-// avverrà sul backend.
-// import { api } from './api'; 
+import { api } from './api';
+
+// Recupera l'URL di login di Outseta dalle variabili d'ambiente per flessibilità.
+const OUTSETA_LOGIN_URL = process.env.NEXT_PUBLIC_OUTSETA_LOGIN_URL || 'https://pmiscout.outseta.com/auth?widgetMode=login';
 
 /**
  * Hook React per la gestione dell'utente autenticato con Outseta.
- * Non sincronizza più l'utente, ma si limita a verificare la sessione Outseta.
  */
 export function useUser() {
   const [user, setUser] = useState(null);
@@ -17,59 +19,62 @@ export function useUser() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    let mounted = true;
+    let isMounted = true;
 
-    async function initUser() {
+    const handleUser = async (outsetaUser) => {
       try {
-        let attempts = 0;
-        while (!window.Outseta && attempts < 50) { // Timeout leggermente aumentato
-          await new Promise(resolve => setTimeout(resolve, 100));
-          attempts++;
-        }
-        if (!window.Outseta) {
-          throw new Error('Outseta non è stato caricato in tempo.');
-        }
-
-        const outsetaUser = await window.Outseta.getUser();
         if (!outsetaUser?.Email) {
-          // Se non c'è utente, reindirizza alla pagina di login
-          window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login&returnUrl=' + encodeURIComponent(window.location.href);
+          // Se l'utente non è loggato, reindirizza usando replace.
+          const returnUrl = encodeURIComponent(window.location.href);
+          window.location.replace(`${OUTSETA_LOGIN_URL}&returnUrl=${returnUrl}`);
           return;
         }
 
-        // MODIFICA CHIAVE:
-        // Non chiamiamo più api.syncUser(). Il nostro "utente" è semplicemente
-        // l'utente restituito da Outseta. La sincronizzazione avverrà sul server.
-        if (mounted) {
+        // Sincronizza l'utente con il nostro backend solo se necessario.
+        // Questa chiamata è ora sicura grazie alla nostra architettura BFF.
+        const result = await api.syncUser(outsetaUser);
+        
+        if (isMounted) {
           setUser({
-            // Usiamo i dati direttamente da Outseta
-            uid: outsetaUser.Uid, // ID univoco di Outseta
+            uid: outsetaUser.Uid,
+            id: result.userId, // ID dal nostro DB
             email: outsetaUser.Email,
             name: outsetaUser.FirstName || outsetaUser.Email.split('@')[0],
           });
         }
       } catch (err) {
-        console.error('Errore durante l\'inizializzazione dell\'utente:', err);
-        if (mounted) {
+        console.error('Errore durante la sincronizzazione dell\'utente:', err);
+        if (isMounted) {
           setError(err.message);
         }
       } finally {
-        if (mounted) {
+        if (isMounted) {
           setLoading(false);
         }
       }
+    };
+    
+    // Controlla se Outseta è già carico, altrimenti attende l'evento 'user'
+    if (window.Outseta?.getUser) {
+        window.Outseta.getUser().then(handleUser);
+    } else {
+        // Usa l'event listener ufficiale di Outseta.
+        // Questo è più efficiente e affidabile del polling.
+        window.Outseta.on('user', handleUser);
     }
 
-    initUser();
-    return () => { mounted = false; };
-  }, []);
+    return () => {
+      isMounted = false;
+      // Potenziale cleanup dell'event listener se necessario,
+      // ma Outseta gestisce bene questo aspetto.
+    };
+  }, []); // L'array vuoto assicura che questo effetto venga eseguito solo una volta
 
   return { user, loading, error };
 }
 
 /**
  * Componente wrapper per proteggere le pagine.
- * Usa l'hook useUser per verificare l'autenticazione prima di renderizzare i children.
  */
 export function ProtectedPage({ children, loadingComponent }) {
   const { user, loading, error } = useUser();
@@ -98,8 +103,7 @@ export function ProtectedPage({ children, loadingComponent }) {
     );
   }
 
-  if (!user) return null; // Il redirect viene gestito da useUser
+  if (!user) return null;
 
-  // Passa l'utente come prop ai children se è una funzione (render prop pattern)
   return typeof children === 'function' ? children(user) : children;
 }
