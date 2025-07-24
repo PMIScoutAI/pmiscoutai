@@ -1,9 +1,7 @@
 // /pages/api/start-checkup.js
-// Versione aggiornata per risolvere l'errore "is not a function".
 
 import { createClient } from '@supabase/supabase-js';
 
-// Inizializza il client di amministrazione di Supabase.
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
   process.env.SUPABASE_SERVICE_ROLE_KEY || ''
@@ -15,34 +13,38 @@ export default async function handler(req, res) {
   }
 
   try {
-    // --- 1. Verifica l'autenticazione dell'utente tramite Outseta ---
+    // 1. Verifica autenticazione tramite token Outseta
     const outsetaToken = req.headers.authorization?.split(' ')[1];
     if (!outsetaToken) {
       return res.status(401).json({ error: 'Authentication token missing' });
     }
 
     const outsetaResponse = await fetch(`https://pmiscout.outseta.com/api/v1/profile`, {
-      headers: { 'Authorization': `Bearer ${outsetaToken}` }
+      headers: { Authorization: `Bearer ${outsetaToken}` },
     });
 
     if (!outsetaResponse.ok) {
       console.error('Outseta token validation failed:', await outsetaResponse.text());
       return res.status(401).json({ error: 'Invalid Outseta token' });
     }
+
     const outsetaUser = await outsetaResponse.json();
     const { Uid: outsetaUid, Email, FirstName, LastName } = outsetaUser;
 
-    // --- 2. Cerca o crea l'utente in Supabase Auth TRAMITE API ---
+    // 2. Recupera utente esistente da auth.users
+    const { data: existingUser, error: selectError } = await supabaseAdmin
+      .from('auth.users')
+      .select('id')
+      .eq('email', Email)
+      .maybeSingle();
+
     let authUserId;
-    
-    // Creiamo un riferimento esplicito al client di amministrazione per chiarezza
-    const adminAuth = supabaseAdmin.auth.admin;
 
-    const { data: { user: existingUser }, error: findError } = await adminAuth.getUserByEmail(Email);
+    if (selectError) throw selectError;
 
-    if (findError && findError.status === 404) {
-      // L'utente non esiste, lo creiamo
-      const { data: { user: newUser }, error: createError } = await adminAuth.createUser({
+    if (!existingUser) {
+      // 3. Crea nuovo utente se non esiste
+      const { data: { user: newUser }, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email: Email,
         email_confirm: true,
         user_metadata: {
@@ -52,15 +54,11 @@ export default async function handler(req, res) {
       });
       if (createError) throw createError;
       authUserId = newUser.id;
-    } else if (findError) {
-      // Altro tipo di errore
-      throw findError;
     } else {
-      // L'utente esiste già
       authUserId = existingUser.id;
     }
 
-    // --- 3. Sincronizza il profilo chiamando la nostra funzione RPC ---
+    // 4. Chiama RPC per sincronizzare profilo utente
     const { error: rpcError } = await supabaseAdmin.rpc('upsert_user_profile', {
       user_id: authUserId,
       user_email: Email,
@@ -70,21 +68,24 @@ export default async function handler(req, res) {
     });
     if (rpcError) throw rpcError;
 
-    // --- 4. Procedi con la logica di creazione della sessione ---
+    // 5. Crea azienda e sessione
     const { companyData, fileName } = req.body;
 
     const { data: company, error: companyError } = await supabaseAdmin
       .from('companies')
       .upsert({ user_id: authUserId, ...companyData }, { onConflict: 'user_id' })
-      .select('id').single();
+      .select('id')
+      .single();
     if (companyError) throw companyError;
 
     const { data: session, error: sessionError } = await supabaseAdmin
       .from('checkup_sessions')
       .insert({ company_id: company.id, user_id: authUserId, status: 'waiting_for_file' })
-      .select('id').single();
+      .select('id')
+      .single();
     if (sessionError) throw sessionError;
 
+    // 6. Genera URL firmato per upload
     const filePath = `public/${session.id}/${fileName}`;
     const { data: signedUrlData, error: signedUrlError } = await supabaseAdmin.storage
       .from('checkup-documents')
@@ -97,7 +98,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('Error in /api/start-checkup:', error.message);
+    console.error('Errore in /api/start-checkup:', error.message);
     res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
 }
