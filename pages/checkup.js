@@ -1,7 +1,13 @@
-// pages/checkup.js - Versione super semplificata
+// /pages/checkup.js
+// Versione con import corretti
+
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { ProtectedPage, api } from '../utils/api';
+// --- MODIFICA QUI ---
+// Abbiamo separato le importazioni: 'api' dal suo file e 'ProtectedPage' dal suo.
+import { api } from '../utils/api';
+import { ProtectedPage } from '../utils/ProtectedPage';
+// --- FINE MODIFICA ---
 
 export default function CheckupPage() {
   return (
@@ -38,7 +44,7 @@ function CheckupForm({ user }) {
     setLoading(true);
     
     try {
-      // Una sola chiamata API che fa tutto
+      // La chiamata API ora usa la funzione corretta che gestisce FormData
       const result = await api.processCheckup(user.id, formData, file);
       
       // Redirect ai risultati
