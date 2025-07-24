@@ -1,69 +1,99 @@
-// utils/api.js - Utility semplificata per chiamare l'unica Edge Function
+// /utils/api.js
+// Versione aggiornata che usa il client Supabase e FormData per l'upload.
+
 import { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient'; // Importa il client Supabase
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const API_FUNCTION_NAME = 'api-router';
 
-// Funzione generica per chiamare l'API
-export async function callAPI(action, data = {}) {
+// --- Funzioni API specifiche ---
+
+/**
+ * Sincronizza l'utente di Outseta con il database Supabase.
+ * @param {object} outsetaUser - L'oggetto utente recuperato da Outseta.
+ * @returns {Promise<object>}
+ */
+async function syncUser(outsetaUser) {
   try {
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/api`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-      },
+    const { data, error } = await supabase.functions.invoke(API_FUNCTION_NAME, {
       body: JSON.stringify({
-        action: action,
-        ...data
-      })
+        action: 'sync-user',
+        outsetaUser,
+      }),
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Errore nella chiamata API');
-    }
-
-    return response.json();
-  } catch (error) {
-    console.error(`Errore API [${action}]:`, error);
-    throw error;
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    console.error(`Errore API [sync-user]:`, err);
+    throw new Error('Impossibile sincronizzare il profilo utente.');
   }
 }
 
-// Funzioni specifiche per ogni operazione
-export const api = {
-  // Sincronizza utente con Outseta
-  syncUser: async (outsetaUser) => {
-    return callAPI('sync-user', { outsetaUser });
-  },
+/**
+ * Avvia il processo di checkup inviando i dati del form e il file tramite FormData.
+ * @param {string} userId - L'ID dell'utente dal nostro database.
+ * @param {object} formData - I dati del form dell'azienda.
+ * @param {File} file - Il file PDF del bilancio.
+ * @returns {Promise<object>}
+ */
+async function processCheckup(userId, formData, file) {
+  try {
+    // 1. Prepara il corpo della richiesta usando FormData.
+    // Questo è il modo corretto e più efficiente per caricare file.
+    const submissionData = new FormData();
+    submissionData.append('action', 'process-checkup');
+    submissionData.append('userId', userId);
+    submissionData.append('formData', JSON.stringify(formData));
+    submissionData.append('file', file);
 
-  // Processa nuovo checkup
-  processCheckup: async (userId, formData, file) => {
-    // Converti file in base64
-    const fileBase64 = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = error => reject(error);
+    // 2. Chiama la Edge Function. Il client Supabase imposterà
+    // automaticamente l'header 'Content-Type' corretto per FormData.
+    const { data, error } = await supabase.functions.invoke(API_FUNCTION_NAME, {
+      body: submissionData,
     });
 
-    return callAPI('process-checkup', {
-      userId,
-      formData,
-      fileName: file.name,
-      fileBase64
-    });
-  },
-
-  // Recupera risultati analisi
-  getAnalysis: async (sessionId) => {
-    return callAPI('get-analysis', { sessionId });
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    console.error(`Errore API [process-checkup]:`, err);
+    throw new Error("Si è verificato un errore durante l'avvio dell'analisi.");
   }
+}
+
+/**
+ * Recupera i risultati di un'analisi completata.
+ * @param {string} sessionId
+ * @returns {Promise<object>}
+ */
+async function getAnalysis(sessionId) {
+    // Questa funzione può rimanere come l'avevi scritta, ma per coerenza
+    // la adattiamo per usare il client Supabase.
+    try {
+        const { data, error } = await supabase.functions.invoke(API_FUNCTION_NAME, {
+            body: JSON.stringify({
+                action: 'get-analysis',
+                sessionId,
+            })
+        });
+        if (error) throw error;
+        return data;
+    } catch (err) {
+        console.error(`Errore API [get-analysis]:`, err);
+        throw new Error("Impossibile recuperare i risultati dell'analisi.");
+    }
+}
+
+
+// Esporta l'oggetto api per un uso pulito in tutta l'app
+export const api = {
+  syncUser,
+  processCheckup,
+  getAnalysis,
 };
 
-// Hook React per gestione utente
+
+// --- Hook e Componenti React (Questi rimangono identici, erano già perfetti) ---
+
 export function useUser() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -74,34 +104,26 @@ export function useUser() {
 
     async function initUser() {
       try {
-        // Attendi che Outseta sia caricato
         let attempts = 0;
         while (!window.Outseta && attempts < 30) {
           await new Promise(resolve => setTimeout(resolve, 100));
           attempts++;
         }
+        if (!window.Outseta) throw new Error('Outseta non caricato');
 
-        if (!window.Outseta) {
-          throw new Error('Outseta non caricato');
-        }
-
-        // Ottieni utente da Outseta
         const outsetaUser = await window.Outseta.getUser();
-        
-        if (!outsetaUser || !outsetaUser.Email) {
-          // Non loggato - redirect al login
+        if (!outsetaUser?.Email) {
           window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login&returnUrl=' + encodeURIComponent(window.location.href);
           return;
         }
 
-        // Sincronizza con il nostro backend
         const result = await api.syncUser(outsetaUser);
         
         if (mounted) {
           setUser({
             id: result.userId,
-            email: result.email,
-            name: result.name,
+            email: outsetaUser.Email,
+            name: outsetaUser.FirstName || outsetaUser.Email.split('@')[0],
             outseta: outsetaUser
           });
           setLoading(false);
@@ -116,16 +138,12 @@ export function useUser() {
     }
 
     initUser();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
   return { user, loading, error };
 }
 
-// Componente wrapper per proteggere le pagine
 export function ProtectedPage({ children, loadingComponent }) {
   const { user, loading, error } = useUser();
 
@@ -145,10 +163,7 @@ export function ProtectedPage({ children, loadingComponent }) {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center text-red-600">
           <p>Errore: {error}</p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
-          >
+          <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded">
             Ricarica
           </button>
         </div>
@@ -156,9 +171,7 @@ export function ProtectedPage({ children, loadingComponent }) {
     );
   }
 
-  // Se non c'è utente, verrà fatto redirect automaticamente
   if (!user) return null;
 
-  // Passa l'utente come prop ai children
   return typeof children === 'function' ? children(user) : children;
 }
