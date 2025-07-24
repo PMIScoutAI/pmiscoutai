@@ -1,10 +1,12 @@
 // /pages/api/start-checkup.js
-// Questa funzione Vercel gestisce la logica rapida: autenticazione e preparazione dell'upload.
+// Questa è la versione definitiva della funzione Vercel.
+// Implementa la logica corretta: prima crea l'utente via API,
+// poi sincronizza il profilo tramite una funzione RPC.
 
 import { createClient } from '@supabase/supabase-js';
 
-// Inizializza il client Supabase con la chiave di servizio per avere pieni poteri.
-// Queste variabili d'ambiente sono lette dal server Vercel.
+// Inizializza il client di amministrazione di Supabase.
+// Queste chiavi sono lette in modo sicuro dalle variabili d'ambiente di Vercel.
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
   process.env.SUPABASE_SERVICE_ROLE_KEY || ''
@@ -16,27 +18,50 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Verifica l'autenticazione dell'utente tramite Outseta
+    // --- 1. Verifica l'autenticazione dell'utente tramite Outseta ---
     const outsetaToken = req.headers.authorization?.split(' ')[1];
     if (!outsetaToken) {
       return res.status(401).json({ error: 'Authentication token missing' });
     }
 
-    // Chiamata all'API di Outseta per validare il token e ottenere i dati dell'utente
     const outsetaResponse = await fetch(`https://pmiscout.outseta.com/api/v1/profile`, {
-      headers: {
-        'Authorization': `Bearer ${outsetaToken}`
-      }
+      headers: { 'Authorization': `Bearer ${outsetaToken}` }
     });
 
     if (!outsetaResponse.ok) {
+      console.error('Outseta token validation failed:', await outsetaResponse.text());
       return res.status(401).json({ error: 'Invalid Outseta token' });
     }
     const outsetaUser = await outsetaResponse.json();
     const { Uid: outsetaUid, Email, FirstName, LastName } = outsetaUser;
 
-    // 2. Sincronizzazione con il Database Supabase
-    const { data: userId, error: rpcError } = await supabaseAdmin.rpc('get_or_create_user', {
+    // --- 2. Cerca o crea l'utente in Supabase Auth TRAMITE API (Metodo Corretto) ---
+    let authUserId;
+    const { data: { user: existingUser }, error: findError } = await supabaseAdmin.auth.admin.getUserByEmail(Email);
+
+    if (findError && findError.status === 404) {
+      // L'utente non esiste, lo creiamo usando l'Admin API
+      const { data: { user: newUser }, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email: Email,
+        email_confirm: true, // Lo consideriamo già verificato da Outseta
+        user_metadata: {
+          first_name: FirstName,
+          last_name: LastName,
+        }
+      });
+      if (createError) throw createError;
+      authUserId = newUser.id;
+    } else if (findError) {
+      // Altro tipo di errore durante la ricerca
+      throw findError;
+    } else {
+      // L'utente esiste già
+      authUserId = existingUser.id;
+    }
+
+    // --- 3. Sincronizza il profilo chiamando la nostra nuova, semplice funzione RPC ---
+    const { error: rpcError } = await supabaseAdmin.rpc('upsert_user_profile', {
+      user_id: authUserId,
       user_email: Email,
       user_first_name: FirstName || '',
       user_last_name: LastName || '',
@@ -44,41 +69,34 @@ export default async function handler(req, res) {
     });
     if (rpcError) throw rpcError;
 
-    // 3. Creazione della sessione e generazione della Signed URL
-    const { companyData } = req.body; // Dati dell'azienda inviati dal frontend
+    // --- 4. Procedi con la logica di creazione della sessione e della Signed URL ---
+    const { companyData, fileName } = req.body;
 
     const { data: company, error: companyError } = await supabaseAdmin
       .from('companies')
-      .upsert({ user_id: userId, ...companyData }, { onConflict: 'user_id' })
-      .select('id')
-      .single();
+      .upsert({ user_id: authUserId, ...companyData }, { onConflict: 'user_id' })
+      .select('id').single();
     if (companyError) throw companyError;
 
     const { data: session, error: sessionError } = await supabaseAdmin
       .from('checkup_sessions')
-      .insert({ company_id: company.id, user_id: userId, status: 'waiting_for_file' })
-      .select('id')
-      .single();
+      .insert({ company_id: company.id, user_id: authUserId, status: 'waiting_for_file' })
+      .select('id').single();
     if (sessionError) throw sessionError;
 
-    // Genera un URL a tempo per permettere l'upload sicuro dal browser
-    const filePath = `public/${session.id}/${req.body.fileName}`;
+    const filePath = `public/${session.id}/${fileName}`;
     const { data: signedUrlData, error: signedUrlError } = await supabaseAdmin.storage
       .from('checkup-documents')
       .createSignedUploadUrl(filePath);
     if (signedUrlError) throw signedUrlError;
 
-    // 4. Risposta Immediata al Frontend
     res.status(200).json({
       sessionId: session.id,
       signedUploadUrl: signedUrlData.signedUrl,
-      // Passiamo anche il token per la seconda chiamata di upload
-      token: signedUrlData.token,
-      path: signedUrlData.path,
     });
 
   } catch (error) {
-    console.error('Error in /api/start-checkup:', error);
+    console.error('Error in /api/start-checkup:', error.message);
     res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
 }
