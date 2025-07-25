@@ -1,10 +1,11 @@
 // /pages/api/start-checkup.js
-// MODIFICA: Esteso da "solo sync utente" a "flusso completo Check-UP AI"
+// AGGIORNATO: Usa modulo AI separato per mantenere il codice pulito
 // Gestisce form data + upload PDF + creazione sessione + trigger AI analysis
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
 import fs from 'fs';
+import { launchAIAnalysis } from '../../lib/ai-analysis';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -51,7 +52,7 @@ export default async function handler(req, res) {
       throw new Error(`Errore durante la sincronizzazione: ${userError.message}`);
     }
 
-    // 4. NUOVO: Parsing del FormData
+    // 4. Parsing del FormData
     const form = formidable({
       maxFileSize: 5 * 1024 * 1024, // 5MB max
       filter: ({ mimetype }) => mimetype && mimetype.includes('pdf'), // Solo PDF
@@ -72,7 +73,7 @@ export default async function handler(req, res) {
 
     console.log(`✅ Dati ricevuti: ${companyName}, PDF: ${pdfFile.originalFilename}`);
 
-    // 5. NUOVO: Crea/aggiorna azienda
+    // 5. Crea/aggiorna azienda
     const { data: company, error: companyError } = await supabase
       .from('companies')
       .upsert({
@@ -90,7 +91,7 @@ export default async function handler(req, res) {
       throw new Error(`Errore creazione azienda: ${companyError.message}`);
     }
 
-    // 6. NUOVO: Crea sessione checkup
+    // 6. Crea sessione checkup
     const { data: session, error: sessionError } = await supabase
       .from('checkup_sessions')
       .insert({
@@ -106,7 +107,7 @@ export default async function handler(req, res) {
       throw new Error(`Errore creazione sessione: ${sessionError.message}`);
     }
 
-    // 7. NUOVO: Upload PDF su Storage
+    // 7. Upload PDF su Storage
     const fileName = `${session.id}_${pdfFile.originalFilename}`;
     const fileBuffer = fs.readFileSync(pdfFile.filepath);
     
@@ -123,17 +124,17 @@ export default async function handler(req, res) {
 
     console.log(`✅ PDF caricato: ${fileName}`);
 
-    // 8. NUOVO: Trigger Edge Function per AI analysis
-    const { error: aiError } = await supabase.functions.invoke('ai-analysis', {
-      body: { session_id: session.id }
-    });
-
-    if (aiError) {
-      console.error('Errore trigger AI:', aiError);
+    // 8. NUOVO: Trigger AI Analysis tramite modulo separato
+    try {
+      await launchAIAnalysis(session.id);
+      console.log(`✅ Analisi AI avviata per sessione: ${session.id}`);
+    } catch (aiError) {
+      console.error('⚠️ Errore avvio analisi AI:', aiError);
       // Non blocchiamo il flusso, l'analisi può essere ritentata
+      // La sessione rimane in 'processing' e può essere ripresa
     }
 
-    // 9. NUOVO: Incrementa checkup_count (VERSIONE CORRETTA)
+    // 9. Incrementa checkup_count
     const { data: currentUser } = await supabase
       .from('users')
       .select('checkup_count')
