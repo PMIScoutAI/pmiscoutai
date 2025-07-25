@@ -13,7 +13,9 @@
     "react-dom": "18.2.0",
     "papaparse": "^5.4.1",
     "react-dropzone": "^14.2.3",
-    "formidable": "^3.5.1"
+    "formidable": "^3.5.1",
+    "pdf-parse": "^1.1.1",
+    "openai": "^4.20.1"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.14",
