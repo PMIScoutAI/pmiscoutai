@@ -96,8 +96,7 @@ export default async function handler(req, res) {
      .insert({
        user_id: userId,
        company_id: company.id,
-       status: 'processing',
-       prompt_name: 'FINANCIAL_ANALYSIS_V1' // Default prompt
+       status: 'processing'
      })
      .select()
      .single();
