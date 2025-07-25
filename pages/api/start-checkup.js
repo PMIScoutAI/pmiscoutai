@@ -96,7 +96,8 @@ export default async function handler(req, res) {
      .insert({
        user_id: userId,
        company_id: company.id,
-       status: 'processing'
+       status: 'processing',
+      session_name: `Check-UP ${companyName} - ${new Date().toLocaleDateString()}`
      })
      .select()
      .single();
