@@ -1,5 +1,5 @@
 // /pages/analisi/[sessionId].js
-// Versione aggiornata che si integra con la nuova architettura BFF e Realtime.
+// VERSIONE DEBUG: Aggiunto console.log per identificare il problema
 
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -7,10 +7,8 @@ import Script from 'next/script';
 import { useRouter } from 'next/router';
 import { supabase } from '../../utils/supabaseClient'; // Usa la chiave pubblica
 import { ProtectedPage } from '../../utils/ProtectedPage';
-// Assicurati di importare le tue icone e altri componenti se necessario
 
 // --- Componente Wrapper ---
-// Gestisce l'autenticazione e il caricamento degli script essenziali.
 export default function AnalisiReportPageWrapper() {
   return (
     <>
@@ -45,36 +43,64 @@ function AnalisiReportPage({ user }) {
   const channelRef = useRef(null);
 
   useEffect(() => {
+    // DEBUG LOGS
+    console.log('🔍 Router query:', router.query);
+    console.log('🔍 SessionId:', sessionId);
+    console.log('🔍 User:', user);
+
     // Funzione per recuperare i dati della sessione e dei risultati
     const fetchSessionData = async () => {
-      if (!sessionId || !user.id) return;
+      console.log('🔍 Controllo pre-fetch:', { sessionId, userId: user?.id });
+      
+      if (!sessionId || !user.id) {
+        console.log('❌ BLOCCO: sessionId o user.id mancante');
+        return;
+      }
+
+      console.log('✅ Inizio fetch sessione...');
 
       try {
         // 1. Recupera i dati della sessione
+        console.log('📊 Query sessione con ID:', sessionId);
         const { data: session, error: sessionError } = await supabase
           .from('checkup_sessions')
           .select('*, companies(*)')
           .eq('id', sessionId)
           .single();
 
+        console.log('📊 Risultato query sessione:', { session, sessionError });
+
         if (sessionError) throw new Error('Sessione non trovata o accesso negato.');
         
         // 2. Sicurezza: Controlla che l'utente loggato sia il proprietario della sessione
+        console.log('🔒 Controllo sicurezza:', { 
+          sessionUserId: session.user_id, 
+          currentUserId: user.id,
+          match: session.user_id === user.id 
+        });
+
         if (session.user_id !== user.id) {
           throw new Error('Non sei autorizzato a visualizzare questa analisi.');
         }
 
+        console.log('✅ Sessione valida, setting sessionData');
         setSessionData(session);
 
         // 3. Se l'analisi è completata, recupera anche i risultati
+        console.log('📊 Status sessione:', session.status);
         if (session.status === 'completed') {
+          console.log('📊 Query analysis_results...');
           const { data: results, error: resultsError } = await supabase
             .from('analysis_results')
             .select('*')
             .eq('session_id', sessionId)
             .single();
           
+          console.log('📊 Risultato analysis_results:', { results, resultsError });
+          
           if (resultsError) throw new Error('Impossibile caricare i risultati dell\'analisi.');
+          
+          console.log('✅ Setting analysisData');
           setAnalysisData(results);
           
           // Una volta completato, possiamo rimuovere il listener
@@ -91,9 +117,10 @@ function AnalisiReportPage({ user }) {
         }
 
       } catch (err) {
-        console.error('Data fetching error:', err);
+        console.error('💥 Data fetching error:', err);
         setError(err.message);
       } finally {
+        console.log('🏁 Setting isLoading = false');
         setIsLoading(false);
       }
     };
@@ -136,6 +163,14 @@ function AnalisiReportPage({ user }) {
     };
   }, [sessionId, user.id, sessionData?.status]); // riesegue l'effetto se lo stato cambia
 
+  // DEBUG RENDER STATES
+  console.log('🎨 Render states:', { 
+    isLoading, 
+    error, 
+    sessionData: !!sessionData,
+    analysisData: !!analysisData,
+    sessionStatus: sessionData?.status 
+  });
 
   // --- Render del Contenuto ---
   const renderContent = () => {
@@ -177,7 +212,7 @@ function AnalisiReportPage({ user }) {
         <p className="text-slate-600 mt-2">
           Stiamo analizzando il tuo documento. La pagina si aggiornerà automaticamente non appena i risultati saranno pronti.
         </p>
-        <p className="text-sm text-slate-500 mt-4">Stato attuale: <strong>{sessionData.status}</strong></p>
+        <p className="text-sm text-slate-500 mt-4">Stato attuale: <strong>{sessionData?.status || 'sconosciuto'}</strong></p>
       </div>
     );
   };
