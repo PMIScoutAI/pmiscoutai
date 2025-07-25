@@ -1,4 +1,39 @@
-// --- Componente Principale del Form ---
+// /pages/checkup.js
+// MODIFICA: Trasformato da "test sincronizzazione" a "form completo Check-UP AI"
+// - Aggiunto form con nome azienda (obbligatorio) + partita IVA (opzionale) + upload PDF
+// - Mantiene la stessa autenticazione Outseta e sicurezza esistente
+// - Al submit: invia dati → API → crea sessione → redirect a risultati
+// - Obiettivo: MVP veloce mantenendo semplicità del sistema attuale
+
+import { useState } from 'react';
+import Head from 'next/head';
+import Script from 'next/script';
+import { api } from '../utils/api';
+import { ProtectedPage } from '../utils/ProtectedPage';
+
+// --- Componente Wrapper (INVARIATO) ---
+export default function CheckupPageWrapper() {
+  return (
+    <>
+      <Head>
+        <title>Check-UP AI Azienda - PMIScout</title>
+      </Head>
+      <Script id="outseta-options" strategy="beforeInteractive">
+        {`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}
+      </Script>
+      <Script
+        id="outseta-script"
+        src="https://cdn.outseta.com/outseta.min.js"
+        strategy="beforeInteractive"
+      />
+      <ProtectedPage>
+        {(user) => <CheckupForm user={user} />}
+      </ProtectedPage>
+    </>
+  );
+}
+
+// --- Componente Principale del Form (NUOVO) ---
 function CheckupForm({ user }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -18,6 +53,10 @@ function CheckupForm({ user }) {
     }
     if (!pdfFile) {
       setError('È necessario caricare un file PDF');
+      return;
+    }
+    if (pdfFile.size > 5 * 1024 * 1024) { // 5MB
+      setError('Il file PDF deve essere massimo 5MB');
       return;
     }
 
