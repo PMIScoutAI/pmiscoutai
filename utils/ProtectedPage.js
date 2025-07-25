@@ -1,15 +1,13 @@
 // /utils/ProtectedPage.js
-// Versione definitiva che usa la logica di polling (che funziona)
-// e integra i miglioramenti di robustezza e best practice.
+// MODIFICA: Aggiunta sincronizzazione con Supabase per ottenere user.id UUID
 
 import { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 
-// Recupera l'URL di login di Outseta dalle variabili d'ambiente per flessibilità.
 const OUTSETA_LOGIN_URL = process.env.NEXT_PUBLIC_OUTSETA_LOGIN_URL || 'https://pmiscout.outseta.com/auth?widgetMode=login';
 
 /**
- * Hook React per la gestione dell'utente autenticato con Outseta.
- * Si limita a verificare la sessione Outseta sul client.
+ * Hook React per la gestione dell'utente autenticato con Outseta + Supabase sync.
  */
 export function useUser() {
   const [user, setUser] = useState(null);
@@ -21,33 +19,50 @@ export function useUser() {
 
     async function initUser() {
       try {
-        // Usiamo il sistema di polling che hai confermato essere affidabile.
+        // 1. Aspetta che Outseta sia caricato
         let attempts = 0;
-        while (!window.Outseta && attempts < 50) { // Timeout di 5 secondi
+        while (!window.Outseta && attempts < 50) {
           await new Promise(resolve => setTimeout(resolve, 100));
           attempts++;
         }
+
         if (!window.Outseta) {
           throw new Error('Outseta non è stato caricato in tempo.');
         }
 
+        // 2. Ottieni utente da Outseta
         const outsetaUser = await window.Outseta.getUser();
         if (!outsetaUser?.Email) {
-          // Se non c'è utente, reindirizza usando 'replace' per una migliore UX.
           const returnUrl = encodeURIComponent(window.location.href);
           window.location.replace(`${OUTSETA_LOGIN_URL}&returnUrl=${returnUrl}`);
           return;
         }
 
-        // Il nostro "utente" è semplicemente l'utente restituito da Outseta.
-        // La sincronizzazione avverrà sul server quando necessario.
+        // 3. NUOVO: Sincronizza con Supabase per ottenere l'UUID
+        console.log('🔄 Sincronizzazione con Supabase...');
+        const { data: supabaseUser, error: supabaseError } = await supabase
+          .from('users')
+          .select('id, email')
+          .eq('outseta_user_id', outsetaUser.Uid)
+          .single();
+
+        if (supabaseError || !supabaseUser) {
+          console.error('Errore sincronizzazione Supabase:', supabaseError);
+          throw new Error('Utente non trovato nel database. Contatta il supporto.');
+        }
+
+        console.log('✅ Utente sincronizzato:', supabaseUser);
+
+        // 4. Crea oggetto user completo con entrambi gli ID
         if (isMounted) {
           setUser({
-            uid: outsetaUser.Uid, // ID univoco di Outseta
+            id: supabaseUser.id,              // UUID Supabase (per query DB)
+            uid: outsetaUser.Uid,             // ID Outseta (per auth)
             email: outsetaUser.Email,
             name: outsetaUser.FirstName || outsetaUser.Email.split('@')[0],
           });
         }
+
       } catch (err) {
         console.error('Errore durante l\'inizializzazione dell\'utente:', err);
         if (isMounted) {
@@ -69,7 +84,6 @@ export function useUser() {
 
 /**
  * Componente wrapper per proteggere le pagine.
- * Usa l'hook useUser per verificare l'autenticazione prima di renderizzare i children.
  */
 export function ProtectedPage({ children, loadingComponent }) {
   const { user, loading, error } = useUser();
@@ -98,8 +112,7 @@ export function ProtectedPage({ children, loadingComponent }) {
     );
   }
 
-  if (!user) return null; // Il redirect viene gestito da useUser
+  if (!user) return null;
 
-  // Passa l'utente come prop ai children se è una funzione (render prop pattern)
   return typeof children === 'function' ? children(user) : children;
 }
