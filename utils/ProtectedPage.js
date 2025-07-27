@@ -1,5 +1,5 @@
 // /utils/ProtectedPage.js
-// MODIFICA: Aggiunta sincronizzazione con Supabase per ottenere user.id UUID
+// CORRETTO: Usa get_or_create_user come start-checkup.js per coerenza
 
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
@@ -38,25 +38,26 @@ export function useUser() {
           return;
         }
 
-        // 3. NUOVO: Sincronizza con Supabase per ottenere l'UUID
+        // 3. CORRETTO: Usa get_or_create_user come in start-checkup.js
         console.log('🔄 Sincronizzazione con Supabase...');
-        const { data: supabaseUser, error: supabaseError } = await supabase
-          .from('users')
-          .select('id, email')
-          .eq('outseta_user_id', outsetaUser.Uid)
-          .single();
+        const { data: supabaseUserId, error: supabaseError } = await supabase.rpc('get_or_create_user', {
+          p_outseta_id: outsetaUser.Uid,
+          p_email: outsetaUser.Email,
+          p_first_name: outsetaUser.FirstName,
+          p_last_name: outsetaUser.LastName,
+        });
 
-        if (supabaseError || !supabaseUser) {
+        if (supabaseError || !supabaseUserId) {
           console.error('Errore sincronizzazione Supabase:', supabaseError);
-          throw new Error('Utente non trovato nel database. Contatta il supporto.');
+          throw new Error('Errore sincronizzazione utente. Riprova o contatta il supporto.');
         }
 
-        console.log('✅ Utente sincronizzato:', supabaseUser);
+        console.log('✅ Utente sincronizzato con ID:', supabaseUserId);
 
         // 4. Crea oggetto user completo con entrambi gli ID
         if (isMounted) {
           setUser({
-            id: supabaseUser.id,              // UUID Supabase (per query DB)
+            id: supabaseUserId,               // UUID Supabase (per query DB)
             uid: outsetaUser.Uid,             // ID Outseta (per auth)
             email: outsetaUser.Email,
             name: outsetaUser.FirstName || outsetaUser.Email.split('@')[0],
