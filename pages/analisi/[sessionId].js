@@ -1,308 +1,618 @@
-import React, { useState, useEffect } from 'react';
-import { CheckCircle, TrendingUp, TrendingDown, Sparkles, ShieldAlert, Lightbulb, BarChart3, FileText, Info, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
-// --- Componenti di Supporto ---
-
-// Icona per le sezioni SWOT per un aspetto più pulito
-const SwotIcon = ({ category }) => {
-  const iconMap = {
-    strengths: <TrendingUp className="w-6 h-6 text-green-500" />,
-    weaknesses: <TrendingDown className="w-6 h-6 text-red-500" />,
-    opportunities: <Sparkles className="w-6 h-6 text-blue-500" />,
-    threats: <ShieldAlert className="w-6 h-6 text-orange-500" />,
-  };
-  return <div className="p-3 bg-gray-100 rounded-full">{iconMap[category]}</div>;
+// 🎨 Mappa colori per evitare classi dinamiche Tailwind
+const colorMap = {
+  red: {
+    text: 'text-red-700',
+    bg: 'bg-red-500',
+    bgLight: 'bg-red-50',
+    border: 'border-red-500',
+    shadow: 'shadow-red-500',
+    rgb: '239, 68, 68'
+  },
+  yellow: {
+    text: 'text-yellow-700',
+    bg: 'bg-yellow-500',
+    bgLight: 'bg-yellow-50',
+    border: 'border-yellow-500',
+    shadow: 'shadow-yellow-500',
+    rgb: '245, 158, 11'
+  },
+  green: {
+    text: 'text-green-700',
+    bg: 'bg-green-500',
+    bgLight: 'bg-green-50',
+    border: 'border-green-500',
+    shadow: 'shadow-green-500',
+    rgb: '16, 185, 129'
+  }
 };
-
-// Card per l'analisi SWOT
-const SwotCard = ({ title, items = [], category }) => {
-  const colorMap = {
-    strengths: 'border-green-500',
-    weaknesses: 'border-red-500',
-    opportunities: 'border-blue-500',
-    threats: 'border-orange-500',
-  };
-
-  return (
-    <div className={`bg-white p-6 rounded-2xl border-l-4 ${colorMap[category]}`}>
-      <div className="flex items-center gap-4 mb-4">
-        <SwotIcon category={category} />
-        <h4 className="text-lg font-semibold text-gray-800">{title}</h4>
-      </div>
-      <ul className="space-y-3">
-        {items.map((item, index) => (
-          <li key={index} className="flex items-start gap-3 text-gray-600">
-            <Info size={16} className="mt-1 flex-shrink-0" />
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-};
-
-
-// --- Componenti Principali (Gauge e Dashboard) ---
 
 // Componente Gauge Circolare Migliorato
-const CircularGauge = ({ value = 0, maxValue = 100, minValue = 0, label, unit = "", benchmark, status }) => {
+const CircularGauge = ({ value, maxValue, minValue = 0, label, unit = "", benchmark, status }) => {
   const [animatedValue, setAnimatedValue] = useState(0);
-
+  
   useEffect(() => {
-    const timer = setTimeout(() => setAnimatedValue(value), 300);
+    const timer = setTimeout(() => setAnimatedValue(value || 0), 500);
     return () => clearTimeout(timer);
   }, [value]);
-
-  const normalizedValue = Math.max(0, Math.min(100, ((animatedValue - minValue) / (maxValue - minValue)) * 100));
-  const rotation = (normalizedValue / 100) * 180;
-  const arcLength = 251.2;
+  
+  const normalizedValue = ((animatedValue - minValue) / (maxValue - minValue)) * 100;
+  const rotation = (normalizedValue / 100) * 180 - 90;
+  
+  // 🎯 Calcolo dinamico dell'arco
+  const arcLength = 251; // lunghezza arco totale
   const progressLength = (normalizedValue / 100) * arcLength;
-
-  const colorMap = {
-    green: '#10B981',
-    yellow: '#F59E0B',
-    red: '#EF4444',
-    default: '#6B7280',
+  
+  const getColor = () => {
+    switch(status) {
+      case 'green': return '#10B981';
+      case 'yellow': return '#F59E0B'; 
+      case 'red': return '#EF4444';
+      default: return '#6B7280';
+    }
   };
-  const color = colorMap[status] || colorMap.default;
 
   return (
-    <div className="relative w-full h-40 flex flex-col items-center justify-center">
-      <svg className="w-full h-auto" viewBox="0 0 200 105">
-        <path d="M 10 100 A 90 90 0 0 1 190 100" fill="none" stroke="#E5E7EB" strokeWidth="10" strokeLinecap="round" />
+    <div className="relative w-48 h-32 mx-auto">
+      {/* Gauge Background */}
+      <svg className="w-48 h-32" viewBox="0 0 200 120">
+        {/* Background Arc */}
         <path
-          d="M 10 100 A 90 90 0 0 1 190 100"
+          d="M 20 100 A 80 80 0 0 1 180 100"
           fill="none"
-          stroke={color}
-          strokeWidth="10"
+          stroke="#E5E7EB"
+          strokeWidth="12"
+          strokeLinecap="round"
+        />
+        
+        {/* Colored Sections */}
+        <path
+          d="M 20 100 A 80 80 0 0 1 100 40"
+          fill="none"
+          stroke="#EF4444"
+          strokeWidth="8"
+          strokeLinecap="round"
+          opacity="0.3"
+        />
+        <path
+          d="M 100 40 A 80 80 0 0 1 140 55"
+          fill="none"
+          stroke="#F59E0B"
+          strokeWidth="8"
+          strokeLinecap="round"
+          opacity="0.3"
+        />
+        <path
+          d="M 140 55 A 80 80 0 0 1 180 100"
+          fill="none"
+          stroke="#10B981"
+          strokeWidth="8"
+          strokeLinecap="round"
+          opacity="0.3"
+        />
+        
+        {/* Progress Arc - Dinamico */}
+        <path
+          d="M 20 100 A 80 80 0 0 1 180 100"
+          fill="none"
+          stroke={getColor()}
+          strokeWidth="6"
           strokeLinecap="round"
           strokeDasharray={`${progressLength} ${arcLength}`}
           className="transition-all duration-1000 ease-out"
-          style={{ filter: `drop-shadow(0 2px 4px ${color}80)` }}
+          style={{
+            filter: `drop-shadow(0 0 6px ${getColor()})`,
+            transition: 'stroke 0.5s ease' // 🎨 Transizione colore
+          }}
         />
-        <g transform={`translate(100, 100) rotate(${rotation - 90})`}>
-          <line x1="0" y1="0" x2="80" y2="0" stroke={color} strokeWidth="3" className="transition-transform duration-1000 ease-out" />
-          <circle cx="0" cy="0" r="6" fill={color} />
+        
+        {/* Needle con transizione colore */}
+        <g transform={`translate(100, 100) rotate(${rotation})`}>
+          <line
+            x1="0" y1="0" x2="0" y2="-65"
+            stroke={getColor()}
+            strokeWidth="3"
+            strokeLinecap="round"
+            style={{
+              filter: `drop-shadow(0 0 4px ${getColor()})`,
+              transition: 'stroke 0.5s ease'
+            }}
+          />
+          <circle 
+            cx="0" 
+            cy="0" 
+            r="4" 
+            fill={getColor()}
+            style={{ transition: 'fill 0.5s ease' }}
+          />
         </g>
       </svg>
-      <div className="absolute bottom-0 flex flex-col items-center">
-        <div className="text-3xl font-bold" style={{ color }}>
-          {animatedValue.toFixed(2)}{unit}
+      
+      {/* Center Value */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center pt-4">
+        <div className="text-2xl font-bold text-gray-900" style={{ color: getColor() }}>
+          {Math.round(animatedValue * 100) / 100}{unit && unit}
         </div>
-        <div className="text-sm text-gray-500">{label} (vs {benchmark || 'N/A'})</div>
+        <div className="text-xs text-gray-500 mt-1">vs {benchmark}</div>
+      </div>
+      
+      {/* Label */}
+      <div className="text-center mt-2">
+        <div className="text-sm font-medium text-gray-700">{label}</div>
       </div>
     </div>
   );
 };
 
-
 // Health Score Gauge Migliorato
-const HealthScoreGauge = ({ score = 0 }) => {
-    const [animatedScore, setAnimatedScore] = useState(0);
+const HealthScoreGauge = ({ score }) => {
+  const [animatedScore, setAnimatedScore] = useState(0);
+  
+  useEffect(() => {
+    const timer = setTimeout(() => setAnimatedScore(score || 0), 800);
+    return () => clearTimeout(timer);
+  }, [score]);
+  
+  const getScoreColor = () => {
+    if (animatedScore >= 80) return '#10B981';
+    if (animatedScore >= 60) return '#F59E0B';
+    return '#EF4444';
+  };
+  
+  const rotation = (animatedScore / 100) * 180 - 90;
+  
+  // 🎯 Calcolo dinamico dell'arco principale
+  const mainArcLength = 440;
+  const progressLength = (animatedScore / 100) * mainArcLength;
 
-    useEffect(() => {
-        const animation = requestAnimationFrame(() => setAnimatedScore(score));
-        return () => cancelAnimationFrame(animation);
-    }, [score]);
-
-    const getScoreStyle = (s) => {
-        if (s >= 80) return { color: '#10B981', text: 'Eccellente', bg: 'bg-green-500/10' };
-        if (s >= 60) return { color: '#F59E0B', text: 'Buono', bg: 'bg-yellow-500/10' };
-        return { color: '#EF4444', text: 'Rischioso', bg: 'bg-red-500/10' };
-    };
-
-    const style = getScoreStyle(animatedScore);
-    const circumference = 2 * Math.PI * 52;
-    const offset = circumference - (animatedScore / 100) * circumference;
-
-    return (
-        <div className="flex flex-col items-center justify-center gap-6 p-6">
-            <div className="relative w-48 h-48">
-                <svg className="w-full h-full" viewBox="0 0 120 120">
-                    <circle className="text-gray-200" strokeWidth="10" stroke="currentColor" fill="transparent" r="52" cx="60" cy="60" />
-                    <circle
-                        strokeWidth="10"
-                        strokeDasharray={circumference}
-                        strokeDashoffset={offset}
-                        strokeLinecap="round"
-                        stroke="currentColor"
-                        className="transition-all duration-1000 ease-in-out"
-                        style={{ color: style.color }}
-                        fill="transparent"
-                        r="52"
-                        cx="60"
-                        cy="60"
-                        transform="rotate(-90 60 60)"
-                    />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-5xl font-bold" style={{ color: style.color }}>{Math.round(animatedScore)}</span>
-                    <span className="text-sm font-semibold text-gray-500">/ 100</span>
-                </div>
-            </div>
-            <div className={`px-4 py-1.5 rounded-full text-lg font-semibold ${style.bg}`} style={{ color: style.color }}>
-                {style.text}
-            </div>
+  return (
+    <div className="relative w-80 h-48 mx-auto">
+      <svg className="w-80 h-48" viewBox="0 0 320 200">
+        {/* Outer Ring */}
+        <circle 
+          cx="160" 
+          cy="160" 
+          r="140" 
+          fill="none" 
+          stroke="#E5E7EB" 
+          strokeWidth="2" 
+          opacity="0.3" 
+        />
+        
+        {/* Background Arc */}
+        <path
+          d="M 20 160 A 140 140 0 0 1 300 160"
+          fill="none"
+          stroke="#E5E7EB"
+          strokeWidth="20"
+          strokeLinecap="round"
+        />
+        
+        {/* Score Sections */}
+        <path 
+          d="M 20 160 A 140 140 0 0 1 106 46" 
+          fill="none" 
+          stroke="#EF4444" 
+          strokeWidth="16" 
+          strokeLinecap="round" 
+          opacity="0.2" 
+        />
+        <path 
+          d="M 106 46 A 140 140 0 0 1 214 46" 
+          fill="none" 
+          stroke="#F59E0B" 
+          strokeWidth="16" 
+          strokeLinecap="round" 
+          opacity="0.2" 
+        />
+        <path 
+          d="M 214 46 A 140 140 0 0 1 300 160" 
+          fill="none" 
+          stroke="#10B981" 
+          strokeWidth="16" 
+          strokeLinecap="round" 
+          opacity="0.2" 
+        />
+        
+        {/* Progress Arc - Dinamico */}
+        <path
+          d="M 20 160 A 140 140 0 0 1 300 160"
+          fill="none"
+          stroke={getScoreColor()}
+          strokeWidth="12"
+          strokeLinecap="round"
+          strokeDasharray={`${progressLength} ${mainArcLength}`}
+          className="transition-all duration-2000 ease-out"
+          style={{
+            filter: `drop-shadow(0 0 12px ${getScoreColor()})`,
+            transition: 'stroke 1s ease'
+          }}
+        />
+        
+        {/* Needle con transizione */}
+        <g transform={`translate(160, 160) rotate(${rotation})`}>
+          <line 
+            x1="0" 
+            y1="0" 
+            x2="0" 
+            y2="-120" 
+            stroke={getScoreColor()} 
+            strokeWidth="4" 
+            strokeLinecap="round"
+            style={{ transition: 'stroke 1s ease' }}
+          />
+          <circle 
+            cx="0" 
+            cy="0" 
+            r="8" 
+            fill={getScoreColor()}
+            style={{
+              filter: `drop-shadow(0 0 8px ${getScoreColor()})`,
+              transition: 'fill 1s ease'
+            }}
+          />
+        </g>
+        
+        {/* Scale Marks */}
+        {[0, 20, 40, 60, 80, 100].map((mark) => {
+          const angle = ((mark / 100) * 180 - 90) * (Math.PI / 180);
+          const x1 = 160 + Math.cos(angle) * 125;
+          const y1 = 160 + Math.sin(angle) * 125;
+          const x2 = 160 + Math.cos(angle) * 115;
+          const y2 = 160 + Math.sin(angle) * 115;
+          
+          return (
+            <g key={mark}>
+              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#9CA3AF" strokeWidth="2" />
+              <text 
+                x={160 + Math.cos(angle) * 105} 
+                y={160 + Math.sin(angle) * 105 + 4} 
+                textAnchor="middle" 
+                className="text-xs fill-gray-600"
+              >
+                {mark}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      
+      {/* Center Display - Score arrotondato */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center pt-12">
+        <div className="text-5xl font-bold" style={{ color: getScoreColor() }}>
+          {Math.round(animatedScore)}
         </div>
-    );
+        <div className="text-gray-600 text-sm">HEALTH SCORE</div>
+      </div>
+    </div>
+  );
 };
 
-
-// Warning Light Migliorato
+// Warning Light Migliorato (classi fisse)
 const WarningLight = ({ active, color, label }) => {
-    const colorMap = {
-        red: { text: 'text-red-800', bg: 'bg-red-100', dot: 'bg-red-500' },
-        yellow: { text: 'text-yellow-800', bg: 'bg-yellow-100', dot: 'bg-yellow-500' },
-        green: { text: 'text-green-800', bg: 'bg-green-100', dot: 'bg-green-500' },
-    };
-    const colors = colorMap[color] || colorMap.red;
-
-    return (
-        <div className={`flex items-center gap-3 p-3 rounded-xl transition-all duration-300 ${active ? colors.bg : 'bg-gray-100'}`}>
-            <div className={`w-3 h-3 rounded-full transition-all duration-300 ${active ? `${colors.dot} animate-pulse` : 'bg-gray-400'}`} />
-            <span className={`font-medium ${active ? colors.text : 'text-gray-600'}`}>{label}</span>
-        </div>
-    );
+  const colors = colorMap[color] || colorMap.red;
+  
+  return (
+    <div className={`flex items-center space-x-2 p-3 rounded-lg border-2 transition-all duration-300 ${
+      active 
+        ? `${colors.border} ${colors.bgLight} shadow-lg` 
+        : 'border-gray-200 bg-gray-50'
+    }`}>
+      <div 
+        className={`w-4 h-4 rounded-full transition-all duration-300 ${
+          active 
+            ? `${colors.bg} shadow-lg animate-pulse` 
+            : 'bg-gray-300'
+        }`} 
+        style={{
+          boxShadow: active ? `0 0 12px rgb(${colors.rgb})` : 'none'
+        }} 
+      />
+      <span className={`text-sm font-medium ${active ? colors.text : 'text-gray-500'}`}>
+        {label}
+      </span>
+    </div>
+  );
 };
 
-
-// --- Componente Principale del Dashboard ---
+// 🎯 Componente principale riutilizzabile
 export default function PMIScoutDashboard({ analysisData }) {
+  // Usa dati reali se disponibili, altrimenti demo
+  const analysis = analysisData?.raw_ai_response || {};
+  
+  const dashboardData = {
+    healthScore: analysisData?.health_score || 85,
+    company: analysis.company_name || "DBA GROUP S.p.A.",
+    date: analysis.analysis_date || "28/07/2025",
+    summary: analysisData?.summary || "L'azienda presenta un buon stato di salute finanziaria con un Current Ratio superiore alla media di settore, un ROE accettabile, ma un Debt/Equity che indica una certa esposizione al debito.",
     
-    // Mostra uno stato di caricamento se i dati non sono disponibili
-    if (!analysisData || !analysisData.raw_ai_response) {
-        return (
-            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center text-center p-4">
-                <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-                <h2 className="text-2xl font-bold text-gray-800">Caricamento Analisi...</h2>
-                <p className="text-gray-500 mt-2">I dati sono in fase di elaborazione. Attendi un momento.</p>
-            </div>
-        );
+    extracted_values: analysis.extracted_values || {
+      attivo_corrente: 407083,
+      debiti_totali: 325005,
+      patrimonio_netto: 126452,
+      utile_netto: 7868
+    },
+    
+    financial_metrics: analysis.financial_metrics || {
+      current_ratio: {
+        value: 1.25,
+        sector_benchmark: 1.5,
+        status_color: "yellow"
+      },
+      roe: {
+        value: 6.22,
+        sector_benchmark: 8.0,
+        status_color: "yellow"
+      },
+      debt_equity: {
+        value: 2.57,
+        sector_benchmark: 1.5,
+        status_color: "red"
+      }
+    },
+    
+    swot_analysis: analysis.swot_analysis || {
+      strengths: [
+        "Solida presenza nel settore costruzioni navali",
+        "Portfolio ordini significativo (€1.116 milioni)"
+      ],
+      weaknesses: [
+        "Rapporto debito/patrimonio sopra la soglia prudenziale",
+        "ROE sotto la media settoriale"
+      ],
+      opportunities: [
+        "Crescita del settore energie rinnovabili offshore",
+        "Opportunità PNRR per transizione energetica"
+      ],
+      threats: [
+        "Concorrenza internazionale intensa",
+        "Volatilità prezzi materie prime"
+      ]
+    },
+    
+    recommendations: analysisData?.recommendations || [
+      "Monitorare l'esposizione al debito e pianificare strategie di riduzione",
+      "Investire in innovazione per migliorare margini di redditività",
+      "Diversificare verso settori rinnovabili per cogliere opportunità di crescita"
+    ]
+  };
+
+  // 🚨 Warning lights basate sui dati reali
+  const generateWarnings = () => {
+    const warnings = [];
+    const metrics = dashboardData.financial_metrics;
+    
+    if (metrics.current_ratio?.value < 1.0) {
+      warnings.push({ active: true, color: 'red', label: 'Liquidità Critica' });
+    } else {
+      warnings.push({ active: false, color: 'red', label: 'Liquidità Critica' });
     }
+    
+    if (metrics.debt_equity?.value > 2.0) {
+      warnings.push({ active: true, color: 'red', label: 'Alto Indebitamento' });
+    } else if (metrics.debt_equity?.value > 1.5) {
+      warnings.push({ active: true, color: 'yellow', label: 'Indebitamento Elevato' });
+    } else {
+      warnings.push({ active: false, color: 'green', label: 'Indebitamento Controllato' });
+    }
+    
+    if (metrics.roe?.value < 5) {
+      warnings.push({ active: true, color: 'red', label: 'ROE Critico' });
+    } else if (metrics.roe?.value < 8) {
+      warnings.push({ active: true, color: 'yellow', label: 'ROE Sotto Media' });
+    } else {
+      warnings.push({ active: false, color: 'green', label: 'ROE Ottimale' });
+    }
+    
+    if (dashboardData.healthScore >= 80) {
+      warnings.push({ active: true, color: 'green', label: 'Performance Ottima' });
+    } else {
+      warnings.push({ active: false, color: 'green', label: 'Performance Ottima' });
+    }
+    
+    return warnings;
+  };
 
-    // Una volta che i dati sono disponibili, li destrutturiamo in modo sicuro
-    const { health_score = 0, summary = "Nessun sommario disponibile.", recommendations = [] } = analysisData;
-    const analysis = analysisData.raw_ai_response;
-    const { 
-        company_name = "Azienda non specificata", 
-        analysis_date = "Data non disponibile",
-        financial_metrics = {}, 
-        swot_analysis = {} 
-    } = analysis;
-
-    const generateWarnings = () => {
-        const warnings = [];
-        if (financial_metrics.debt_equity?.value > 2.0) warnings.push({ active: true, color: 'red', label: 'Alto Indebitamento' });
-        if (financial_metrics.roe?.value < 8.0) warnings.push({ active: true, color: 'yellow', label: 'ROE Sotto la Media' });
-        if (health_score >= 80) warnings.push({ active: true, color: 'green', label: 'Performance Ottima' });
-        return warnings;
-    };
-
-    return (
-        <div className="min-h-screen bg-slate-50 text-gray-800 p-4 sm:p-6 lg:p-8 font-sans">
-            <div className="max-w-7xl mx-auto space-y-8">
-                
-                <header className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-blue-600 text-white rounded-xl"><BarChart3 size={28} /></div>
-                        <div>
-                            <h1 className="text-3xl font-bold text-gray-900">PMI Scout</h1>
-                            <p className="text-blue-600 font-semibold">AI Financial Check-Up</p>
-                        </div>
-                    </div>
-                    <div className="text-right">
-                        <div className="text-xl font-bold text-gray-900">{company_name}</div>
-                        <div className="text-sm text-gray-500">Analisi del: {analysis_date}</div>
-                    </div>
-                </header>
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <div className="lg:col-span-1 space-y-8">
-                        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                            <h2 className="text-xl font-bold text-gray-900 mb-4 text-center">Health Score</h2>
-                            <HealthScoreGauge score={health_score} />
-                        </div>
-                        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                            <h3 className="text-xl font-bold text-gray-900 mb-4">System Status</h3>
-                            <div className="space-y-3">
-                                {generateWarnings().map((warning, index) => <WarningLight key={index} {...warning} />)}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="lg:col-span-2 space-y-8">
-                        <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-                             <div className="flex items-start gap-4">
-                                <FileText className="w-8 h-8 text-blue-500 flex-shrink-0 mt-1" />
-                                <div>
-                                    <h2 className="text-xl font-bold text-gray-900">Executive Summary</h2>
-                                    <p className="text-gray-600 mt-2 leading-relaxed">{summary}</p>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">Liquidità</h3>
-                                <CircularGauge
-                                    value={financial_metrics.current_ratio?.value}
-                                    maxValue={3}
-                                    label="Current Ratio"
-                                    benchmark={financial_metrics.current_ratio?.sector_benchmark}
-                                    status={financial_metrics.current_ratio?.status_color}
-                                />
-                            </div>
-                            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">Redditività</h3>
-                                <CircularGauge
-                                    value={financial_metrics.roe?.value}
-                                    maxValue={20}
-                                    label="ROE"
-                                    unit="%"
-                                    benchmark={`${financial_metrics.roe?.sector_benchmark || 'N/A'}%`}
-                                    status={financial_metrics.roe?.status_color}
-                                />
-                            </div>
-                            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">Indebitamento</h3>
-                                <CircularGauge
-                                    value={financial_metrics.debt_equity?.value}
-                                    maxValue={4}
-                                    label="Debt/Equity"
-                                    benchmark={financial_metrics.debt_equity?.sector_benchmark}
-                                    status={financial_metrics.debt_equity?.status_color}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-6">Analisi SWOT</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <SwotCard title="Punti di Forza" items={swot_analysis.strengths} category="strengths" />
-                        <SwotCard title="Punti di Debolezza" items={swot_analysis.weaknesses} category="weaknesses" />
-                        <SwotCard title="Opportunità" items={swot_analysis.opportunities} category="opportunities" />
-                        <SwotCard title="Minacce" items={swot_analysis.threats} category="threats" />
-                    </div>
-                </div>
-
-                <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-                    <div className="flex items-center gap-4 mb-6">
-                        <Lightbulb className="w-8 h-8 text-yellow-500" />
-                        <h2 className="text-2xl font-bold text-gray-900">Raccomandazioni AI</h2>
-                    </div>
-                    <div className="space-y-4">
-                        {recommendations.map((rec, index) => (
-                            <div key={index} className="flex items-start gap-4 p-4 bg-gray-50 rounded-lg">
-                                <CheckCircle className="w-5 h-5 text-blue-600 mt-1 flex-shrink-0" />
-                                <p className="text-gray-700">{rec}</p>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-100 to-white text-gray-900 p-6">
+      <div className="max-w-7xl mx-auto">
+        
+        {/* Header Dashboard */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-4">
+              <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
+                <span className="text-2xl text-white">📊</span>
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">PMI SCOUT</h1>
+                <p className="text-blue-600">Check-UP AI</p>
+              </div>
             </div>
+            <div className="text-right">
+              <div className="text-2xl font-bold text-gray-900">{dashboardData.company}</div>
+              <div className="text-blue-600">Aggiornato: {dashboardData.date}</div>
+            </div>
+          </div>
         </div>
-    );
+
+        {/* Main Dashboard */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-8">
+          
+          {/* Health Score Principale */}
+          <div className="xl:col-span-2 bg-white rounded-2xl p-8 border border-gray-200 shadow-lg">
+            <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">HEALTH SCORE</h2>
+            <HealthScoreGauge score={dashboardData.healthScore} />
+            
+            {/* Status Summary */}
+            <div className="mt-8 p-6 bg-gray-50 rounded-xl border border-gray-200">
+              <p className="text-gray-700 leading-relaxed">{dashboardData.summary}</p>
+            </div>
+          </div>
+
+          {/* Warning Lights Panel */}
+          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
+            <h3 className="text-xl font-bold text-gray-900 mb-6">SYSTEM STATUS</h3>
+            <div className="space-y-4">
+              {generateWarnings().map((warning, index) => (
+                <WarningLight key={index} {...warning} />
+              ))}
+            </div>
+            
+            {/* Quick Stats */}
+            <div className="mt-8 p-4 bg-gray-50 rounded-xl border border-gray-200">
+              <div className="text-center">
+                <div className="text-lg font-bold text-gray-700 mb-2">VALORI ESTRATTI</div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <div className="text-blue-600 font-semibold">
+                      €{(dashboardData.extracted_values.attivo_corrente / 1000).toFixed(0)}K
+                    </div>
+                    <div className="text-gray-500">Attivo Corrente</div>
+                  </div>
+                  <div>
+                    <div className="text-red-600 font-semibold">
+                      €{(dashboardData.extracted_values.debiti_totali / 1000).toFixed(0)}K
+                    </div>
+                    <div className="text-gray-500">Debiti Totali</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Metrics Gauges */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
+            <h3 className="text-lg font-bold text-gray-900 mb-4 text-center">LIQUIDITÀ</h3>
+            <CircularGauge
+              value={dashboardData.financial_metrics.current_ratio?.value}
+              maxValue={3}
+              label="Current Ratio"
+              benchmark={dashboardData.financial_metrics.current_ratio?.sector_benchmark}
+              status={dashboardData.financial_metrics.current_ratio?.status_color}
+            />
+          </div>
+          
+          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
+            <h3 className="text-lg font-bold text-gray-900 mb-4 text-center">REDDITIVITÀ</h3>
+            <CircularGauge
+              value={dashboardData.financial_metrics.roe?.value}
+              maxValue={25}
+              label="ROE"
+              unit="%"
+              benchmark={`${dashboardData.financial_metrics.roe?.sector_benchmark}%`}
+              status={dashboardData.financial_metrics.roe?.status_color}
+            />
+          </div>
+          
+          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
+            <h3 className="text-lg font-bold text-gray-900 mb-4 text-center">INDEBITAMENTO</h3>
+            <CircularGauge
+              value={dashboardData.financial_metrics.debt_equity?.value}
+              maxValue={4}
+              label="Debt/Equity"
+              benchmark={dashboardData.financial_metrics.debt_equity?.sector_benchmark}
+              status={dashboardData.financial_metrics.debt_equity?.status_color}
+            />
+          </div>
+        </div>
+
+        {/* Raccomandazioni */}
+        <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg mb-8">
+          <h3 className="text-xl font-bold text-gray-900 mb-6">RACCOMANDAZIONI</h3>
+          <div className="space-y-4">
+            {dashboardData.recommendations.map((recommendation, index) => (
+              <div key={index} className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+                <p className="text-gray-800">{recommendation}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* SWOT Analysis */}
+        <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg mb-8">
+          <h3 className="text-xl font-bold text-gray-900 mb-6">ANALISI SWOT</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Punti di Forza */}
+            <div className="border-l-4 border-green-500 pl-6">
+              <h4 className="text-lg font-semibold text-green-700 mb-3">Punti di Forza</h4>
+              <ul className="space-y-2">
+                {dashboardData.swot_analysis.strengths.map((item, index) => (
+                  <li key={index} className="text-gray-700 flex items-start">
+                    <span className="text-green-500 mr-2">•</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Punti di Debolezza */}
+            <div className="border-l-4 border-red-500 pl-6">
+              <h4 className="text-lg font-semibold text-red-700 mb-3">Punti di Debolezza</h4>
+              <ul className="space-y-2">
+                {dashboardData.swot_analysis.weaknesses.map((item, index) => (
+                  <li key={index} className="text-gray-700 flex items-start">
+                    <span className="text-red-500 mr-2">•</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Opportunità */}
+            <div className="border-l-4 border-blue-500 pl-6">
+              <h4 className="text-lg font-semibold text-blue-700 mb-3">Opportunità</h4>
+              <ul className="space-y-2">
+                {dashboardData.swot_analysis.opportunities.map((item, index) => (
+                  <li key={index} className="text-gray-700 flex items-start">
+                    <span className="text-blue-500 mr-2">•</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Minacce */}
+            <div className="border-l-4 border-orange-500 pl-6">
+              <h4 className="text-lg font-semibold text-orange-700 mb-3">Minacce</h4>
+              <ul className="space-y-2">
+                {dashboardData.swot_analysis.threats.map((item, index) => (
+                  <li key={index} className="text-gray-700 flex items-start">
+                    <span className="text-orange-500 mr-2">•</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Info Bar */}
+        <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+            <div>
+              <div className="text-2xl font-bold text-green-600">
+                €{(dashboardData.extracted_values.patrimonio_netto / 1000).toFixed(0)}K
+              </div>
+              <div className="text-sm text-gray-600">PATRIMONIO NETTO</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-blue-600">
+                €{(dashboardData.extracted_values.utile_netto / 1000).toFixed(0)}K
+              </div>
+              <div className="text-sm text-gray-600">UTILE NETTO</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-purple-600">{dashboardData.healthScore}/100</div>
+              <div className="text-sm text-gray-600">PUNTEGGIO SALUTE</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
