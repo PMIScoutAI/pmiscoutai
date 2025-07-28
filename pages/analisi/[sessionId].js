@@ -1,9 +1,10 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 2.1: Corretto un errore di timing (race condition) sul caricamento dei dati dell'utente.
-// - Aggiunge grafici per visualizzare i trend degli indici.
-// - Mostra la nuova analisi SWOT dettagliata e l'analisi dei rischi.
-// - Integra i "teaser" per le funzionalità Pro.
-// - Mantiene la retrocompatibilità con le analisi V1.
+// VERSIONE 2.2: Correzione completa degli errori.
+// - Risolve l'errore 'Cannot read properties of null (reading 'id')'.
+// - Definisce tutti i componenti mancanti (LoadingState, ErrorState, etc.).
+// - Corregge l'uso delle classi dinamiche di Tailwind.
+// - Aggiunge un controllo di sicurezza per il caricamento della libreria Recharts.
+// - Completa il codice della sidebar.
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -38,7 +39,7 @@ export default function AnalisiReportPageWrapper() {
   );
 }
 
-// --- Componenti UI e Icone (invariati) ---
+// --- Componenti UI e Icone ---
 const Icon = ({ path, className = 'w-6 h-6' }) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{path}</svg> );
 const icons = {
   dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
@@ -59,7 +60,7 @@ const icons = {
   zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></>,
 };
 
-// --- Layout della Pagina Report (invariato) ---
+// --- Layout della Pagina Report ---
 function ReportPageLayout({ user }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navLinks = [
@@ -70,12 +71,26 @@ function ReportPageLayout({ user }) {
   return (
     <div className="relative flex min-h-screen bg-slate-100 text-slate-800">
       <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
-        {/* ... contenuto sidebar ... */}
+        <div className="flex flex-col h-full">
+            <div className="flex items-center justify-center h-16 border-b">
+                <img src="https://www.pmiscout.eu/wp-content/uploads/2024/07/Logo_Pmi_Scout_favicon.jpg" alt="Logo PMIScout" className="h-8 w-auto" onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/150x40/007BFF/FFFFFF?text=PMIScout'; }} />
+            </div>
+            <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
+                <nav className="flex-1 px-2 pb-4 space-y-1">
+                {navLinks.map((link) => (
+                    <Link key={link.text} href={link.href}><a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${ link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}><Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />{link.text}</a></Link>
+                ))}
+                </nav>
+                <div className="px-2 py-4 border-t"><a href="mailto:antonio@pmiscout.eu" className="flex items-center px-2 py-2 text-sm font-medium text-slate-600 rounded-md hover:bg-slate-100 hover:text-slate-900 group transition-colors"><Icon path={icons.support} className="w-6 h-6 mr-3 text-slate-500" />Supporto</a></div>
+            </div>
+        </div>
       </aside>
       {isSidebarOpen && (<div className="fixed inset-0 z-10 bg-black bg-opacity-50 md:hidden" onClick={() => setIsSidebarOpen(false)} />)}
       <div className="flex flex-col flex-1 w-0 overflow-hidden">
         <header className="relative z-10 flex items-center justify-between flex-shrink-0 h-16 px-4 bg-white border-b md:hidden">
-          {/* ... contenuto header mobile ... */}
+            <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 rounded-md hover:text-slate-900 hover:bg-slate-100 transition-colors" aria-label="Apri menu"><Icon path={icons.menu} /></button>
+            <img src="https://www.pmiscout.eu/wp-content/uploads/2024/07/Logo_Pmi_Scout_favicon.jpg" alt="Logo PMIScout" className="h-7 w-auto" onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/120x30/007BFF/FFFFFF?text=PMIScout'; }} />
+            <div className="w-8" />
         </header>
         <AnalisiReportPage user={user} />
       </div>
@@ -94,8 +109,6 @@ function AnalisiReportPage({ user }) {
 
   useEffect(() => {
     const fetchSessionData = async () => {
-      // FIX: Controlliamo che sia `sessionId` che `user` esistano prima di procedere.
-      // Questo previene l'errore se il componente renderizza prima che `user` sia pronto.
       if (!sessionId || !user) {
         return;
       }
@@ -104,7 +117,6 @@ function AnalisiReportPage({ user }) {
         const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
         if (sessionError) throw new Error('Sessione non trovata o accesso negato.');
         
-        // Ora è sicuro accedere a user.id
         if (session.user_id !== user.id) throw new Error('Non sei autorizzato a visualizzare questa analisi.');
         
         setSessionData(session);
@@ -124,10 +136,9 @@ function AnalisiReportPage({ user }) {
       }
     };
     fetchSessionData();
-  }, [sessionId, user]); // FIX: La dipendenza è l'intero oggetto `user`, non solo `user.id`.
+  }, [sessionId, user]);
 
   const renderContent = () => {
-    // Stati di caricamento, errore e attesa (invariati)
     if (isLoading) return <LoadingState text="Caricamento del report in corso..." />;
     if (error) return <ErrorState message={error} />;
     if (!sessionData) return <ErrorState message="Nessun dato trovato per questa sessione." />;
@@ -141,19 +152,15 @@ function AnalisiReportPage({ user }) {
       <div className="space-y-8">
         <ReportHeader companyName={companyName} healthScore={healthScore} summary={analysisData.summary} />
         
-        {/* Sezione Indici e Grafici */}
         <KeyMetricsAndChartsSection metrics={analysisData.key_metrics} chartsData={analysisData.charts_data} />
 
-        {/* Logica per mostrare SWOT nuovo o vecchio */}
         {analysisData.detailed_swot ? 
             <DetailedSwotSection swot={analysisData.detailed_swot} /> : 
             (analysisData.raw_ai_response?.swot && <SwotSection swot={analysisData.raw_ai_response.swot} />)
         }
         
-        {/* Nuova Sezione Analisi Rischi */}
         {analysisData.risk_analysis && analysisData.risk_analysis.length > 0 && <RiskAnalysisSection risks={analysisData.risk_analysis} />}
 
-        {/* Sezione Raccomandazioni (invariata) */}
         {analysisData.recommendations?.length > 0 && <RecommendationsSection recommendations={analysisData.recommendations} />}
         
         <div className="flex justify-center items-center space-x-4 mt-10">
@@ -163,7 +170,6 @@ function AnalisiReportPage({ user }) {
             </button>
         </div>
 
-        {/* Nuovo Teaser per Funzionalità Pro */}
         {analysisData.pro_features_teaser && <ProTeaserSection teaser={analysisData.pro_features_teaser} />}
       </div>
     );
@@ -178,23 +184,142 @@ function AnalisiReportPage({ user }) {
   );
 }
 
+// --- DEFINIZIONE COMPONENTI MANCANTI ---
+
+const LoadingState = ({ text, status }) => (
+    <div className="flex items-center justify-center h-full p-10">
+        <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <h2 className="text-2xl font-bold text-slate-800">{text}</h2>
+            {status && <p className="text-sm text-slate-500 mt-4">Stato attuale: <strong className="uppercase">{status}</strong></p>}
+        </div>
+    </div>
+);
+
+const ErrorState = ({ message }) => (
+    <div className="flex items-center justify-center h-full p-10">
+        <div className="text-center p-10 bg-white rounded-xl shadow-lg border-l-4 border-red-500">
+            <Icon path={icons.alertTriangle} className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-red-700">Si è verificato un errore</h2>
+            <p className="text-slate-600 mt-2">{message}</p>
+        </div>
+    </div>
+);
+
+const HealthScoreGauge = ({ score }) => {
+    const getScoreColor = (s) => {
+        if (s >= 75) return 'text-green-500';
+        if (s >= 50) return 'text-yellow-500';
+        return 'text-red-500';
+    };
+    const circumference = 2 * Math.PI * 52;
+    const offset = circumference - (score / 100) * circumference;
+
+    return (
+        <div className="relative w-40 h-40">
+            <svg className="w-full h-full" viewBox="0 0 120 120">
+                <circle className="text-slate-200" strokeWidth="10" stroke="currentColor" fill="transparent" r="52" cx="60" cy="60" />
+                <circle
+                    className={`${getScoreColor(score)} transition-all duration-1000 ease-out`}
+                    strokeWidth="10"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={offset}
+                    strokeLinecap="round"
+                    stroke="currentColor"
+                    fill="transparent"
+                    r="52"
+                    cx="60"
+                    cy="60"
+                    transform="rotate(-90 60 60)"
+                />
+            </svg>
+            <div className={`absolute inset-0 flex flex-col items-center justify-center ${getScoreColor(score)}`}>
+                <span className="text-4xl font-bold">{score}</span>
+                <span className="text-xs font-medium text-slate-500">/ 100</span>
+            </div>
+        </div>
+    );
+};
+
+const ReportHeader = ({ companyName, healthScore, summary }) => (
+    <div className="p-8 bg-white rounded-xl shadow-sm border border-slate-200">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+            <div className="flex-1">
+                <p className="text-sm font-medium text-blue-600">Report di Analisi AI</p>
+                <h1 className="text-3xl font-bold text-slate-900 mt-1">{companyName}</h1>
+                <p className="mt-4 text-slate-600 leading-relaxed">{summary || 'Nessun sommario disponibile.'}</p>
+            </div>
+            <div className="flex-shrink-0">
+                <HealthScoreGauge score={healthScore} />
+            </div>
+        </div>
+    </div>
+);
+
+const RecommendationsSection = ({ recommendations }) => (
+    <section>
+        <h2 className="text-xl font-bold text-slate-800 mb-4">Raccomandazioni Strategiche</h2>
+        <div className="space-y-4">
+            {recommendations.map((rec, i) => (
+                <div key={i} className="flex items-start p-4 bg-white rounded-xl shadow-sm border border-slate-200">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-4">
+                        <Icon path={icons.lightbulb} className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <p className="text-slate-700 text-sm">{rec}</p>
+                </div>
+            ))}
+        </div>
+    </section>
+);
+
+const SwotSection = ({ swot }) => {
+    const swotDetails = {
+        strengths: { label: 'Punti di Forza', icon: icons.thumbsUp, color: 'green' },
+        weaknesses: { label: 'Punti di Debolezza', icon: icons.thumbsDown, color: 'red' },
+        opportunities: { label: 'Opportunità', icon: icons.target, color: 'blue' },
+        threats: { label: 'Minacce', icon: icons.alertTriangle, color: 'orange' },
+    };
+    return (
+        <section>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi SWOT</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {Object.keys(swotDetails).map(key => {
+                    const detail = swotDetails[key];
+                    const items = swot[key] || [];
+                    return (
+                        <div key={key} className={`p-6 bg-white rounded-xl shadow-sm border-l-4 border-${detail.color}-500`}>
+                            <div className={`flex items-center text-lg font-bold text-${detail.color}-600`}>
+                                <Icon path={detail.icon} className="w-6 h-6 mr-3" />
+                                {detail.label}
+                            </div>
+                            <ul className="mt-4 space-y-2 list-disc list-inside text-slate-600 text-sm">
+                                {items.length > 0 ? items.map((item, idx) => <li key={idx}>{item}</li>) : <li>Nessun dato disponibile.</li>}
+                            </ul>
+                        </div>
+                    );
+                })}
+            </div>
+        </section>
+    );
+};
+
+
 // --- NUOVI e AGGIORNATI Componenti UI per il Report V2 ---
 
-// Componente Header e Gauge (invariati)
-const HealthScoreGauge = ({ score }) => { /* ... codice invariato ... */ };
-const ReportHeader = ({ companyName, healthScore, summary }) => { /* ... codice invariato ... */ };
-
-// NUOVO: Componente Grafico
 const TrendChart = ({ data, dataKey, name, color }) => {
-    const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = window.Recharts;
+    // FIX: Aggiunto controllo per Recharts
+    if (typeof window === 'undefined' || !window.Recharts) {
+        return <div className="flex items-center justify-center h-48 text-sm text-slate-500">Caricamento grafico...</div>;
+    }
+    const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
     const chartData = [
-        { name: 'Anno Prec.', [dataKey]: data.previous_year },
-        { name: 'Anno Corr.', [dataKey]: data.current_year },
+        { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 },
+        { name: 'Anno Corr.', [dataKey]: data.current_year || 0 },
     ];
     return (
         <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                <BarChart data={chartData} margin={{ top: 20, right: 20, left: -10, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                     <YAxis tick={{ fontSize: 12 }} />
@@ -206,19 +331,33 @@ const TrendChart = ({ data, dataKey, name, color }) => {
     );
 };
 
-// AGGIORNATO: Sezione Indici e Grafici
 const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
-    // ... (codice per metricDetails invariato) ...
+    const metricDetails = {
+        current_ratio: { label: 'Current Ratio', icon: icons.dollarSign, color: 'text-blue-600', bgColor: 'bg-blue-50' },
+        roe: { label: 'ROE', icon: icons.trendingUp, color: 'text-green-600', bgColor: 'bg-green-50' },
+        debt_equity: { label: 'Debt/Equity', icon: icons.alertTriangle, color: 'text-orange-600', bgColor: 'bg-orange-50' },
+    };
     return (
         <section>
             <h2 className="text-xl font-bold text-slate-800 mb-4">Panoramica Finanziaria</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* Card Indici */}
-                {Object.keys(metrics).map(key => { /* ... codice card invariato ... */ })}
+                {metrics && Object.keys(metrics).map(key => {
+                    const detail = metricDetails[key];
+                    if (!detail) return null;
+                    return (
+                        <div key={key} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${detail.bgColor}`}>
+                                <Icon path={detail.icon} className={`w-6 h-6 ${detail.color}`} />
+                            </div>
+                            <p className="text-sm text-slate-500 mt-4">{detail.label}</p>
+                            <p className="text-3xl font-bold text-slate-900">{metrics[key].value}</p>
+                            <p className="text-xs text-slate-400 mt-1">Benchmark: {metrics[key].benchmark}</p>
+                        </div>
+                    );
+                })}
                 
-                {/* NUOVO: Card Grafici */}
-                {chartsData?.roe_trend?.current_year && (
-                    <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-2">
+                {chartsData?.roe_trend?.current_year != null && (
+                    <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-3">
                         <h3 className="text-base font-semibold text-slate-800">Andamento ROE (%)</h3>
                         <TrendChart data={chartsData.roe_trend} dataKey="current_year" name="ROE" color="#22c55e" />
                     </div>
@@ -228,26 +367,27 @@ const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
     );
 };
 
-// NUOVO: Sezione SWOT Dettagliato
 const DetailedSwotSection = ({ swot }) => {
+    // FIX: Mappa per classi Tailwind statiche
     const swotDetails = {
-        strengths: { label: 'Punti di Forza', icon: icons.thumbsUp, color: 'green' },
-        weaknesses: { label: 'Punti di Debolezza', icon: icons.thumbsDown, color: 'red' },
-        opportunities: { label: 'Opportunità', icon: icons.target, color: 'blue' },
-        threats: { label: 'Minacce', icon: icons.alertTriangle, color: 'orange' },
+        strengths: { label: 'Punti di Forza', icon: icons.thumbsUp, classes: 'border-green-500 bg-green-100 text-green-600' },
+        weaknesses: { label: 'Punti di Debolezza', icon: icons.thumbsDown, classes: 'border-red-500 bg-red-100 text-red-600' },
+        opportunities: { label: 'Opportunità', icon: icons.target, classes: 'border-blue-500 bg-blue-100 text-blue-600' },
+        threats: { label: 'Minacce', icon: icons.alertTriangle, classes: 'border-orange-500 bg-orange-100 text-orange-600' },
     };
     return (
         <section>
             <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi SWOT Dettagliata</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {Object.keys(swot).map(key => {
+                {swot && Object.keys(swot).map(key => {
                     const detail = swotDetails[key];
+                    if (!detail) return null;
                     const items = swot[key] || [];
                     return (
-                        <div key={key} className={`p-6 bg-white rounded-xl shadow-sm border-t-4 border-${detail.color}-500`}>
-                            <div className={`flex items-center text-lg font-bold text-slate-800`}>
-                                <div className={`w-8 h-8 rounded-full bg-${detail.color}-100 flex items-center justify-center mr-3`}>
-                                    <Icon path={detail.icon} className={`w-5 h-5 text-${detail.color}-600`} />
+                        <div key={key} className={`p-6 bg-white rounded-xl shadow-sm border-t-4 ${detail.classes.split(' ')[0]}`}>
+                            <div className="flex items-center text-lg font-bold text-slate-800">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 ${detail.classes.split(' ')[1]}`}>
+                                    <Icon path={detail.icon} className={`w-5 h-5 ${detail.classes.split(' ')[2]}`} />
                                 </div>
                                 {detail.label}
                             </div>
@@ -267,7 +407,6 @@ const DetailedSwotSection = ({ swot }) => {
     );
 };
 
-// NUOVO: Sezione Analisi Rischi
 const RiskAnalysisSection = ({ risks }) => (
     <section>
         <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi dei Rischi Principali</h2>
@@ -285,7 +424,6 @@ const RiskAnalysisSection = ({ risks }) => (
     </section>
 );
 
-// NUOVO: Sezione Teaser Pro
 const ProTeaserSection = ({ teaser }) => (
     <section>
         <h2 className="text-xl font-bold text-slate-800 mb-4">Sblocca il Tuo Potenziale con Pro</h2>
@@ -308,10 +446,3 @@ const ProTeaserSection = ({ teaser }) => (
         </div>
     </section>
 );
-
-
-// Componenti di fallback (Loading, Error, SWOT vecchio)
-const LoadingState = ({ text, status }) => { /* ... codice invariato ... */ };
-const ErrorState = ({ message }) => { /* ... codice invariato ... */ };
-const RecommendationsSection = ({ recommendations }) => { /* ... codice invariato ... */ };
-const SwotSection = ({ swot }) => { /* ... codice fallback SWOT V1 ... */ };
