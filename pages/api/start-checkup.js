@@ -1,5 +1,5 @@
 // /pages/api/start-checkup.js
-// VERSIONE 2.1: Corretto l'errore "not-null constraint" aggiungendo session_name durante l'inserimento.
+// VERSIONE 2.2: Corretto l'errore "invalid input for type integer" arrotondando l'health_score.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -43,7 +43,6 @@ export default async function handler(req, res) {
     if (!companyName || !pdfFile) throw new Error('Dati mancanti.');
     const { data: company } = await supabase.from('companies').upsert({ user_id: userId, company_name: companyName }, { onConflict: 'user_id' }).select().single();
     
-    // FIX: Aggiunto il campo `session_name` che mancava.
     const { data: sessionData, error: sessionError } = await supabase.from('checkup_sessions').insert({ 
         user_id: userId, 
         company_id: company.id, 
@@ -89,12 +88,15 @@ export default async function handler(req, res) {
       max_tokens: 2500
     });
     const analysisResult = JSON.parse(completion.choices[0].message.content);
+    
+    // FIX: Arrotondiamo l'health_score per garantire che sia sempre un intero.
+    const finalHealthScore = Math.round(parseFloat(analysisResult.health_score || 0));
 
     const { error: saveError } = await supabase
       .from('analysis_results')
       .insert({
         session_id: session.id,
-        health_score: analysisResult.health_score || 0,
+        health_score: finalHealthScore, // Usiamo il valore arrotondato
         summary: analysisResult.summary || '',
         key_metrics: analysisResult.key_metrics || {},
         swot: analysisResult.swot || {},
