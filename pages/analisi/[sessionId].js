@@ -1,5 +1,5 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 2: UI/UX completamente rivista per visualizzare i dati arricchiti.
+// VERSIONE 2.1: Corretto un errore di timing (race condition) sul caricamento dei dati dell'utente.
 // - Aggiunge grafici per visualizzare i trend degli indici.
 // - Mostra la nuova analisi SWOT dettagliata e l'analisi dei rischi.
 // - Integra i "teaser" per le funzionalità Pro.
@@ -61,7 +61,6 @@ const icons = {
 
 // --- Layout della Pagina Report (invariato) ---
 function ReportPageLayout({ user }) {
-  // ... codice del layout invariato ...
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navLinks = [
     { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
@@ -84,7 +83,7 @@ function ReportPageLayout({ user }) {
   );
 }
 
-// --- Componente Pagina Analisi (Logica di fetch invariata, Render aggiornato) ---
+// --- Componente Pagina Analisi (Logica di fetch CORRETTA) ---
 function AnalisiReportPage({ user }) {
   const router = useRouter();
   const { sessionId } = router.query;
@@ -94,17 +93,23 @@ function AnalisiReportPage({ user }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // La logica di fetching dei dati da Supabase rimane identica
     const fetchSessionData = async () => {
-      if (!sessionId || !user.id) return;
+      // FIX: Controlliamo che sia `sessionId` che `user` esistano prima di procedere.
+      // Questo previene l'errore se il componente renderizza prima che `user` sia pronto.
+      if (!sessionId || !user) {
+        return;
+      }
+
       try {
         const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
         if (sessionError) throw new Error('Sessione non trovata o accesso negato.');
+        
+        // Ora è sicuro accedere a user.id
         if (session.user_id !== user.id) throw new Error('Non sei autorizzato a visualizzare questa analisi.');
+        
         setSessionData(session);
 
         if (session.status === 'completed') {
-          // Adesso questa query recupera anche le nuove colonne (charts_data, etc.)
           const { data: results, error: resultsError } = await supabase.from('analysis_results').select('*').eq('session_id', sessionId).single();
           if (resultsError) throw new Error('Impossibile caricare i risultati dell\'analisi.');
           setAnalysisData(results);
@@ -119,7 +124,7 @@ function AnalisiReportPage({ user }) {
       }
     };
     fetchSessionData();
-  }, [sessionId, user.id]);
+  }, [sessionId, user]); // FIX: La dipendenza è l'intero oggetto `user`, non solo `user.id`.
 
   const renderContent = () => {
     // Stati di caricamento, errore e attesa (invariati)
@@ -310,4 +315,3 @@ const LoadingState = ({ text, status }) => { /* ... codice invariato ... */ };
 const ErrorState = ({ message }) => { /* ... codice invariato ... */ };
 const RecommendationsSection = ({ recommendations }) => { /* ... codice invariato ... */ };
 const SwotSection = ({ swot }) => { /* ... codice fallback SWOT V1 ... */ };
-
