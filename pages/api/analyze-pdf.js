@@ -176,7 +176,9 @@ export default async function handler(req, res) {
       max_tokens: 2000
     });
 
-    const analysisResult = JSON.parse(completion.choices[0].message.content);
+const analysisResult = JSON.parse(completion.choices[0].message.content);
+// Correggi data corrente reale
+analysisResult.analysis_date = new Date().toLocaleDateString("it-IT");
     console.log(`[${sessionId}] ✅ Analisi GPT completata`);
 
     // 9. Salva risultati
