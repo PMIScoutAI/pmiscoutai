@@ -1,38 +1,17 @@
-// /pages/checkup.js
-// CODICE COMPLETAMENTE RIVISTO NELLA UI/UX
-// - Mantiene la stessa logica tecnica e di autenticazione Outseta.
-// - Integra il layout della dashboard (sidebar + contenuto) per un'esperienza coerente.
-// - Sostituisce l'upload di base con una "drop zone" interattiva.
-// - Migliora il feedback visivo per l'utente (loading spinner, messaggi di errore/successo).
-// - FIX v2: Aggiunto lo script di Tailwind CSS per un corretto rendering grafico.
-
-import { useState, useRef } from 'react';
+// ...inizio identico...
+import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
-import Link from 'next/link';
 import Script from 'next/script';
-import { api } from '../utils/api';
-import { ProtectedPage } from '../utils/ProtectedPage';
+import { useRouter } from 'next/router';
+import { supabase } from '../../utils/supabaseClient';
+import { ProtectedPage } from '../../utils/ProtectedPage';
 
-// --- Componente Wrapper (CORRETTO) ---
-// Aggiunti gli script di Outseta e Tailwind CSS per garantire il corretto funzionamento.
-export default function CheckupPageWrapper() {
+export default function AnalisiReportPageWrapper() {
   return (
     <>
       <Head>
-        <title>Check-UP AI Azienda - PMIScout</title>
-        {/* Aggiunti per coerenza con la dashboard */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
-        {/* FIX: Aggiunto lo script di Tailwind CSS mancante */}
-        <script src="https://cdn.tailwindcss.com"></script>
-        <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+        <title>Report Analisi - PMIScout</title>
       </Head>
-
-      {/* Script di Outseta per prevenire l'errore di caricamento */}
       <Script id="outseta-options" strategy="beforeInteractive">
         {`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}
       </Script>
@@ -41,327 +20,201 @@ export default function CheckupPageWrapper() {
         src="https://cdn.outseta.com/outseta.min.js"
         strategy="beforeInteractive"
       />
-
-      {/* Il componente ProtectedPage ora troverà Outseta già caricato */}
       <ProtectedPage>
-        {(user) => <CheckupPageLayout user={user} />}
+        {(user) => <AnalisiReportPage user={user} />}
       </ProtectedPage>
     </>
   );
 }
 
-// --- Componenti UI Riutilizzabili (presi dalla dashboard) ---
-
-// Componente Icona generico
-const Icon = ({ path, className = 'w-6 h-6' }) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className={className}
-  >
-    {path}
-  </svg>
+const Icon = ({ children, className = "w-6 h-6" }) => (
+  <div className={`${className} flex items-center justify-center`}>
+    {children}
+  </div>
 );
 
-// Collezione di icone SVG
-const icons = {
-  dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
-  profile: <><path d="M5.52 19c.64-2.2 1.84-3 3.22-3h6.52c1.38 0 2.58.8 3.22 3" /><circle cx="12" cy="10" r="3" /><circle cx="12" cy="12" r="10" /></>,
-  checkup: <><path d="M12 8V4H8" /><rect x="4" y="12" width="16" height="8" rx="2" /><path d="M2 12h2M20 12h2M12 18v2M12 14v-2" /></>,
-  support: <><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
-  menu: <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>,
-  upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></>,
-  lock: <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></>,
-  alert: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></>,
-};
-
-// --- Layout Principale della Pagina ---
-// Questo componente costruisce la pagina con sidebar e area contenuti.
-function CheckupPageLayout({ user }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-  const navLinks = [
-    { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
-    { href: '/checkup', text: 'Check-UP AI', icon: icons.checkup, active: true },
-    { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
-  ];
-
-  return (
-    <div className="relative flex min-h-screen bg-slate-50 text-slate-800">
-      {/* Sidebar */}
-      <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
-        <div className="flex flex-col h-full">
-          <div className="flex items-center justify-center h-16 border-b">
-            <img 
-              src="https://www.pmiscout.eu/wp-content/uploads/2024/07/Logo_Pmi_Scout_favicon.jpg" 
-              alt="Logo PMIScout" 
-              className="h-8 w-auto"
-              onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/150x40/007BFF/FFFFFF?text=PMIScout'; }}
-            />
-          </div>
-          <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
-            <nav className="flex-1 px-2 pb-4 space-y-1">
-              {navLinks.map((link) => (
-                <Link key={link.text} href={link.href}>
-                  <a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${ link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}>
-                    <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
-                    {link.text}
-                  </a>
-                </Link>
-              ))}
-            </nav>
-            <div className="px-2 py-4 border-t">
-              <a href="mailto:antonio@pmiscout.eu" className="flex items-center px-2 py-2 text-sm font-medium text-slate-600 rounded-md hover:bg-slate-100 hover:text-slate-900 group transition-colors">
-                <Icon path={icons.support} className="w-6 h-6 mr-3 text-slate-500" />
-                Supporto
-              </a>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* Overlay mobile */}
-      {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 z-10 bg-black bg-opacity-50 md:hidden" 
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
-
-      {/* Contenuto Principale */}
-      <div className="flex flex-col flex-1 w-0 overflow-hidden">
-        {/* Header mobile */}
-        <header className="relative z-10 flex items-center justify-between flex-shrink-0 h-16 px-4 bg-white border-b md:hidden">
-          <button 
-            onClick={() => setIsSidebarOpen(true)} 
-            className="p-2 text-slate-500 rounded-md hover:text-slate-900 hover:bg-slate-100 transition-colors"
-            aria-label="Apri menu"
-          >
-            <Icon path={icons.menu} />
-          </button>
-          <img 
-            src="https://www.pmiscout.eu/wp-content/uploads/2024/07/Logo_Pmi_Scout_favicon.jpg" 
-            alt="Logo PMIScout" 
-            className="h-7 w-auto"
-            onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/120x30/007BFF/FFFFFF?text=PMIScout'; }}
-          />
-          <div className="w-8" />
-        </header>
-
-        <main className="relative flex-1 overflow-y-auto focus:outline-none">
-          <div className="py-8 mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-            {/* Header di Pagina */}
-            <div className="pb-6 border-b border-slate-200">
-              <h1 className="text-2xl font-bold leading-7 text-slate-900 sm:text-3xl sm:truncate">
-                Check-UP AI Azienda
-              </h1>
-              <p className="mt-2 text-base text-slate-600">
-                Ciao, <span className="font-semibold">{user.FirstName || user.Email}</span>. Compila i dati e carica il bilancio per avviare l'analisi.
-              </p>
-            </div>
-            
-            {/* Il Form vero e proprio */}
-            <div className="mt-8">
-              <CheckupForm />
-            </div>
-          </div>
-        </main>
-      </div>
-    </div>
-  );
-}
-
-// --- Componente del Form (Logica tecnica invariata, UI rivista) ---
-function CheckupForm() {
-  const [loading, setLoading] = useState(false);
+function AnalisiReportPage({ user }) {
+  const router = useRouter();
+  const { sessionId } = router.query;
+  const [sessionData, setSessionData] = useState(null);
+  const [analysisData, setAnalysisData] = useState(null);
   const [error, setError] = useState('');
-  
-  // Dati del form
-  const [companyName, setCompanyName] = useState('');
-  const [vatNumber, setVatNumber] = useState('');
-  const [pdfFile, setPdfFile] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const channelRef = useRef(null);
 
-  const fileInputRef = useRef(null);
+  useEffect(() => {
+    const fetchSessionData = async () => {
+      if (!sessionId || !user.id) return;
+      try {
+        const { data: session, error: sessionError } = await supabase
+          .from('checkup_sessions')
+          .select('*, companies(*)')
+          .eq('id', sessionId)
+          .single();
+        if (sessionError) throw new Error('Sessione non trovata o accesso negato.');
+        if (session.user_id !== user.id) throw new Error('Non sei autorizzato a visualizzare questa analisi.');
+        setSessionData(session);
 
-  const handleFileChange = (selectedFile) => {
-    if (!selectedFile) return;
+        if (session.status === 'completed') {
+          const { data: results, error: resultsError } = await supabase
+            .from('analysis_results')
+            .select('*')
+            .eq('session_id', sessionId)
+            .single();
+          if (resultsError) throw new Error('Impossibile caricare i risultati dell\'analisi.');
+          setAnalysisData(results);
+        } else if (session.status === 'failed') {
+          setError(session.error_message || 'Errore durante l\'analisi.');
+        }
+      } catch (err) {
+        console.error('Data fetching error:', err);
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-    // Validazione del file
-    if (selectedFile.type !== 'application/pdf') {
-      setError('Il file deve essere in formato PDF.');
-      setPdfFile(null);
-      return;
+    fetchSessionData();
+  }, [sessionId, user.id]);
+
+  const renderContent = () => {
+    if (isLoading) return <div className="text-center p-10">Caricamento del report...</div>;
+    if (error) return <div className="text-center p-10 text-red-600">Errore: {error}</div>;
+    if (!sessionData) return <div className="text-center p-10">Nessun dato trovato per questa sessione.</div>;
+
+    if (sessionData.status === 'completed' && analysisData) {
+      const analysis = analysisData.raw_ai_response || {};
+
+      return (
+        <div className="space-y-10">
+          {/* Header */}
+          <section className="bg-white rounded-2xl shadow-md p-10">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-3xl font-semibold text-gray-900">Analisi: {analysis.company_name || sessionData.companies?.company_name}</h2>
+                <p className="text-gray-500 mt-1">Dati aggiornati al {analysis.analysis_date || new Date().toLocaleDateString('it-IT')}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-sm text-gray-500">Health Score</p>
+                <p className="text-5xl font-bold text-green-600">{analysisData.health_score || 0}</p>
+                <p className="text-sm text-gray-400">/100</p>
+              </div>
+            </div>
+            <p className="mt-6 text-gray-700">{analysisData.summary || 'Analisi in corso...'}</p>
+          </section>
+
+          {/* Indici Chiave */}
+          {analysis.key_metrics && (
+            <section className="bg-white rounded-2xl shadow-md p-10">
+              <h3 className="text-2xl font-semibold text-gray-900 mb-6">Indici Finanziari</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {['current_ratio', 'roe', 'debt_equity'].map((key) => {
+                  const item = analysis.key_metrics[key];
+                  if (!item) return null;
+                  const labels = { current_ratio: 'Current Ratio', roe: 'ROE', debt_equity: 'Debt/Equity' };
+                  return (
+                    <div key={key} className="bg-gray-50 p-6 rounded-xl shadow-sm">
+                      <h4 className="text-lg font-semibold text-gray-800 mb-1">{labels[key]}</h4>
+                      <p className="text-3xl font-bold text-gray-900">{item.value}</p>
+                      <p className="text-sm text-gray-500 mt-1">Benchmark: {item.benchmark}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Settore */}
+          {analysis.sector_overview && (
+            <section className="bg-white rounded-2xl shadow-md p-10">
+              <h3 className="text-2xl font-semibold text-gray-900 mb-6">Panorama Settore</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div>
+                  <p className="text-gray-500 text-sm">Valore Mercato Stimato</p>
+                  <p className="text-2xl font-bold text-blue-600">{analysis.sector_overview.market_value}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500 text-sm">Crescita Annua (CAGR)</p>
+                  <p className="text-2xl font-bold text-green-600">{analysis.sector_overview.growth_rate}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500 text-sm">Top Segmento</p>
+                  <p className="text-xl font-semibold text-purple-600">{analysis.sector_overview.top_segment}</p>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* SWOT */}
+          {analysis.swot && (
+            <section className="bg-white rounded-2xl shadow-md p-10">
+              <h3 className="text-2xl font-semibold text-gray-900 mb-6">Analisi SWOT</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                {['strengths', 'weaknesses', 'opportunities', 'threats'].map((type) => (
+                  <div key={type}>
+                    <h4 className="text-lg font-semibold mb-3 text-gray-700 capitalize">{type}</h4>
+                    <ul className="space-y-2 list-disc list-inside text-gray-700">
+                      {(analysis.swot[type] || []).map((item, idx) => (
+                        <li key={idx}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Raccomandazioni */}
+          {analysisData.recommendations?.length > 0 && (
+            <section className="bg-white rounded-2xl shadow-md p-10">
+              <h3 className="text-2xl font-semibold text-gray-900 mb-6">Raccomandazioni</h3>
+              <ul className="space-y-4">
+                {analysisData.recommendations.map((r, i) => (
+                  <li key={i} className="bg-indigo-50 border-l-4 border-indigo-500 p-4 rounded-md text-gray-800">{r}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* Pulsante stampa */}
+          <div className="text-center">
+            <button onClick={() => window.print()} className="mt-10 bg-gray-800 hover:bg-black text-white font-semibold py-3 px-6 rounded-xl shadow-md transition">
+              🖨️ Stampa il Report
+            </button>
+          </div>
+
+          {/* CTA finale */}
+          <div className="mt-14 bg-yellow-50 border-l-4 border-yellow-500 p-6 rounded-xl shadow-md">
+            <h4 className="text-lg font-bold text-yellow-800 mb-2">🔐 Vuoi accedere ai report completi?</h4>
+            <p className="text-gray-700 mb-3">Attiva PMIScout Pro per analisi settoriali, suggerimenti strategici personalizzati e accesso premium.</p>
+            <a href="/pro" className="inline-block bg-yellow-600 hover:bg-yellow-700 text-white font-semibold px-5 py-2 rounded-md">Scopri PMIScout Pro</a>
+          </div>
+        </div>
+      );
     }
-    if (selectedFile.size > 5 * 1024 * 1024) { // 5MB
-      setError('Il file PDF non deve superare i 5MB.');
-      setPdfFile(null);
-      return;
-    }
-    
-    setError('');
-    setPdfFile(selectedFile);
-  };
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileChange(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!companyName.trim()) {
-      setError('Il nome azienda è obbligatorio.');
-      return;
-    }
-    if (!pdfFile) {
-      setError('È necessario caricare un file PDF.');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-
-    try {
-      const formData = new FormData();
-      formData.append('companyName', companyName);
-      formData.append('vatNumber', vatNumber);
-      formData.append('pdfFile', pdfFile);
-
-      // Chiamata API (invariata)
-      const result = await api.startCheckup(formData);
-      
-      // Redirect (invariato)
-      window.location.href = `/analisi/${result.sessionId}`;
-      
-    } catch (err) {
-      console.error('Errore durante l\'avvio del checkup:', err);
-      const errorMessage = err.response?.data?.message || err.message || 'Si è verificato un errore imprevisto.';
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
+    return (
+      <div className="text-center p-10 bg-white rounded-xl shadow-lg">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <h2 className="text-2xl font-bold text-slate-800">Analisi in corso</h2>
+        <p className="text-slate-600 mt-2">Stiamo elaborando i dati. Questa pagina si aggiornerà automaticamente.</p>
+        <p className="text-sm text-slate-500 mt-4">Stato: <strong>{sessionData?.status || 'sconosciuto'}</strong></p>
+      </div>
+    );
   };
 
   return (
-    <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
-      <form onSubmit={handleSubmit} className="space-y-6">
-        
-        {/* Messaggio di Errore Migliorato */}
-        {error && (
-          <div className="flex items-start p-4 text-sm text-red-700 bg-red-50 rounded-lg">
-            <Icon path={icons.alert} className="w-5 h-5 mr-3 flex-shrink-0" />
-            <div>{error}</div>
+    <main className="min-h-screen bg-slate-100 py-10 px-4">
+      <div className="max-w-6xl mx-auto">
+        <header className="mb-10">
+          <div className="flex items-center">
+            <Icon className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-lg mr-4">📊</Icon>
+            <h1 className="text-4xl font-bold text-gray-900">Report Analisi AI</h1>
           </div>
-        )}
-
-        {/* Nome Azienda */}
-        <div>
-          <label htmlFor="companyName" className="block text-sm font-medium text-slate-700 mb-1">
-            Nome Azienda *
-          </label>
-          <input
-            id="companyName"
-            type="text"
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-            placeholder="Es. Mario Rossi S.r.l."
-            required
-          />
-        </div>
-
-        {/* Partita IVA */}
-        <div>
-          <label htmlFor="vatNumber" className="block text-sm font-medium text-slate-700 mb-1">
-            Partita IVA (Opzionale)
-          </label>
-          <input
-            id="vatNumber"
-            type="text"
-            value={vatNumber}
-            onChange={(e) => setVatNumber(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-            placeholder="Es. 12345678901"
-          />
-        </div>
-
-        {/* Upload PDF Migliorato */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Bilancio PDF (max 5MB) *
-          </label>
-          <div
-            className="mt-2 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer hover:border-blue-500 hover:bg-slate-50 transition-colors"
-            onClick={() => fileInputRef.current.click()}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={handleDrop}
-          >
-            <div className="text-center">
-              <Icon path={icons.upload} className="mx-auto h-10 w-10 text-slate-400" />
-              <p className="mt-2 text-sm text-slate-600">
-                <span className="font-semibold text-blue-600">Carica un file</span> o trascinalo qui
-              </p>
-              <p className="text-xs text-slate-500">Formato PDF, dimensione massima 5MB</p>
-            </div>
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf"
-            onChange={(e) => handleFileChange(e.target.files[0])}
-            className="hidden"
-            required={!pdfFile}
-          />
-          {pdfFile && (
-            <div className="mt-3 flex items-center justify-between text-sm bg-green-50 p-3 rounded-lg text-green-800 border border-green-200">
-              <div className="flex items-center">
-                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
-                <span className="font-medium">{pdfFile.name}</span>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setPdfFile(null)}
-                className="text-green-900 hover:text-green-700 font-bold"
-                aria-label="Rimuovi file"
-              >&times;</button>
-            </div>
-          )}
-        </div>
-
-        {/* Nota sulla sicurezza */}
-        <div className="flex items-center text-xs text-slate-500">
-          <Icon path={icons.lock} className="w-4 h-4 mr-2 flex-shrink-0" />
-          <span>I tuoi dati sono crittografati e usati solo per l'analisi.</span>
-        </div>
-
-        {/* Bottone di Submit */}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full flex justify-center items-center px-4 py-3 font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all duration-300"
-        >
-          {loading ? (
-            <>
-              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Analisi in corso...
-            </>
-          ) : (
-            'Avvia Check-UP AI'
-          )}
-        </button>
-      </form>
-    </div>
+          <p className="text-gray-500 mt-2">Sessione: {sessionId} — Azienda: {sessionData?.companies?.company_name || '...'}</p>
+        </header>
+        {renderContent()}
+      </div>
+    </main>
   );
 }
