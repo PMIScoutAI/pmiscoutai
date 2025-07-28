@@ -1,618 +1,375 @@
-import { useState, useEffect } from 'react';
+// /pages/analisi/[sessionId].js
+// AGGIORNATO: Layout completo per visualizzare tutti i dati AI strutturati
 
-// 🎨 Mappa colori per evitare classi dinamiche Tailwind
-const colorMap = {
-  red: {
-    text: 'text-red-700',
-    bg: 'bg-red-500',
-    bgLight: 'bg-red-50',
-    border: 'border-red-500',
-    shadow: 'shadow-red-500',
-    rgb: '239, 68, 68'
-  },
-  yellow: {
-    text: 'text-yellow-700',
-    bg: 'bg-yellow-500',
-    bgLight: 'bg-yellow-50',
-    border: 'border-yellow-500',
-    shadow: 'shadow-yellow-500',
-    rgb: '245, 158, 11'
-  },
-  green: {
-    text: 'text-green-700',
-    bg: 'bg-green-500',
-    bgLight: 'bg-green-50',
-    border: 'border-green-500',
-    shadow: 'shadow-green-500',
-    rgb: '16, 185, 129'
-  }
-};
+import { useState, useEffect, useRef } from 'react';
+import Head from 'next/head';
+import Script from 'next/script';
+import { useRouter } from 'next/router';
+import { supabase } from '../../utils/supabaseClient';
+import { ProtectedPage } from '../../utils/ProtectedPage';
 
-// Componente Gauge Circolare Migliorato
-const CircularGauge = ({ value, maxValue, minValue = 0, label, unit = "", benchmark, status }) => {
-  const [animatedValue, setAnimatedValue] = useState(0);
-  
-  useEffect(() => {
-    const timer = setTimeout(() => setAnimatedValue(value || 0), 500);
-    return () => clearTimeout(timer);
-  }, [value]);
-  
-  const normalizedValue = ((animatedValue - minValue) / (maxValue - minValue)) * 100;
-  const rotation = (normalizedValue / 100) * 180 - 90;
-  
-  // 🎯 Calcolo dinamico dell'arco
-  const arcLength = 251; // lunghezza arco totale
-  const progressLength = (normalizedValue / 100) * arcLength;
-  
-  const getColor = () => {
-    switch(status) {
-      case 'green': return '#10B981';
-      case 'yellow': return '#F59E0B'; 
-      case 'red': return '#EF4444';
-      default: return '#6B7280';
-    }
-  };
-
+// --- Componente Wrapper ---
+export default function AnalisiReportPageWrapper() {
   return (
-    <div className="relative w-48 h-32 mx-auto">
-      {/* Gauge Background */}
-      <svg className="w-48 h-32" viewBox="0 0 200 120">
-        {/* Background Arc */}
-        <path
-          d="M 20 100 A 80 80 0 0 1 180 100"
-          fill="none"
-          stroke="#E5E7EB"
-          strokeWidth="12"
-          strokeLinecap="round"
-        />
-        
-        {/* Colored Sections */}
-        <path
-          d="M 20 100 A 80 80 0 0 1 100 40"
-          fill="none"
-          stroke="#EF4444"
-          strokeWidth="8"
-          strokeLinecap="round"
-          opacity="0.3"
-        />
-        <path
-          d="M 100 40 A 80 80 0 0 1 140 55"
-          fill="none"
-          stroke="#F59E0B"
-          strokeWidth="8"
-          strokeLinecap="round"
-          opacity="0.3"
-        />
-        <path
-          d="M 140 55 A 80 80 0 0 1 180 100"
-          fill="none"
-          stroke="#10B981"
-          strokeWidth="8"
-          strokeLinecap="round"
-          opacity="0.3"
-        />
-        
-        {/* Progress Arc - Dinamico */}
-        <path
-          d="M 20 100 A 80 80 0 0 1 180 100"
-          fill="none"
-          stroke={getColor()}
-          strokeWidth="6"
-          strokeLinecap="round"
-          strokeDasharray={`${progressLength} ${arcLength}`}
-          className="transition-all duration-1000 ease-out"
-          style={{
-            filter: `drop-shadow(0 0 6px ${getColor()})`,
-            transition: 'stroke 0.5s ease' // 🎨 Transizione colore
-          }}
-        />
-        
-        {/* Needle con transizione colore */}
-        <g transform={`translate(100, 100) rotate(${rotation})`}>
-          <line
-            x1="0" y1="0" x2="0" y2="-65"
-            stroke={getColor()}
-            strokeWidth="3"
-            strokeLinecap="round"
-            style={{
-              filter: `drop-shadow(0 0 4px ${getColor()})`,
-              transition: 'stroke 0.5s ease'
-            }}
-          />
-          <circle 
-            cx="0" 
-            cy="0" 
-            r="4" 
-            fill={getColor()}
-            style={{ transition: 'fill 0.5s ease' }}
-          />
-        </g>
-      </svg>
-      
-      {/* Center Value */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center pt-4">
-        <div className="text-2xl font-bold text-gray-900" style={{ color: getColor() }}>
-          {Math.round(animatedValue * 100) / 100}{unit && unit}
-        </div>
-        <div className="text-xs text-gray-500 mt-1">vs {benchmark}</div>
-      </div>
-      
-      {/* Label */}
-      <div className="text-center mt-2">
-        <div className="text-sm font-medium text-gray-700">{label}</div>
-      </div>
-    </div>
-  );
-};
-
-// Health Score Gauge Migliorato
-const HealthScoreGauge = ({ score }) => {
-  const [animatedScore, setAnimatedScore] = useState(0);
-  
-  useEffect(() => {
-    const timer = setTimeout(() => setAnimatedScore(score || 0), 800);
-    return () => clearTimeout(timer);
-  }, [score]);
-  
-  const getScoreColor = () => {
-    if (animatedScore >= 80) return '#10B981';
-    if (animatedScore >= 60) return '#F59E0B';
-    return '#EF4444';
-  };
-  
-  const rotation = (animatedScore / 100) * 180 - 90;
-  
-  // 🎯 Calcolo dinamico dell'arco principale
-  const mainArcLength = 440;
-  const progressLength = (animatedScore / 100) * mainArcLength;
-
-  return (
-    <div className="relative w-80 h-48 mx-auto">
-      <svg className="w-80 h-48" viewBox="0 0 320 200">
-        {/* Outer Ring */}
-        <circle 
-          cx="160" 
-          cy="160" 
-          r="140" 
-          fill="none" 
-          stroke="#E5E7EB" 
-          strokeWidth="2" 
-          opacity="0.3" 
-        />
-        
-        {/* Background Arc */}
-        <path
-          d="M 20 160 A 140 140 0 0 1 300 160"
-          fill="none"
-          stroke="#E5E7EB"
-          strokeWidth="20"
-          strokeLinecap="round"
-        />
-        
-        {/* Score Sections */}
-        <path 
-          d="M 20 160 A 140 140 0 0 1 106 46" 
-          fill="none" 
-          stroke="#EF4444" 
-          strokeWidth="16" 
-          strokeLinecap="round" 
-          opacity="0.2" 
-        />
-        <path 
-          d="M 106 46 A 140 140 0 0 1 214 46" 
-          fill="none" 
-          stroke="#F59E0B" 
-          strokeWidth="16" 
-          strokeLinecap="round" 
-          opacity="0.2" 
-        />
-        <path 
-          d="M 214 46 A 140 140 0 0 1 300 160" 
-          fill="none" 
-          stroke="#10B981" 
-          strokeWidth="16" 
-          strokeLinecap="round" 
-          opacity="0.2" 
-        />
-        
-        {/* Progress Arc - Dinamico */}
-        <path
-          d="M 20 160 A 140 140 0 0 1 300 160"
-          fill="none"
-          stroke={getScoreColor()}
-          strokeWidth="12"
-          strokeLinecap="round"
-          strokeDasharray={`${progressLength} ${mainArcLength}`}
-          className="transition-all duration-2000 ease-out"
-          style={{
-            filter: `drop-shadow(0 0 12px ${getScoreColor()})`,
-            transition: 'stroke 1s ease'
-          }}
-        />
-        
-        {/* Needle con transizione */}
-        <g transform={`translate(160, 160) rotate(${rotation})`}>
-          <line 
-            x1="0" 
-            y1="0" 
-            x2="0" 
-            y2="-120" 
-            stroke={getScoreColor()} 
-            strokeWidth="4" 
-            strokeLinecap="round"
-            style={{ transition: 'stroke 1s ease' }}
-          />
-          <circle 
-            cx="0" 
-            cy="0" 
-            r="8" 
-            fill={getScoreColor()}
-            style={{
-              filter: `drop-shadow(0 0 8px ${getScoreColor()})`,
-              transition: 'fill 1s ease'
-            }}
-          />
-        </g>
-        
-        {/* Scale Marks */}
-        {[0, 20, 40, 60, 80, 100].map((mark) => {
-          const angle = ((mark / 100) * 180 - 90) * (Math.PI / 180);
-          const x1 = 160 + Math.cos(angle) * 125;
-          const y1 = 160 + Math.sin(angle) * 125;
-          const x2 = 160 + Math.cos(angle) * 115;
-          const y2 = 160 + Math.sin(angle) * 115;
-          
-          return (
-            <g key={mark}>
-              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#9CA3AF" strokeWidth="2" />
-              <text 
-                x={160 + Math.cos(angle) * 105} 
-                y={160 + Math.sin(angle) * 105 + 4} 
-                textAnchor="middle" 
-                className="text-xs fill-gray-600"
-              >
-                {mark}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-      
-      {/* Center Display - Score arrotondato */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center pt-12">
-        <div className="text-5xl font-bold" style={{ color: getScoreColor() }}>
-          {Math.round(animatedScore)}
-        </div>
-        <div className="text-gray-600 text-sm">HEALTH SCORE</div>
-      </div>
-    </div>
-  );
-};
-
-// Warning Light Migliorato (classi fisse)
-const WarningLight = ({ active, color, label }) => {
-  const colors = colorMap[color] || colorMap.red;
-  
-  return (
-    <div className={`flex items-center space-x-2 p-3 rounded-lg border-2 transition-all duration-300 ${
-      active 
-        ? `${colors.border} ${colors.bgLight} shadow-lg` 
-        : 'border-gray-200 bg-gray-50'
-    }`}>
-      <div 
-        className={`w-4 h-4 rounded-full transition-all duration-300 ${
-          active 
-            ? `${colors.bg} shadow-lg animate-pulse` 
-            : 'bg-gray-300'
-        }`} 
-        style={{
-          boxShadow: active ? `0 0 12px rgb(${colors.rgb})` : 'none'
-        }} 
+    <>
+      <Head>
+        <title>Report Analisi - PMIScout</title>
+      </Head>
+      <Script id="outseta-options" strategy="beforeInteractive">
+        {`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}
+      </Script>
+      <Script
+        id="outseta-script"
+        src="https://cdn.outseta.com/outseta.min.js"
+        strategy="beforeInteractive"
       />
-      <span className={`text-sm font-medium ${active ? colors.text : 'text-gray-500'}`}>
-        {label}
-      </span>
-    </div>
+      <ProtectedPage>
+        {(user) => <AnalisiReportPage user={user} />}
+      </ProtectedPage>
+    </>
   );
-};
+}
 
-// 🎯 Componente principale riutilizzabile
-export default function PMIScoutDashboard({ analysisData }) {
-  // Usa dati reali se disponibili, altrimenti demo
-  const analysis = analysisData?.raw_ai_response || {};
-  
-  const dashboardData = {
-    healthScore: analysisData?.health_score || 85,
-    company: analysis.company_name || "DBA GROUP S.p.A.",
-    date: analysis.analysis_date || "28/07/2025",
-    summary: analysisData?.summary || "L'azienda presenta un buon stato di salute finanziaria con un Current Ratio superiore alla media di settore, un ROE accettabile, ma un Debt/Equity che indica una certa esposizione al debito.",
-    
-    extracted_values: analysis.extracted_values || {
-      attivo_corrente: 407083,
-      debiti_totali: 325005,
-      patrimonio_netto: 126452,
-      utile_netto: 7868
-    },
-    
-    financial_metrics: analysis.financial_metrics || {
-      current_ratio: {
-        value: 1.25,
-        sector_benchmark: 1.5,
-        status_color: "yellow"
-      },
-      roe: {
-        value: 6.22,
-        sector_benchmark: 8.0,
-        status_color: "yellow"
-      },
-      debt_equity: {
-        value: 2.57,
-        sector_benchmark: 1.5,
-        status_color: "red"
-      }
-    },
-    
-    swot_analysis: analysis.swot_analysis || {
-      strengths: [
-        "Solida presenza nel settore costruzioni navali",
-        "Portfolio ordini significativo (€1.116 milioni)"
-      ],
-      weaknesses: [
-        "Rapporto debito/patrimonio sopra la soglia prudenziale",
-        "ROE sotto la media settoriale"
-      ],
-      opportunities: [
-        "Crescita del settore energie rinnovabili offshore",
-        "Opportunità PNRR per transizione energetica"
-      ],
-      threats: [
-        "Concorrenza internazionale intensa",
-        "Volatilità prezzi materie prime"
-      ]
-    },
-    
-    recommendations: analysisData?.recommendations || [
-      "Monitorare l'esposizione al debito e pianificare strategie di riduzione",
-      "Investire in innovazione per migliorare margini di redditività",
-      "Diversificare verso settori rinnovabili per cogliere opportunità di crescita"
-    ]
-  };
+// --- Componente Icona (utility) ---
+const Icon = ({ children, className = "w-6 h-6" }) => (
+  <div className={`${className} flex items-center justify-center`}>
+    {children}
+  </div>
+);
 
-  // 🚨 Warning lights basate sui dati reali
-  const generateWarnings = () => {
-    const warnings = [];
-    const metrics = dashboardData.financial_metrics;
-    
-    if (metrics.current_ratio?.value < 1.0) {
-      warnings.push({ active: true, color: 'red', label: 'Liquidità Critica' });
-    } else {
-      warnings.push({ active: false, color: 'red', label: 'Liquidità Critica' });
-    }
-    
-    if (metrics.debt_equity?.value > 2.0) {
-      warnings.push({ active: true, color: 'red', label: 'Alto Indebitamento' });
-    } else if (metrics.debt_equity?.value > 1.5) {
-      warnings.push({ active: true, color: 'yellow', label: 'Indebitamento Elevato' });
-    } else {
-      warnings.push({ active: false, color: 'green', label: 'Indebitamento Controllato' });
-    }
-    
-    if (metrics.roe?.value < 5) {
-      warnings.push({ active: true, color: 'red', label: 'ROE Critico' });
-    } else if (metrics.roe?.value < 8) {
-      warnings.push({ active: true, color: 'yellow', label: 'ROE Sotto Media' });
-    } else {
-      warnings.push({ active: false, color: 'green', label: 'ROE Ottimale' });
-    }
-    
-    if (dashboardData.healthScore >= 80) {
-      warnings.push({ active: true, color: 'green', label: 'Performance Ottima' });
-    } else {
-      warnings.push({ active: false, color: 'green', label: 'Performance Ottima' });
-    }
-    
-    return warnings;
-  };
+// --- Componente Principale della Pagina ---
+function AnalisiReportPage({ user }) {
+  const router = useRouter();
+  const { sessionId } = router.query;
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-100 to-white text-gray-900 p-6">
-      <div className="max-w-7xl mx-auto">
+  const [sessionData, setSessionData] = useState(null);
+  const [analysisData, setAnalysisData] = useState(null);
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  const channelRef = useRef(null);
+
+  useEffect(() => {
+    const fetchSessionData = async () => {
+      if (!sessionId || !user.id) return;
+
+      try {
+        // 1. Recupera i dati della sessione
+        const { data: session, error: sessionError } = await supabase
+          .from('checkup_sessions')
+          .select('*, companies(*)')
+          .eq('id', sessionId)
+          .single();
+
+        if (sessionError) throw new Error('Sessione non trovata o accesso negato.');
         
-        {/* Header Dashboard */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
-                <span className="text-2xl text-white">📊</span>
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">PMI SCOUT</h1>
-                <p className="text-blue-600">Check-UP AI</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-gray-900">{dashboardData.company}</div>
-              <div className="text-blue-600">Aggiornato: {dashboardData.date}</div>
-            </div>
-          </div>
-        </div>
+        // 2. Controllo sicurezza
+        if (session.user_id !== user.id) {
+          throw new Error('Non sei autorizzato a visualizzare questa analisi.');
+        }
 
-        {/* Main Dashboard */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-8">
+        setSessionData(session);
+
+        // 3. Se completata, recupera i risultati
+        if (session.status === 'completed') {
+          const { data: results, error: resultsError } = await supabase
+            .from('analysis_results')
+            .select('*')
+            .eq('session_id', sessionId)
+            .single();
           
-          {/* Health Score Principale */}
-          <div className="xl:col-span-2 bg-white rounded-2xl p-8 border border-gray-200 shadow-lg">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">HEALTH SCORE</h2>
-            <HealthScoreGauge score={dashboardData.healthScore} />
+          if (resultsError) throw new Error('Impossibile caricare i risultati dell\'analisi.');
+          setAnalysisData(results);
+          
+          if (channelRef.current) {
+            supabase.removeChannel(channelRef.current);
+            channelRef.current = null;
+          }
+        } else if (session.status === 'failed') {
+            setError(session.error_message || 'Si è verificato un errore durante l\'analisi.');
+            if (channelRef.current) {
+                supabase.removeChannel(channelRef.current);
+                channelRef.current = null;
+            }
+        }
+
+      } catch (err) {
+        console.error('Data fetching error:', err);
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSessionData();
+
+    // Setup Realtime listener
+    if (sessionData?.status !== 'completed' && sessionData?.status !== 'failed') {
+        if (!channelRef.current) {
+            const channel = supabase
+              .channel(`session-updates-${sessionId}`)
+              .on(
+                'postgres_changes',
+                {
+                  event: 'UPDATE',
+                  schema: 'public',
+                  table: 'checkup_sessions',
+                  filter: `id=eq.${sessionId}`,
+                },
+                () => fetchSessionData()
+              )
+              .subscribe();
             
-            {/* Status Summary */}
-            <div className="mt-8 p-6 bg-gray-50 rounded-xl border border-gray-200">
-              <p className="text-gray-700 leading-relaxed">{dashboardData.summary}</p>
+            channelRef.current = channel;
+        }
+    }
+
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [sessionId, user.id, sessionData?.status]);
+
+  // --- Helper per status indicatori ---
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'sopra': return 'text-green-600';
+      case 'sotto': return 'text-red-600';
+      default: return 'text-gray-600';
+    }
+  };
+
+  // --- Render del Contenuto ---
+  const renderContent = () => {
+    if (isLoading) {
+      return <div className="text-center p-10">Caricamento del report...</div>;
+    }
+
+    if (error) {
+      return <div className="text-center p-10 text-red-600">Errore: {error}</div>;
+    }
+    
+    if (!sessionData) {
+        return <div className="text-center p-10">Nessun dato trovato per questa sessione.</div>;
+    }
+
+    // Se l'analisi è completata, mostra i risultati completi
+    if (sessionData.status === 'completed' && analysisData) {
+      const analysis = analysisData.raw_ai_response || {};
+      
+      return (
+        <div className="space-y-8">
+          {/* Header con Health Score */}
+          <div className="bg-white rounded-xl shadow-lg p-8">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-3xl font-bold text-gray-900">
+                  Riepilogo Analisi per {analysis.company_name || sessionData.companies?.company_name}
+                </h2>
+                <p className="text-gray-600 mt-2">
+                  Dati aggiornati al {analysis.analysis_date || new Date().toLocaleDateString('it-IT')}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-gray-500 mb-2">Health Score</p>
+                <p className="text-6xl font-bold text-green-600">{analysisData.health_score || 0}</p>
+                <p className="text-gray-500">/100</p>
+              </div>
+            </div>
+            
+            <div className="bg-gray-50 rounded-lg p-6">
+              <p className="text-gray-700 leading-relaxed">
+                {analysisData.summary || 'Analisi in corso...'}
+              </p>
             </div>
           </div>
 
-          {/* Warning Lights Panel */}
-          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">SYSTEM STATUS</h3>
-            <div className="space-y-4">
-              {generateWarnings().map((warning, index) => (
-                <WarningLight key={index} {...warning} />
-              ))}
+          {/* Indici Chiave vs Benchmark */}
+          {analysis.key_metrics && (
+            <div className="bg-white rounded-xl shadow-lg p-8">
+              <h3 className="text-2xl font-bold text-gray-900 mb-6">Indici Chiave vs Benchmark</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                {/* Current Ratio */}
+                {analysis.key_metrics.current_ratio && (
+                  <div className="bg-gray-50 rounded-lg p-6">
+                    <h4 className="text-lg font-semibold text-gray-800 mb-2">Current Ratio</h4>
+                    <p className="text-3xl font-bold text-gray-900">{analysis.key_metrics.current_ratio.value}</p>
+                    <p className="text-sm text-green-600 mt-1">
+                      Benchmark di settore: {analysis.key_metrics.current_ratio.benchmark}
+                    </p>
+                  </div>
+                )}
+
+                {/* ROE */}
+                {analysis.key_metrics.roe && (
+                  <div className="bg-gray-50 rounded-lg p-6">
+                    <h4 className="text-lg font-semibold text-gray-800 mb-2">ROE</h4>
+                    <p className="text-3xl font-bold text-gray-900">{analysis.key_metrics.roe.value}</p>
+                    <p className="text-sm text-green-600 mt-1">
+                      Benchmark di settore: {analysis.key_metrics.roe.benchmark}
+                    </p>
+                  </div>
+                )}
+
+                {/* Debt/Equity */}
+                {analysis.key_metrics.debt_equity && (
+                  <div className="bg-gray-50 rounded-lg p-6">
+                    <h4 className="text-lg font-semibold text-gray-800 mb-2">Debt/Equity</h4>
+                    <p className="text-3xl font-bold text-gray-900">{analysis.key_metrics.debt_equity.value}</p>
+                    <p className="text-sm text-orange-600 mt-1">
+                      Benchmark di settore: {analysis.key_metrics.debt_equity.benchmark}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
-            
-            {/* Quick Stats */}
-            <div className="mt-8 p-4 bg-gray-50 rounded-xl border border-gray-200">
-              <div className="text-center">
-                <div className="text-lg font-bold text-gray-700 mb-2">VALORI ESTRATTI</div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <div className="text-blue-600 font-semibold">
-                      €{(dashboardData.extracted_values.attivo_corrente / 1000).toFixed(0)}K
-                    </div>
-                    <div className="text-gray-500">Attivo Corrente</div>
-                  </div>
-                  <div>
-                    <div className="text-red-600 font-semibold">
-                      €{(dashboardData.extracted_values.debiti_totali / 1000).toFixed(0)}K
-                    </div>
-                    <div className="text-gray-500">Debiti Totali</div>
-                  </div>
+          )}
+
+          {/* Panorama del Settore */}
+          {analysis.sector_overview && (
+            <div className="bg-white rounded-xl shadow-lg p-8">
+              <h3 className="text-2xl font-bold text-gray-900 mb-6">
+                Panorama del Settore: {analysis.sector || 'Settore di riferimento'}
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                <div className="border-l-4 border-blue-500 pl-6">
+                  <p className="text-sm text-gray-600 mb-1">Valore di Mercato Stimato</p>
+                  <p className="text-3xl font-bold text-blue-600">
+                    {analysis.sector_overview.market_value || 'N/A'}
+                  </p>
+                </div>
+
+                <div className="border-l-4 border-green-500 pl-6">
+                  <p className="text-sm text-gray-600 mb-1">Crescita Annua (CAGR)</p>
+                  <p className="text-3xl font-bold text-green-600">
+                    {analysis.sector_overview.growth_rate || 'N/A'}
+                  </p>
+                </div>
+
+                <div className="border-l-4 border-purple-500 pl-6">
+                  <p className="text-sm text-gray-600 mb-1">Segmento a Maggior Crescita</p>
+                  <p className="text-xl font-bold text-purple-600">
+                    {analysis.sector_overview.top_segment || 'N/A'}
+                  </p>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+          )}
 
-        {/* Metrics Gauges */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 text-center">LIQUIDITÀ</h3>
-            <CircularGauge
-              value={dashboardData.financial_metrics.current_ratio?.value}
-              maxValue={3}
-              label="Current Ratio"
-              benchmark={dashboardData.financial_metrics.current_ratio?.sector_benchmark}
-              status={dashboardData.financial_metrics.current_ratio?.status_color}
-            />
-          </div>
-          
-          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 text-center">REDDITIVITÀ</h3>
-            <CircularGauge
-              value={dashboardData.financial_metrics.roe?.value}
-              maxValue={25}
-              label="ROE"
-              unit="%"
-              benchmark={`${dashboardData.financial_metrics.roe?.sector_benchmark}%`}
-              status={dashboardData.financial_metrics.roe?.status_color}
-            />
-          </div>
-          
-          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 text-center">INDEBITAMENTO</h3>
-            <CircularGauge
-              value={dashboardData.financial_metrics.debt_equity?.value}
-              maxValue={4}
-              label="Debt/Equity"
-              benchmark={dashboardData.financial_metrics.debt_equity?.sector_benchmark}
-              status={dashboardData.financial_metrics.debt_equity?.status_color}
-            />
-          </div>
-        </div>
+          {/* Analisi SWOT */}
+          {analysis.swot && (
+            <div className="bg-white rounded-xl shadow-lg p-8">
+              <h3 className="text-2xl font-bold text-gray-900 mb-6">Analisi SWOT del Settore</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Punti di Forza */}
+                <div className="border-l-4 border-green-500 pl-6">
+                  <h4 className="text-lg font-semibold text-green-700 mb-3">Punti di Forza</h4>
+                  <ul className="space-y-2">
+                    {(analysis.swot.strengths || []).map((item, index) => (
+                      <li key={index} className="text-gray-700 flex items-start">
+                        <span className="text-green-500 mr-2">•</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
 
-        {/* Raccomandazioni */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg mb-8">
-          <h3 className="text-xl font-bold text-gray-900 mb-6">RACCOMANDAZIONI</h3>
-          <div className="space-y-4">
-            {dashboardData.recommendations.map((recommendation, index) => (
-              <div key={index} className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
-                <p className="text-gray-800">{recommendation}</p>
+                {/* Punti di Debolezza */}
+                <div className="border-l-4 border-red-500 pl-6">
+                  <h4 className="text-lg font-semibold text-red-700 mb-3">Punti di Debolezza</h4>
+                  <ul className="space-y-2">
+                    {(analysis.swot.weaknesses || []).map((item, index) => (
+                      <li key={index} className="text-gray-700 flex items-start">
+                        <span className="text-red-500 mr-2">•</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Opportunità */}
+                <div className="border-l-4 border-blue-500 pl-6">
+                  <h4 className="text-lg font-semibold text-blue-700 mb-3">Opportunità</h4>
+                  <ul className="space-y-2">
+                    {(analysis.swot.opportunities || []).map((item, index) => (
+                      <li key={index} className="text-gray-700 flex items-start">
+                        <span className="text-blue-500 mr-2">•</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Minacce */}
+                <div className="border-l-4 border-orange-500 pl-6">
+                  <h4 className="text-lg font-semibold text-orange-700 mb-3">Minacce</h4>
+                  <ul className="space-y-2">
+                    {(analysis.swot.threats || []).map((item, index) => (
+                      <li key={index} className="text-gray-700 flex items-start">
+                        <span className="text-orange-500 mr-2">•</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* SWOT Analysis */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg mb-8">
-          <h3 className="text-xl font-bold text-gray-900 mb-6">ANALISI SWOT</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
-            {/* Punti di Forza */}
-            <div className="border-l-4 border-green-500 pl-6">
-              <h4 className="text-lg font-semibold text-green-700 mb-3">Punti di Forza</h4>
-              <ul className="space-y-2">
-                {dashboardData.swot_analysis.strengths.map((item, index) => (
-                  <li key={index} className="text-gray-700 flex items-start">
-                    <span className="text-green-500 mr-2">•</span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
             </div>
+          )}
 
-            {/* Punti di Debolezza */}
-            <div className="border-l-4 border-red-500 pl-6">
-              <h4 className="text-lg font-semibold text-red-700 mb-3">Punti di Debolezza</h4>
-              <ul className="space-y-2">
-                {dashboardData.swot_analysis.weaknesses.map((item, index) => (
-                  <li key={index} className="text-gray-700 flex items-start">
-                    <span className="text-red-500 mr-2">•</span>
-                    {item}
-                  </li>
+          {/* Raccomandazioni */}
+          {analysisData.recommendations && analysisData.recommendations.length > 0 && (
+            <div className="bg-white rounded-xl shadow-lg p-8">
+              <h3 className="text-2xl font-bold text-gray-900 mb-6">Raccomandazioni</h3>
+              <div className="space-y-4">
+                {analysisData.recommendations.map((recommendation, index) => (
+                  <div key={index} className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+                    <p className="text-gray-800">{recommendation}</p>
+                  </div>
                 ))}
-              </ul>
-            </div>
-
-            {/* Opportunità */}
-            <div className="border-l-4 border-blue-500 pl-6">
-              <h4 className="text-lg font-semibold text-blue-700 mb-3">Opportunità</h4>
-              <ul className="space-y-2">
-                {dashboardData.swot_analysis.opportunities.map((item, index) => (
-                  <li key={index} className="text-gray-700 flex items-start">
-                    <span className="text-blue-500 mr-2">•</span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* Minacce */}
-            <div className="border-l-4 border-orange-500 pl-6">
-              <h4 className="text-lg font-semibold text-orange-700 mb-3">Minacce</h4>
-              <ul className="space-y-2">
-                {dashboardData.swot_analysis.threats.map((item, index) => (
-                  <li key={index} className="text-gray-700 flex items-start">
-                    <span className="text-orange-500 mr-2">•</span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Info Bar */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
-            <div>
-              <div className="text-2xl font-bold text-green-600">
-                €{(dashboardData.extracted_values.patrimonio_netto / 1000).toFixed(0)}K
               </div>
-              <div className="text-sm text-gray-600">PATRIMONIO NETTO</div>
             </div>
-            <div>
-              <div className="text-2xl font-bold text-blue-600">
-                €{(dashboardData.extracted_values.utile_netto / 1000).toFixed(0)}K
-              </div>
-              <div className="text-sm text-gray-600">UTILE NETTO</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-purple-600">{dashboardData.healthScore}/100</div>
-              <div className="text-sm text-gray-600">PUNTEGGIO SALUTE</div>
-            </div>
-          </div>
+          )}
         </div>
+      );
+    }
+
+    // Stato di attesa
+    return (
+      <div className="text-center p-10 bg-white rounded-xl shadow-lg">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <h2 className="text-2xl font-bold text-slate-800">Analisi in corso</h2>
+        <p className="text-slate-600 mt-2">
+          Stiamo analizzando il tuo documento. La pagina si aggiornerà automaticamente non appena i risultati saranno pronti.
+        </p>
+        <p className="text-sm text-slate-500 mt-4">Stato attuale: <strong>{sessionData?.status || 'sconosciuto'}</strong></p>
       </div>
-    </div>
+    );
+  };
+
+  return (
+    <main className="min-h-screen bg-slate-100 py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="mb-8">
+          <div className="flex items-center mb-4">
+            <Icon className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg mr-4">
+              📊
+            </Icon>
+            <h1 className="text-4xl font-bold text-gray-900">Report Analisi AI</h1>
+          </div>
+          <p className="text-gray-600">
+            Risultati per la sessione: {sessionId}
+          </p>
+          <p className="text-gray-600">
+            Azienda: {sessionData?.companies?.company_name || '...'}
+          </p>
+        </div>
+        {renderContent()}
+      </div>
+    </main>
   );
 }
