@@ -27,11 +27,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Metodo non permesso' });
   }
 
+  let session; // Definisci la sessione qui per averla nello scope del catch
+
   try {
-    // Le sezioni da 1 a 7 rimangono invariate (Autenticazione, Parsing, Upload etc.)
-    // ... (codice di autenticazione, sync utente, parsing form, creazione azienda/sessione, upload PDF) ...
-    
-    // --- Esempio semplificato dei passaggi precedenti per chiarezza ---
     const outsetaToken = req.headers.authorization?.split(' ')[1];
     if (!outsetaToken) return res.status(401).json({ error: 'Token mancante.' });
     const outsetaResponse = await fetch(`https://pmiscout.outseta.com/api/v1/profile`, { headers: { Authorization: `Bearer ${outsetaToken}` } });
@@ -44,38 +42,36 @@ export default async function handler(req, res) {
     const pdfFile = files.pdfFile?.[0];
     if (!companyName || !pdfFile) throw new Error('Dati mancanti.');
     const { data: company } = await supabase.from('companies').upsert({ user_id: userId, company_name: companyName }, { onConflict: 'user_id' }).select().single();
-    const { data: session } = await supabase.from('checkup_sessions').insert({ user_id: userId, company_id: company.id, status: 'processing' }).select().single();
+    
+    const { data: sessionData, error: sessionError } = await supabase.from('checkup_sessions').insert({ user_id: userId, company_id: company.id, status: 'processing' }).select().single();
+    if(sessionError) throw new Error(sessionError.message);
+    session = sessionData;
+
     const fileName = `${session.id}_${pdfFile.originalFilename}`;
     const fileBuffer = fs.readFileSync(pdfFile.filepath);
     await supabase.storage.from('checkup-documents').upload(`public/${session.id}/${fileName}`, fileBuffer, { contentType: 'application/pdf', upsert: true });
-    // --- Fine esempio semplificato ---
 
-
-    // 7. ANALISI AI
     let extractedText = '';
     try {
       const pdfResult = await pdfParse(fileBuffer);
       extractedText = pdfResult.text.replace(/\s+/g, ' ').trim().substring(0, 4000);
       if (extractedText.length < 200) throw new Error('Testo insufficiente');
     } catch (pdfError) {
-      // Logica di fallback invariata
       console.log(`[${session.id}] ⚠️ PDF parsing fallito, uso dati simulati`);
       extractedText = `BILANCIO ${companyName.toUpperCase()} - ESERCIZIO 2023...`;
     }
 
-    // 8. Prompt AI (MODIFICA QUI)
     console.log(`[${session.id}] Recupero prompt V2...`);
     const { data: promptData, error: promptError } = await supabase
       .from('ai_prompts')
       .select('prompt_template')
-      .eq('name', 'FINANCIAL_ANALYSIS_V2') // <-- MODIFICA: Usiamo il nuovo prompt V2
+      .eq('name', 'FINANCIAL_ANALYSIS_V2')
       .single();
 
     if (promptError) {
       throw new Error(`Prompt V2 non trovato: ${promptError.message}`);
     }
 
-    // 9. Chiamata GPT (invariata)
     console.log(`[${session.id}] 🤖 Chiamata GPT con prompt V2...`);
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -85,12 +81,11 @@ export default async function handler(req, res) {
       ],
       response_format: { type: "json_object" },
       temperature: 0.3,
-      max_tokens: 2500 // Aumentato leggermente per output più ricco
+      max_tokens: 2500
     });
     const analysisResult = JSON.parse(completion.choices[0].message.content);
     console.log(`[${session.id}] ✅ GPT V2 completato`);
 
-    // 10. Salva risultati (MODIFICA QUI)
     console.log(`[${session.id}] Salvataggio risultati V2...`);
     const { error: saveError } = await supabase
       .from('analysis_results')
@@ -99,11 +94,9 @@ export default async function handler(req, res) {
         health_score: analysisResult.health_score || 0,
         summary: analysisResult.summary || '',
         key_metrics: analysisResult.key_metrics || {},
-        swot: analysisResult.swot || {}, // Manteniamo il vecchio per retrocompatibilità
+        swot: analysisResult.swot || {},
         recommendations: analysisResult.recommendations || [],
         raw_ai_response: analysisResult,
-        
-        // --- NUOVI CAMPI DA SALVARE ---
         charts_data: analysisResult.charts_data || {},
         detailed_swot: analysisResult.detailed_swot || {},
         risk_analysis: analysisResult.risk_analysis || [],
@@ -114,17 +107,16 @@ export default async function handler(req, res) {
       throw new Error(`Errore salvataggio V2: ${saveError.message}`);
     }
 
-    // 11. Completa sessione (invariato)
-    await supabase.from('checkup_sessions').update({ status: 'completed' }).eq('id', session.id);
+    await supabase.from('checkup_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', session.id);
     
-    // 12. Incrementa contatore (invariato)
-    // ...
-
     console.log(`✅ [${session.id}] Analisi V2 completata con successo!`);
     return res.status(200).json({ success: true, sessionId: session.id });
 
   } catch (error) {
     console.error('💥 Errore completo:', error);
+    if (session?.id) {
+        await supabase.from('checkup_sessions').update({ status: 'failed', error_message: error.message }).eq('id', session.id);
+    }
     return res.status(500).json({ error: error.message || 'Errore interno del server' });
   }
 }
