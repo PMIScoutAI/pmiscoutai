@@ -4,15 +4,17 @@
 // - Integra il layout della dashboard (sidebar + contenuto) per un'esperienza coerente.
 // - Sostituisce l'upload di base con una "drop zone" interattiva.
 // - Migliora il feedback visivo per l'utente (loading spinner, messaggi di errore/successo).
+// - FIX: Corretto l'errore di caricamento di Outseta aggiungendo gli script necessari.
 
 import { useState, useRef } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
+import Script from 'next/script'; // Importato il componente Script di Next.js
 import { api } from '../utils/api';
 import { ProtectedPage } from '../utils/ProtectedPage';
 
-// --- Componente Wrapper (INVARIATO NELLA LOGICA) ---
-// Ho solo aggiunto i link ai font per coerenza con la dashboard.
+// --- Componente Wrapper (CORRETTO) ---
+// Aggiunti gli script di Outseta per garantire il corretto funzionamento dell'autenticazione.
 export default function CheckupPageWrapper() {
   return (
     <>
@@ -27,7 +29,18 @@ export default function CheckupPageWrapper() {
         />
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
       </Head>
-      {/* Il componente ProtectedPage gestisce l'autenticazione e passa l'utente */}
+
+      {/* FIX: Aggiunti gli script di Outseta per prevenire l'errore di caricamento */}
+      <Script id="outseta-options" strategy="beforeInteractive">
+        {`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}
+      </Script>
+      <Script
+        id="outseta-script"
+        src="https://cdn.outseta.com/outseta.min.js"
+        strategy="beforeInteractive"
+      />
+
+      {/* Il componente ProtectedPage ora troverà Outseta già caricato */}
       <ProtectedPage>
         {(user) => <CheckupPageLayout user={user} />}
       </ProtectedPage>
