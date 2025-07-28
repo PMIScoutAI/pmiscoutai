@@ -4,17 +4,17 @@
 // - Integra il layout della dashboard (sidebar + contenuto) per un'esperienza coerente.
 // - Sostituisce l'upload di base con una "drop zone" interattiva.
 // - Migliora il feedback visivo per l'utente (loading spinner, messaggi di errore/successo).
-// - FIX: Corretto l'errore di caricamento di Outseta aggiungendo gli script necessari.
+// - FIX v2: Aggiunto lo script di Tailwind CSS per un corretto rendering grafico.
 
 import { useState, useRef } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
-import Script from 'next/script'; // Importato il componente Script di Next.js
+import Script from 'next/script';
 import { api } from '../utils/api';
 import { ProtectedPage } from '../utils/ProtectedPage';
 
 // --- Componente Wrapper (CORRETTO) ---
-// Aggiunti gli script di Outseta per garantire il corretto funzionamento dell'autenticazione.
+// Aggiunti gli script di Outseta e Tailwind CSS per garantire il corretto funzionamento.
 export default function CheckupPageWrapper() {
   return (
     <>
@@ -27,10 +27,12 @@ export default function CheckupPageWrapper() {
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
+        {/* FIX: Aggiunto lo script di Tailwind CSS mancante */}
+        <script src="https://cdn.tailwindcss.com"></script>
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
       </Head>
 
-      {/* FIX: Aggiunti gli script di Outseta per prevenire l'errore di caricamento */}
+      {/* Script di Outseta per prevenire l'errore di caricamento */}
       <Script id="outseta-options" strategy="beforeInteractive">
         {`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}
       </Script>
