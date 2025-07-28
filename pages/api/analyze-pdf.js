@@ -22,30 +22,39 @@ export default async function handler(req, res) {
   let sessionId = '';
   
   try {
-    // Le sezioni da 1 a 6 rimangono invariate (Autenticazione, Download, Parsing etc.)
-    // ... (codice di autenticazione, recupero sessione, download PDF, parsing) ...
+    const authHeader = req.headers.authorization;
+    const providedSecret = authHeader?.split('Bearer ')[1];
+    if (!providedSecret || providedSecret !== process.env.INTERNAL_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const { session_id } = req.body;
     sessionId = session_id;
     if (!sessionId) return res.status(400).json({ error: 'session_id è richiesto' });
-    const { data: pdfData } = await supabase.storage.from('checkup-documents').download(`public/${sessionId}/nome_file.pdf`); // Semplificato
+
+    await supabase.from('checkup_sessions').update({ status: 'processing' }).eq('id', sessionId);
+
+    const { data: files, error: listError } = await supabase.storage.from('checkup-documents').list(`public/${sessionId}`);
+    if (listError || !files || files.length === 0) throw new Error('Nessun file trovato');
+    const pdfFile = files.find(f => f.name.toLowerCase().endsWith('.pdf')) || files[0];
+    const { data: pdfData, error: downloadError } = await supabase.storage.from('checkup-documents').download(`public/${sessionId}/${pdfFile.name}`);
+    if (downloadError) throw new Error(`Errore download: ${downloadError.message}`);
+
     const pdfBuffer = await pdfData.arrayBuffer();
     const pdfResult = await pdfParse(Buffer.from(pdfBuffer));
     let extractedText = pdfResult.text.replace(/\s+/g, ' ').trim().substring(0, 4000);
-    // ...
-
-    // 7. Recupera prompt AI (MODIFICA QUI)
+    
     console.log(`[${sessionId}] Recupero prompt V2...`);
     const { data: promptData, error: promptError } = await supabase
       .from('ai_prompts')
       .select('prompt_template')
-      .eq('name', 'FINANCIAL_ANALYSIS_V2') // <-- MODIFICA: Usiamo il nuovo prompt V2
+      .eq('name', 'FINANCIAL_ANALYSIS_V2')
       .single();
 
     if (promptError) {
       throw new Error(`Prompt V2 non trovato: ${promptError.message}`);
     }
 
-    // 8. Analisi GPT (invariata)
     console.log(`[${sessionId}] 🤖 Chiamata OpenAI GPT con prompt V2...`);
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -55,12 +64,11 @@ export default async function handler(req, res) {
       ],
       response_format: { type: "json_object" },
       temperature: 0.3,
-      max_tokens: 2500 // Aumentato leggermente per output più ricco
+      max_tokens: 2500
     });
     const analysisResult = JSON.parse(completion.choices[0].message.content);
     console.log(`[${sessionId}] ✅ Analisi GPT V2 completata`);
 
-    // 9. Salva risultati (MODIFICA QUI)
     console.log(`[${sessionId}] Salvataggio risultati V2...`);
     const { error: saveError } = await supabase
       .from('analysis_results')
@@ -69,11 +77,9 @@ export default async function handler(req, res) {
         health_score: analysisResult.health_score || 0,
         summary: analysisResult.summary || '',
         key_metrics: analysisResult.key_metrics || {},
-        swot: analysisResult.swot || {}, // Manteniamo il vecchio per retrocompatibilità
+        swot: analysisResult.swot || {},
         recommendations: analysisResult.recommendations || [],
         raw_ai_response: analysisResult,
-        
-        // --- NUOVI CAMPI DA SALVARE ---
         charts_data: analysisResult.charts_data || {},
         detailed_swot: analysisResult.detailed_swot || {},
         risk_analysis: analysisResult.risk_analysis || [],
@@ -84,8 +90,7 @@ export default async function handler(req, res) {
       throw new Error(`Errore salvataggio V2: ${saveError.message}`);
     }
 
-    // 10. Aggiorna sessione a completata (invariato)
-    await supabase.from('checkup_sessions').update({ status: 'completed' }).eq('id', sessionId);
+    await supabase.from('checkup_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
 
     console.log(`[${sessionId}] 🎉 Analisi V2 completata con successo!`);
     return res.status(200).json({ success: true, sessionId: sessionId });
