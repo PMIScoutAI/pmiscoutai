@@ -1,5 +1,5 @@
 // /pages/api/start-checkup.js
-// VERSIONE 2: Aggiornato per usare il prompt V2 e salvare i nuovi dati.
+// VERSIONE 2.1: Corretto l'errore "not-null constraint" aggiungendo session_name durante l'inserimento.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -43,7 +43,14 @@ export default async function handler(req, res) {
     if (!companyName || !pdfFile) throw new Error('Dati mancanti.');
     const { data: company } = await supabase.from('companies').upsert({ user_id: userId, company_name: companyName }, { onConflict: 'user_id' }).select().single();
     
-    const { data: sessionData, error: sessionError } = await supabase.from('checkup_sessions').insert({ user_id: userId, company_id: company.id, status: 'processing' }).select().single();
+    // FIX: Aggiunto il campo `session_name` che mancava.
+    const { data: sessionData, error: sessionError } = await supabase.from('checkup_sessions').insert({ 
+        user_id: userId, 
+        company_id: company.id, 
+        status: 'processing',
+        session_name: `Check-UP ${companyName} - ${new Date().toLocaleDateString('it-IT')}`
+    }).select().single();
+
     if(sessionError) throw new Error(sessionError.message);
     session = sessionData;
 
@@ -61,7 +68,6 @@ export default async function handler(req, res) {
       extractedText = `BILANCIO ${companyName.toUpperCase()} - ESERCIZIO 2023...`;
     }
 
-    console.log(`[${session.id}] Recupero prompt V2...`);
     const { data: promptData, error: promptError } = await supabase
       .from('ai_prompts')
       .select('prompt_template')
@@ -72,7 +78,6 @@ export default async function handler(req, res) {
       throw new Error(`Prompt V2 non trovato: ${promptError.message}`);
     }
 
-    console.log(`[${session.id}] 🤖 Chiamata GPT con prompt V2...`);
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
@@ -84,9 +89,7 @@ export default async function handler(req, res) {
       max_tokens: 2500
     });
     const analysisResult = JSON.parse(completion.choices[0].message.content);
-    console.log(`[${session.id}] ✅ GPT V2 completato`);
 
-    console.log(`[${session.id}] Salvataggio risultati V2...`);
     const { error: saveError } = await supabase
       .from('analysis_results')
       .insert({
