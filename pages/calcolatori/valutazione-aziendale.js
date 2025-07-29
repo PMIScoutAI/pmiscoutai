@@ -8,6 +8,8 @@ import { useAuth } from '../../hooks/useAuth';
 // Dati e stato iniziale del form, basati sul tuo esempio
 const industryMultiples = { technology: { revenue: 3.5, ebitda: 12, pe: 18 }, healthcare: { revenue: 2.8, ebitda: 10, pe: 16 }, fintech: { revenue: 4.2, ebitda: 14, pe: 20 }, ecommerce: { revenue: 2.5, ebitda: 8, pe: 14 }, manufacturing: { revenue: 1.8, ebitda: 8, pe: 12 }, services: { revenue: 2.2, ebitda: 9, pe: 14 }, energy: { revenue: 1.5, ebitda: 6, pe: 10 }, real_estate: { revenue: 2.0, ebitda: 8, pe: 12 }, media: { revenue: 2.8, ebitda: 10, pe: 15 }, retail: { revenue: 1.2, ebitda: 5, pe: 10 }, automotive: { revenue: 1.6, ebitda: 7, pe: 11 }, food: { revenue: 1.8, ebitda: 8, pe: 13 } };
 const initialFormData = { industry: 'technology', companySize: 'small', marketPosition: 'challenger', geography: 'national', revenue: '4500000', ebitda: '900000', netIncome: '675000', previousRevenue: '3500000', previousEbitda: '560000', previousNetIncome: '420000', grossMargin: '50', recurringRevenue: '70', debtLevel: 'low', customerConcentration: '30', technologyRisk: 'medium', managementQuality: 'good' };
+const blankFormData = { industry: 'technology', companySize: 'micro', marketPosition: 'follower', geography: 'local', revenue: '', ebitda: '', netIncome: '', previousRevenue: '', previousEbitda: '', previousNetIncome: '', grossMargin: '', recurringRevenue: '', debtLevel: 'medium', customerConcentration: '', technologyRisk: 'medium', managementQuality: 'average' };
+
 
 // Componente principale del calcolatore
 const ValutazioneAziendaleCalculator = () => {
@@ -30,7 +32,10 @@ const ValutazioneAziendaleCalculator = () => {
             }
         });
 
-        if (data.revenue === 0) return;
+        if (data.revenue === 0) {
+            setResults({}); // Pulisce i risultati se non ci sono ricavi
+            return;
+        };
 
         const industryData = industryMultiples[data.industry];
         if (!industryData) return;
@@ -109,6 +114,12 @@ const ValutazioneAziendaleCalculator = () => {
                 .btn-clear { background: linear-gradient(135deg, #ef4444, #dc2626); }
                 .btn-example { background: linear-gradient(135deg, #10b981, #059669); }
                 .metric-positive { color: #34d399; } .metric-negative { color: #f87171; } .metric-neutral { color: #a78bfa; }
+                .multiple-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+                .multiple-value { font-weight: 600; color: #06b6d4; }
+                .scenario { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; }
+                .scenario-conservative { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); }
+                .scenario-fair { background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.3); }
+                .scenario-optimistic { background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.3); }
             `}</style>
             <div className="container max-w-7xl mx-auto p-4">
                 <div className="text-center mb-10">
@@ -120,7 +131,7 @@ const ValutazioneAziendaleCalculator = () => {
                     {/* Colonna Input */}
                     <div className="lg:col-span-2 space-y-5">
                         <div className="flex flex-wrap gap-4">
-                            <button className="btn btn-clear" onClick={() => setFormData({})}>🗑️ Pulisci Dati</button>
+                            <button className="btn btn-clear" onClick={() => setFormData(blankFormData)}>🗑️ Pulisci Dati</button>
                             <button className="btn btn-example" onClick={() => setFormData(initialFormData)}>📊 Carica Esempio</button>
                         </div>
                         
@@ -143,7 +154,26 @@ const ValutazioneAziendaleCalculator = () => {
                              </div>
                         </div>
                         
-                        {/* Aggiungi qui le altre card del form (Dati Anno Precedente, Metriche Performance) */}
+                        <div className="card">
+                             <h3 className="text-xl font-bold mb-4">📊 Dati Anno Precedente</h3>
+                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div><label htmlFor="previousRevenue">Ricavi Anno Precedente (€)</label><input type="number" id="previousRevenue" value={formData.previousRevenue} onChange={handleInputChange} /></div>
+                                <div><label htmlFor="previousEbitda">EBITDA Anno Precedente (€)</label><input type="number" id="previousEbitda" value={formData.previousEbitda} onChange={handleInputChange} /></div>
+                                <div><label htmlFor="previousNetIncome">Utile Netto Anno Precedente (€)</label><input type="number" id="previousNetIncome" value={formData.previousNetIncome} onChange={handleInputChange} /></div>
+                             </div>
+                        </div>
+
+                        <div className="card">
+                             <h3 className="text-xl font-bold mb-4">📈 Metriche di Performance</h3>
+                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div><label htmlFor="grossMargin">Margine Lordo (%)</label><input type="number" id="grossMargin" value={formData.grossMargin} onChange={handleInputChange} /></div>
+                                <div><label htmlFor="recurringRevenue">Ricavi Ricorrenti (%)</label><input type="number" id="recurringRevenue" value={formData.recurringRevenue} onChange={handleInputChange} /></div>
+                                <div><label htmlFor="customerConcentration">Concentrazione Clienti (%)</label><input type="number" id="customerConcentration" value={formData.customerConcentration} onChange={handleInputChange} /></div>
+                                <div><label htmlFor="debtLevel">Livello Indebitamento</label><select id="debtLevel" value={formData.debtLevel} onChange={handleInputChange}><option value="low">Basso (&lt; 2x EBITDA)</option><option value="medium">Medio (2-4x EBITDA)</option><option value="high">Alto (&gt; 4x EBITDA)</option></select></div>
+                                <div><label htmlFor="technologyRisk">Rischio Tecnologico</label><select id="technologyRisk" value={formData.technologyRisk} onChange={handleInputChange}><option value="low">Basso</option><option value="medium">Medio</option><option value="high">Alto</option></select></div>
+                                <div><label htmlFor="managementQuality">Qualità Management</label><select id="managementQuality" value={formData.managementQuality} onChange={handleInputChange}><option value="excellent">Eccellente</option><option value="good">Buona</option><option value="average">Media</option><option value="poor">Scarsa</option></select></div>
+                             </div>
+                        </div>
 
                     </div>
 
@@ -153,7 +183,33 @@ const ValutazioneAziendaleCalculator = () => {
                             <h2 className="text-2xl font-bold mb-4 text-center">🎯 Valutazione</h2>
                             <div className="text-4xl font-bold mb-2 text-center">{formatCurrency(results.fairMarketValue)}</div>
                             <div className="text-gray-400 mb-6 text-center">Scenari di Valutazione</div>
-                            {/* ... altri risultati ... */}
+                            
+                            <div className="space-y-2">
+                                <div className="scenario scenario-conservative"><span>Conservativo</span><span>{formatCurrency(results.conservativeValue)}</span></div>
+                                <div className="scenario scenario-fair"><span>Mercato Equo</span><span>{formatCurrency(results.fairMarketValue)}</span></div>
+                                <div className="scenario scenario-optimistic"><span>Ottimistico</span><span>{formatCurrency(results.optimisticValue)}</span></div>
+                            </div>
+                            
+                            <hr className="border-gray-700 my-6"/>
+
+                            <h3 className="text-xl font-bold mb-4">🔢 Multipli</h3>
+                            <div className="space-y-4 text-sm">
+                                <div className="multiple-row"><span>EV/Ricavi</span><span className="multiple-value">{results.evRevenue}x</span></div>
+                                <div className="multiple-row"><span>EV/EBITDA</span><span className="multiple-value">{results.evEbitda}x</span></div>
+                                <div className="multiple-row"><span>P/E Ratio</span><span className="multiple-value">{results.peRatio}x</span></div>
+                            </div>
+
+                            <hr className="border-gray-700 my-6"/>
+
+                            <h3 className="text-xl font-bold mb-4">📊 Metriche</h3>
+                             <div className="space-y-4 text-sm">
+                                <div className="multiple-row"><span>Crescita Ricavi</span><span className={getMetricClass(results.revenueGrowth)}>{formatPercentage(results.revenueGrowth)}</span></div>
+                                <div className="multiple-row"><span>Crescita EBITDA</span><span className={getMetricClass(results.ebitdaGrowth)}>{formatPercentage(results.ebitdaGrowth)}</span></div>
+                                <div className="multiple-row"><span>Score Qualità</span><span className="metric-neutral">{Math.round(results.qualityScore || 0)}%</span></div>
+                                <div className="multiple-row"><span>Score Rischio</span><span className="metric-neutral">{Math.round(results.riskScore || 0)}%</span></div>
+                                <div className="multiple-row"><span>Sconto Liquidità</span><span className="metric-negative">-{Math.round((results.liquidityDiscount || 0) * 100)}%</span></div>
+                            </div>
+
                             <button onClick={saveValuation} disabled={isSubmitting} className="btn w-full mt-6">
                                 {isSubmitting ? 'Salvataggio...' : '💾 Salva Valutazione'}
                             </button>
