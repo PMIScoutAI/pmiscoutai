@@ -3,20 +3,18 @@ import React, { useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { useAuth } from '../hooks/useAuth'; // Importiamo il nostro nuovo hook
+import { useAuth } from '../hooks/useAuth'; // Importiamo il nostro hook
 
-// Le definizioni di Icon e navLinks possono rimanere qui
+// Definizioni di Icon e navLinks
 const Icon = ({ path, className = 'w-6 h-6' }) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{path}</svg> );
 const icons = { dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>, profile: <><path d="M5.52 19c.64-2.2 1.84-3 3.22-3h6.52c1.38 0 2.58.8 3.22 3" /><circle cx="12" cy="10" r="3" /><circle cx="12" cy="12" r="10" /></>, search: <><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>, calculator: <><rect x="4" y="2" width="16" height="20" rx="2" ry="2" /><line x1="8" y1="6" x2="16" y2="6" /><line x1="12" y1="10" x2="12" y2="18" /><line x1="8" y1="14" x2="16" y2="14" /></>, marketplace: <><path d="M12 2H6.5C4.5 2 3 3.5 3 5.5V18.5C3 20.5 4.5 22 6.5 22H17.5C19.5 22 21 20.5 21 18.5V12L12 2Z" /><path d="M12 2V12H21" /><path d="M15 22V18C15 16.9 15.9 16 17 16H19" /></>, menu: <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></> };
 const navLinks = [ { href: '/', text: 'Dashboard', icon: icons.dashboard }, { href: '/profilo', text: 'Profilo', icon: icons.profile }, { href: '#', text: 'Ricerca AI', icon: icons.search }, { href: '/calcolatori', text: 'Calcolatori', icon: icons.calculator }, { href: '#', text: 'Marketplace', icon: icons.marketplace }];
 
 export default function Layout({ children, pageTitle }) {
-    // Il Layout ora è molto più pulito: usa l'hook per ottenere lo stato
     const { isAuthenticated, isLoading } = useAuth();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const router = useRouter();
 
-    // 1. Schermata di caricamento gestita dall'hook
     if (isLoading) {
         return (
             <div className="flex items-center justify-center min-h-screen bg-slate-50">
@@ -29,12 +27,10 @@ export default function Layout({ children, pageTitle }) {
         );
     }
 
-    // 2. Se l'hook dice che non si è autenticati, mostra il messaggio di reindirizzamento
     if (!isAuthenticated) {
         return <div className="flex items-center justify-center min-h-screen bg-slate-50"><p>Reindirizzamento al login...</p></div>;
     }
 
-    // 3. Se autenticato, mostra il layout completo con la pagina
     return (
         <>
             <Head>
@@ -42,7 +38,7 @@ export default function Layout({ children, pageTitle }) {
                 <script src="https://cdn.tailwindcss.com"></script>
                 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
                 <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
-                <script dangerouslySetInnerHTML={{ __html: ` var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,profile,support', tokenStorage: 'cookie' }; ` }} />
+                <script dangerouslySetInnerHTML={{ __html: ` var o_options = { domain: 'pmIScout.outseta.com', load: 'auth,profile,support', tokenStorage: 'cookie' }; ` }} />
                 <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
             </Head>
 
