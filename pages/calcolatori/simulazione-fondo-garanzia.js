@@ -73,9 +73,67 @@ const FondoGaranziaCalculator = () => {
         setFormErrors({});
     };
     
-    // --- LOGICA DI CALCOLO ---
+    // --- LOGICA DI CALCOLO (COMPLETA E FORMATTATA CORRETTAMENTE) ---
     const coverageTable = { fin_fino_12_mesi: [30, 40, 50, 60, 0], fin_oltre_12_fino_36_mesi_con_pa: [30, 40, 50, 60, 0], fin_oltre_12_fino_36_mesi_senza_pa: [30, 40, 50, 60, 0], fin_oltre_36_mesi_con_pa: [30, 40, 50, 60, 0], fin_oltre_36_mesi_senza_pa: [30, 50, 60, 70, 0], risanamento: [50, 50, 60, 80, 0], investimenti: [50, 60, 70, 80, 0], sabatini: [80, 80, 80, 80, 0], microcredito: [80, 80, 80, 80, 0] };
-    const estimateCreditClass = (isStartup, data) => { const { settore, fatturato, ebitda, pfn, patrimonioNetto } = data; if (isStartup) return { meritClass: 3, notes: "Per le start-up si assume una classe di merito prudenziale." }; if (fatturato === 0 || patrimonioNetto === 0) return { meritClass: 4, notes: "Dati insufficienti. Si assume una classe di merito prudenziale." }; let score = 0; const notes = []; const pfn_su_pn = patrimonioNetto !== 0 ? pfn / patrimonioNetto : 10; const pfn_su_ebitda = ebitda > 0 ? pfn / ebitda : 10; const ebitda_margin = fatturato !== 0 ? ebitda / fatturato : 0; notes.push(`Leva (PFN/PN): ${pfn_su_pn.toFixed(2)}`); notes.push(`Sostenibilità (PFN/EBITDA): ${pfn_su_ebitda.toFixed(2)}`); let finalClass; if (score >= 4) finalClass = 1; else if (score >= 2) finalClass = 2; else if (score >= 0) finalClass = 3; else if (score >= -3) finalClass = 4; else finalClass = 5; return { meritClass: finalClass, notes: `Stima basata su: ${notes.join(', ')}.` }; };
+    
+    const estimateCreditClass = (isStartup, data) => {
+        const { settore, fatturato, ebitda, pfn, patrimonioNetto, oneriFinanziari } = data;
+
+        if (isStartup) {
+            return { meritClass: 3, notes: "Per le start-up, la valutazione si basa sul business plan. Si assume una classe di merito prudenziale." };
+        }
+        if (fatturato === 0 || patrimonioNetto === 0) {
+            return { meritClass: 4, notes: "Dati economici insufficienti per una stima precisa. Si assume una classe di merito prudenziale." };
+        }
+
+        let score = 0;
+        const notes = [];
+
+        const pfn_su_pn = patrimonioNetto !== 0 ? pfn / patrimonioNetto : 10;
+        const pfn_su_ebitda = ebitda > 0 ? pfn / ebitda : 10;
+        const ebitda_margin = fatturato !== 0 ? ebitda / fatturato : 0;
+
+        switch (settore) {
+            case 'industria':
+            case 'servizi':
+                if (pfn_su_pn < 2) score += 2; else if (pfn_su_pn > 5) score -= 2; else score -= 1;
+                notes.push(`Leva (PFN/PN) di ${pfn_su_pn.toFixed(2)}`);
+                if (pfn_su_ebitda < 3) score += 2; else if (pfn_su_ebitda > 6) score -= 2; else score -= 1;
+                notes.push(`Sostenibilità Debito (PFN/EBITDA) di ${pfn_su_ebitda.toFixed(2)}`);
+                if (ebitda_margin > 0.1) score += 2; else if (ebitda_margin < 0.03) score -= 2; else score += 1;
+                notes.push(`Redditività (EBITDA Margin) del ${(ebitda_margin * 100).toFixed(1)}%`);
+                break;
+            case 'commercio':
+                if (pfn_su_pn < 3) score += 2; else if (pfn_su_pn > 6) score -= 2; else score -= 1;
+                notes.push(`Leva (PFN/PN) di ${pfn_su_pn.toFixed(2)}`);
+                if (pfn_su_ebitda < 4) score += 2; else if (pfn_su_ebitda > 7) score -= 2; else score -= 1;
+                notes.push(`Sostenibilità Debito (PFN/EBITDA) di ${pfn_su_ebitda.toFixed(2)}`);
+                if (ebitda_margin > 0.05) score += 2; else if (ebitda_margin < 0.01) score -= 2; else score += 1;
+                notes.push(`Redditività (EBITDA Margin) del ${(ebitda_margin * 100).toFixed(1)}%`);
+                break;
+            case 'edilizia':
+            case 'immobiliare':
+                if (pfn_su_pn < 1.5) score += 2; else if (pfn_su_pn > 4) score -= 2; else score -= 1;
+                notes.push(`Leva (PFN/PN) di ${pfn_su_pn.toFixed(2)}`);
+                const pn_su_fatturato = fatturato !== 0 ? patrimonioNetto / fatturato : 0;
+                if (pn_su_fatturato > 0.3) score += 2; else if (pn_su_fatturato < 0.1) score -= 2; else score += 1;
+                notes.push(`Solidità (PN/Fatturato) di ${pn_su_fatturato.toFixed(2)}`);
+                if (ebitda_margin > 0.12) score += 2; else if (ebitda_margin < 0.05) score -= 2; else score += 1;
+                notes.push(`Redditività (EBITDA Margin) del ${(ebitda_margin * 100).toFixed(1)}%`);
+                break;
+            default:
+                break;
+        }
+
+        if (patrimonioNetto < 0) { score -= 3; notes.push("Patrimonio Netto negativo (forte penalità)."); }
+        if (ebitda < 0) { score -= 3; notes.push("EBITDA negativo (forte penalità)."); }
+
+        let finalClass;
+        if (score >= 4) finalClass = 1; else if (score >= 2) finalClass = 2; else if (score >= 0) finalClass = 3; else if (score >= -3) finalClass = 4; else finalClass = 5;
+        
+        return { meritClass: finalClass, notes: `Stima basata su: ${notes.join(', ')}.` };
+    };
+    
     const getCoveragePercentage = (classeDiMerito, finalita, durataMesi) => { if (classeDiMerito > 4) return 0; if (finalita === 'sabatini' || finalita === 'microcredito') return 80; if (finalita === 'risanamento') return coverageTable.risanamento[classeDiMerito - 1]; if (finalita === 'investimento') return coverageTable.investimenti[classeDiMerito - 1]; let operationType = 'fin_oltre_36_mesi_senza_pa'; if (durataMesi <= 12) operationType = 'fin_fino_12_mesi'; else if (durataMesi <= 36) operationType = 'fin_oltre_12_fino_36_mesi_senza_pa'; return coverageTable[operationType][classeDiMerito - 1]; };
 
     const handleSubmit = (e) => {
@@ -85,7 +143,7 @@ const FondoGaranziaCalculator = () => {
         const stimaIniziale = estimateCreditClass(isStartup, numericData); let classeDiMerito = stimaIniziale.meritClass; let finalNotes = [stimaIniziale.notes];
         if (formData['pregiudizievole-fallimento']) { classeDiMerito = 5; finalNotes.push("La presenza di procedure concorsuali determina la non ammissibilità."); } else if (formData['pregiudizievole-grave']) { const classeOriginale = classeDiMerito; classeDiMerito = Math.min(5, classeDiMerito + 2); finalNotes.push(`Declassamento da classe ${classeOriginale} a ${classeDiMerito} per eventi pregiudizievoli gravi.`); }
         const coveragePercentage = getCoveragePercentage(classeDiMerito, numericData.finalita, numericData.durata); const importoGarantito = numericData.importo * (coveragePercentage / 100);
-        setResults({ classe: classeDiMerito, percentuale: coveragePercentage, importoGarantito: importoGarantito, notes: finalNotes.join(' ') });
+        setResults({ meritClass: classeDiMerito, percentuale: coveragePercentage, importoGarantito: importoGarantito, notes: finalNotes.join(' ') });
         window.scrollTo(0, 0);
     };
 
@@ -165,7 +223,7 @@ const FondoGaranziaCalculator = () => {
                     <h2 className="text-2xl font-semibold mb-6 text-center">Risultato della Simulazione</h2>
                     <div className={`border-l-4 ${results.percentuale > 0 ? 'border-green-600' : 'border-red-600'} bg-white p-6 rounded-lg shadow-md mb-6 text-center`}><p className={`text-2xl font-bold ${results.percentuale > 0 ? 'text-green-600' : 'text-red-600'} flex items-center justify-center`}>{results.percentuale > 0 ? 'Ammissibilità Indicativa: POSITIVA' : 'Ammissibilità Indicativa: NEGATIVA'}</p></div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-                        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">Classe di Merito Finale</p><p className="text-3xl font-bold text-blue-600">{results.classe}</p></div>
+                        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">Classe di Merito Finale</p><p className="text-3xl font-bold text-blue-600">{results.meritClass}</p></div>
                         <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">Copertura Massima Stimata</p><p className="text-3xl font-bold text-blue-600">{results.percentuale}%</p></div>
                         <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">Importo Garantito Stimato</p><p className="text-3xl font-bold text-blue-600">{new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(results.importoGarantito)}</p></div>
                     </div>
