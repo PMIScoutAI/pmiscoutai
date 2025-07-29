@@ -90,7 +90,7 @@ const ValutazioneAziendaleCalculator = () => {
             });
             if (!response.ok) throw new Error('Salvataggio fallito');
             setSaveSuccess(true);
-            setTimeout(() => setSaveSuccess(false), 3000); // Rimuove il messaggio di successo dopo 3 secondi
+            setTimeout(() => setSaveSuccess(false), 3000);
         } catch (error) {
             console.error("Errore nel salvataggio:", error);
         } finally {
@@ -129,15 +129,15 @@ const ValutazioneAziendaleCalculator = () => {
                 
                 @media print {
                     body { background: #ffffff !important; color: #000000 !important; }
-                    .layout-container, .input-section, .btn, .header p, .header h1, .back-link { display: none !important; }
+                    .layout-container, .input-section, .btn, .header-print-hide, .back-link { display: none !important; }
                     .results-section-print { display: block !important; width: 100%; }
-                    .card { box-shadow: none; border: 1px solid #ccc; }
+                    .card { box-shadow: none; border: 1px solid #ccc; margin: 0; }
                     .multiple-value { color: #000; }
                     .metric-positive { color: #166534; } .metric-negative { color: #991b1b; } .metric-neutral { color: #5b21b6; }
                 }
             `}</style>
             <div className="container max-w-7xl mx-auto p-4">
-                <div className="text-center mb-10">
+                <div className="text-center mb-10 header-print-hide">
                     <h1 className="text-4xl font-bold mb-2 text-gray-800">🧮 Calcolatore Valutazione Aziendale</h1>
                     <p className="text-lg text-gray-600">Valutazione conservativa per il mercato italiano</p>
                 </div>
@@ -153,7 +153,7 @@ const ValutazioneAziendaleCalculator = () => {
                         <div className="card">
                             <h2 className="text-xl font-bold mb-4 text-gray-700">📈 Informazioni Azienda</h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div><label htmlFor="industry">Settore</label><select id="industry" value={formData.industry} onChange={handleInputChange}><option value="technology">🚀 Tecnologia & Software</option><option value="healthcare">🏥 Sanità & Life Sciences</option><option value="fintech">💰 Fintech & Servizi Finanziari</option><option value="ecommerce">🛒 E-commerce & Digital</option><option value="manufacturing">🏭 Manifatturiero & Industria</option><option value="services">🔧 Servizi Professionali</option><option value="energy">⚡ Energia & Utilities</option><option value="real_estate">🏠 Real Estate & Costruzioni</option><option value="media">🎮 Media & Entertainment</option><option value="retail">🛍️ Retail & Consumer</option><option value="automotive">🚗 Automotive & Componentistica</option><option value="food">🍝 Food & Beverage</option></select></div>
+                                <div><label htmlFor="industry">Settore</label><select id="industry" value={formData.industry} onChange={handleInputChange}><option value="technology">🚀 Tecnologia & Software</option><option value="healthcare">🏥 Sanità & Life Sciences</option><option value="fintech">💰 Fintech & Servizi Finanziari</option><option value="ecommerce">� E-commerce & Digital</option><option value="manufacturing">🏭 Manifatturiero & Industria</option><option value="services">🔧 Servizi Professionali</option><option value="energy">⚡ Energia & Utilities</option><option value="real_estate">🏠 Real Estate & Costruzioni</option><option value="media">🎮 Media & Entertainment</option><option value="retail">🛍️ Retail & Consumer</option><option value="automotive">🚗 Automotive & Componentistica</option><option value="food">🍝 Food & Beverage</option></select></div>
                                 <div><label htmlFor="companySize">Dimensione Azienda</label><select id="companySize" value={formData.companySize} onChange={handleInputChange}><option value="micro">Micro (&lt; €2M fatturato)</option><option value="small">Piccola (€2M - €10M)</option><option value="medium">Media (€10M - €50M)</option><option value="large">Grande (&gt; €50M)</option></select></div>
                                 <div><label htmlFor="marketPosition">Posizione di Mercato</label><select id="marketPosition" value={formData.marketPosition} onChange={handleInputChange}><option value="leader">Leader di Mercato</option><option value="challenger">Challenger</option><option value="follower">Follower</option><option value="niche">Nicchia Specializzata</option></select></div>
                                 <div><label htmlFor="geography">Copertura Geografica</label><select id="geography" value={formData.geography} onChange={handleInputChange}><option value="local">Locale/Regionale</option><option value="national">Nazionale</option><option value="european">Europea</option><option value="international">Internazionale</option></select></div>
@@ -254,3 +254,4 @@ export default function ValutazioneAziendalePage() {
         </Layout>
     );
 }
+�
