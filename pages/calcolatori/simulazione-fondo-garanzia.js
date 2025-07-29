@@ -77,7 +77,7 @@ const FondoGaranziaCalculator = () => {
     const coverageTable = { fin_fino_12_mesi: [30, 40, 50, 60, 0], fin_oltre_12_fino_36_mesi_con_pa: [30, 40, 50, 60, 0], fin_oltre_12_fino_36_mesi_senza_pa: [30, 40, 50, 60, 0], fin_oltre_36_mesi_con_pa: [30, 40, 50, 60, 0], fin_oltre_36_mesi_senza_pa: [30, 50, 60, 70, 0], risanamento: [50, 50, 60, 80, 0], investimenti: [50, 60, 70, 80, 0], sabatini: [80, 80, 80, 80, 0], microcredito: [80, 80, 80, 80, 0] };
     
     const estimateCreditClass = (isStartup, data) => {
-        const { settore, fatturato, ebitda, pfn, patrimonioNetto, oneriFinanziari } = data;
+        const { settore, fatturato, ebitda, pfn, patrimonioNetto } = data;
 
         if (isStartup) {
             return { meritClass: 3, notes: "Per le start-up, la valutazione si basa sul business plan. Si assume una classe di merito prudenziale." };
