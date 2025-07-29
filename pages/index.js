@@ -161,7 +161,7 @@ export default function Home() {
     { href: '/', text: 'Dashboard', icon: icons.dashboard, active: true },
     { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
     { href: '#', text: 'Ricerca AI', icon: icons.search, active: false },
-    { href: '/calcolatori', text: 'Calcolatori', icon: icons.calculator, active: false }, // <-- MODIFICA EFFETTUATA QUI
+    { href: '/calcolatori', text: 'Calcolatori', icon: icons.calculator, active: false },
     { href: '#', text: 'Marketplace', icon: icons.marketplace, active: false },
   ];
 
@@ -305,4 +305,33 @@ export default function Home() {
               <div className="relative p-8 mt-8 overflow-hidden text-white bg-center bg-cover rounded-lg shadow-lg" style={{ backgroundImage: "url('https://www.pmiscout.eu/wp-content/uploads/2022/03/115-business-consulting-agency_blog_4.jpg')" }}>
                 <div className="absolute inset-0 bg-black bg-opacity-50" />
                 <div className="relative z-10">
-                  <h2
+                  <h2 className="text-2xl font-bold md:text-3xl">Inizia con il Check-UP AI</h2>
+                  <p className="mt-2 text-gray-200">Ottieni un'analisi istantanea e approfondita della tua azienda con la nostra intelligenza artificiale.</p>
+                  <a href="/checkup" className="inline-block px-5 py-2 mt-6 font-semibold text-blue-600 bg-white rounded-lg shadow-md hover:bg-blue-50 transition-colors">Esegui Check-UP &rarr;</a>
+                </div>
+              </div>
+
+              <div className="mt-10">
+                <h2 className="text-lg font-semibold leading-6 text-slate-900">I tuoi Macro Tool</h2>
+                <div className="grid grid-cols-1 gap-6 mt-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {toolCards.map((card) => (
+                    <div key={card.title} className="flex flex-col h-full p-6 transition-all duration-300 bg-white border rounded-lg shadow-sm hover:shadow-xl hover:-translate-y-1">
+                      <div className="flex-grow">
+                        <div className="p-3 bg-blue-100 rounded-lg w-fit">
+                          <Icon path={card.icon} className="w-6 h-6 text-blue-600" />
+                        </div>
+                        <h3 className="mt-4 text-lg font-semibold text-slate-900">{card.title}</h3>
+                        <p className="mt-1 text-sm text-slate-500">{card.description}</p>
+                      </div>
+                      <a href={card.href} className="inline-block mt-4 text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors">{card.linkText} &rarr;</a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </>
+  );
+}
