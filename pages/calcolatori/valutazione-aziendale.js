@@ -65,8 +65,8 @@ const ValutazioneAziendaleCalculator = () => {
     const { user } = useAuth();
     const [formData, setFormData] = useState(initialFormData);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [saveSuccess, setSaveSuccess] = useState(false);
 
-    // I risultati vengono calcolati in modo reattivo ogni volta che formData cambia
     const results = useMemo(() => performCalculation(formData), [formData]);
 
     const handleInputChange = (e) => {
@@ -74,9 +74,14 @@ const ValutazioneAziendaleCalculator = () => {
         setFormData(prev => ({ ...prev, [id]: value }));
     };
 
+    const handlePrint = () => {
+        window.print();
+    };
+
     const saveValuation = async () => {
         if (!user || Object.keys(results).length === 0) return;
         setIsSubmitting(true);
+        setSaveSuccess(false);
         try {
             const response = await fetch('/api/save-valuation', {
                 method: 'POST',
@@ -84,7 +89,8 @@ const ValutazioneAziendaleCalculator = () => {
                 body: JSON.stringify({ user, inputs: formData, outputs: results }),
             });
             if (!response.ok) throw new Error('Salvataggio fallito');
-            // Qui potresti mostrare una notifica di successo
+            setSaveSuccess(true);
+            setTimeout(() => setSaveSuccess(false), 3000); // Rimuove il messaggio di successo dopo 3 secondi
         } catch (error) {
             console.error("Errore nel salvataggio:", error);
         } finally {
@@ -100,15 +106,17 @@ const ValutazioneAziendaleCalculator = () => {
         <div className="layout-dark-theme">
             <style jsx>{`
                 .layout-dark-theme { background: linear-gradient(135deg, #1a1a1a 0%, #2d3748 50%, #1a1a1a 100%); color: white; }
-                .card { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 24px; margin-bottom: 20px; }
+                .card { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 16px; padding: 24px; margin-bottom: 20px; box-shadow: 0 0 20px rgba(59, 130, 246, 0.1); }
                 label { display: block; margin-bottom: 8px; font-weight: 500; color: #e2e8f0; }
                 input, select { width: 100%; background: rgba(55, 65, 81, 0.5); border: 1px solid #4a5568; border-radius: 8px; padding: 12px 16px; color: white; font-size: 14px; transition: all 0.3s ease; }
-                input:focus, select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+                input:focus, select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
                 option { background: #374151; color: white; }
                 .btn { background: linear-gradient(135deg, #3b82f6, #1d4ed8); border: none; border-radius: 8px; padding: 12px 24px; color: white; font-weight: 600; cursor: pointer; transition: all 0.3s ease; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
-                .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(59, 130, 246, 0.3); }
+                .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(59, 130, 246, 0.3); }
+                .btn:disabled { opacity: 0.6; cursor: not-allowed; }
                 .btn-clear { background: linear-gradient(135deg, #ef4444, #dc2626); }
                 .btn-example { background: linear-gradient(135deg, #10b981, #059669); }
+                .btn-print { background: linear-gradient(135deg, #6b7280, #4b5563); }
                 .metric-positive { color: #34d399; } .metric-negative { color: #f87171; } .metric-neutral { color: #a78bfa; }
                 .multiple-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
                 .multiple-value { font-weight: 600; color: #06b6d4; }
@@ -116,16 +124,26 @@ const ValutazioneAziendaleCalculator = () => {
                 .scenario-conservative { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); }
                 .scenario-fair { background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.3); }
                 .scenario-optimistic { background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.3); }
+                
+                /* Stili per la stampa */
+                @media print {
+                    body, .layout-dark-theme { background: #ffffff !important; color: #000000 !important; }
+                    .layout-container, .input-section, .btn, .header p, .header h1, .back-link { display: none !important; }
+                    .results-section-print { display: block !important; width: 100%; }
+                    .card { box-shadow: none; border: 1px solid #ccc; }
+                    .multiple-value { color: #000; }
+                    .metric-positive { color: #166534; } .metric-negative { color: #991b1b; } .metric-neutral { color: #5b21b6; }
+                }
             `}</style>
             <div className="container max-w-7xl mx-auto p-4">
-                <div className="text-center mb-10">
+                <div className="header">
                     <h1 className="text-4xl font-bold mb-2">🧮 Calcolatore Valutazione Aziendale</h1>
                     <p className="text-lg text-gray-300">Valutazione conservativa per il mercato italiano</p>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Colonna Input */}
-                    <div className="lg:col-span-2 space-y-5">
+                    <div className="lg:col-span-2 space-y-5 input-section">
                         <div className="flex flex-wrap gap-4">
                             <button className="btn btn-clear" onClick={() => setFormData(blankFormData)}>🗑️ Pulisci Dati</button>
                             <button className="btn btn-example" onClick={() => setFormData(initialFormData)}>📊 Carica Esempio</button>
@@ -170,11 +188,10 @@ const ValutazioneAziendaleCalculator = () => {
                                 <div><label htmlFor="managementQuality">Qualità Management</label><select id="managementQuality" value={formData.managementQuality} onChange={handleInputChange}><option value="excellent">Eccellente</option><option value="good">Buona</option><option value="average">Media</option><option value="poor">Scarsa</option></select></div>
                              </div>
                         </div>
-
                     </div>
 
                     {/* Colonna Risultati */}
-                    <div className="lg:col-span-1">
+                    <div className="lg:col-span-1 results-section-print">
                         <div className="card sticky top-8">
                             <h2 className="text-2xl font-bold mb-4 text-center">🎯 Valutazione</h2>
                             <div className="text-4xl font-bold mb-2 text-center">{formatCurrency(results.fairMarketValue)}</div>
@@ -206,9 +223,14 @@ const ValutazioneAziendaleCalculator = () => {
                                 <div className="multiple-row"><span>Sconto Liquidità</span><span className="metric-negative">-{Math.round((results.liquidityDiscount || 0) * 100)}%</span></div>
                             </div>
 
-                            <button onClick={saveValuation} disabled={isSubmitting} className="btn w-full mt-6">
-                                {isSubmitting ? 'Salvataggio...' : '💾 Salva Valutazione'}
-                            </button>
+                            <div className="flex flex-col gap-4 mt-6">
+                                <button onClick={saveValuation} disabled={isSubmitting || saveSuccess} className="btn w-full">
+                                    {isSubmitting ? 'Salvataggio...' : (saveSuccess ? '✔ Archiviato!' : '💾 Archivia nel tuo Report')}
+                                </button>
+                                <button onClick={handlePrint} className="btn btn-print w-full">
+                                    🖨️ Stampa Report
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -220,7 +242,14 @@ const ValutazioneAziendaleCalculator = () => {
 export default function ValutazioneAziendalePage() {
     return (
         <Layout pageTitle="Calcolatore Valutazione Aziendale">
-             <ValutazioneAziendaleCalculator />
+            <div className="back-link container max-w-7xl mx-auto px-4 pt-6">
+                 <Link href="/calcolatori">
+                    <a className="text-gray-300 hover:text-white transition-colors inline-flex items-center gap-2">
+                        &larr; Torna ai calcolatori
+                    </a>
+                </Link>
+            </div>
+            <ValutazioneAziendaleCalculator />
         </Layout>
     );
 }
