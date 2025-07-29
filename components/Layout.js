@@ -38,7 +38,8 @@ export default function Layout({ children, pageTitle }) {
                 <script src="https://cdn.tailwindcss.com"></script>
                 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
                 <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
-                <script dangerouslySetInnerHTML={{ __html: ` var o_options = { domain: 'pmIScout.outseta.com', load: 'auth,profile,support', tokenStorage: 'cookie' }; ` }} />
+                {/* ERRORE CORRETTO QUI: 'pmiscout.outseta.com' tutto minuscolo */}
+                <script dangerouslySetInnerHTML={{ __html: ` var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,profile,support', tokenStorage: 'cookie' }; ` }} />
                 <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
             </Head>
 
