@@ -236,7 +236,7 @@ const ValutazioneAziendaleCalculator = () => {
                     </div>
                 </div>
             </div>
-        </div>
+        </>
     );
 };
 
