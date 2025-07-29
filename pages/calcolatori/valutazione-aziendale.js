@@ -103,31 +103,32 @@ const ValutazioneAziendaleCalculator = () => {
     const getMetricClass = (value) => value >= 0 ? 'metric-positive' : 'metric-negative';
 
     return (
-        <div className="layout-dark-theme">
+        <>
             <style jsx>{`
-                .layout-dark-theme { background: linear-gradient(135deg, #1a1a1a 0%, #2d3748 50%, #1a1a1a 100%); color: white; }
-                .card { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 16px; padding: 24px; margin-bottom: 20px; box-shadow: 0 0 20px rgba(59, 130, 246, 0.1); }
-                label { display: block; margin-bottom: 8px; font-weight: 500; color: #e2e8f0; }
-                input, select { width: 100%; background: rgba(55, 65, 81, 0.5); border: 1px solid #4a5568; border-radius: 8px; padding: 12px 16px; color: white; font-size: 14px; transition: all 0.3s ease; }
+                .card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 0.75rem; padding: 24px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+                label { display: block; margin-bottom: 8px; font-weight: 500; color: #4a5568; }
+                input, select { width: 100%; background: #f7fafc; border: 1px solid #cbd5e0; border-radius: 0.5rem; padding: 12px 16px; color: #2d3748; font-size: 14px; transition: all 0.3s ease; }
                 input:focus, select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
-                option { background: #374151; color: white; }
-                .btn { background: linear-gradient(135deg, #3b82f6, #1d4ed8); border: none; border-radius: 8px; padding: 12px 24px; color: white; font-weight: 600; cursor: pointer; transition: all 0.3s ease; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
-                .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(59, 130, 246, 0.3); }
+                option { background: #ffffff; color: #2d3748; }
+                .btn { background-color: #2563eb; border: none; border-radius: 0.5rem; padding: 12px 24px; color: white; font-weight: 600; cursor: pointer; transition: all 0.3s ease; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+                .btn:hover:not(:disabled) { background-color: #1d4ed8; transform: translateY(-2px); box-shadow: 0 8px 25px rgba(59, 130, 246, 0.2); }
                 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-                .btn-clear { background: linear-gradient(135deg, #ef4444, #dc2626); }
-                .btn-example { background: linear-gradient(135deg, #10b981, #059669); }
-                .btn-print { background: linear-gradient(135deg, #6b7280, #4b5563); }
-                .metric-positive { color: #34d399; } .metric-negative { color: #f87171; } .metric-neutral { color: #a78bfa; }
+                .btn-clear { background-color: #ef4444; }
+                .btn-clear:hover:not(:disabled) { background-color: #dc2626; }
+                .btn-example { background-color: #10b981; }
+                .btn-example:hover:not(:disabled) { background-color: #059669; }
+                .btn-print { background-color: #6b7280; }
+                .btn-print:hover:not(:disabled) { background-color: #4b5563; }
+                .metric-positive { color: #16a34a; } .metric-negative { color: #dc2626; } .metric-neutral { color: #5b21b6; }
                 .multiple-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-                .multiple-value { font-weight: 600; color: #06b6d4; }
+                .multiple-value { font-weight: 600; color: #2563eb; }
                 .scenario { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; }
-                .scenario-conservative { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); }
-                .scenario-fair { background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.3); }
-                .scenario-optimistic { background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.3); }
+                .scenario-conservative { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; }
+                .scenario-fair { background: #dbeafe; border: 1px solid #bfdbfe; color: #1e40af; }
+                .scenario-optimistic { background: #d1fae5; border: 1px solid #a7f3d0; color: #065f46; }
                 
-                /* Stili per la stampa */
                 @media print {
-                    body, .layout-dark-theme { background: #ffffff !important; color: #000000 !important; }
+                    body { background: #ffffff !important; color: #000000 !important; }
                     .layout-container, .input-section, .btn, .header p, .header h1, .back-link { display: none !important; }
                     .results-section-print { display: block !important; width: 100%; }
                     .card { box-shadow: none; border: 1px solid #ccc; }
@@ -136,9 +137,9 @@ const ValutazioneAziendaleCalculator = () => {
                 }
             `}</style>
             <div className="container max-w-7xl mx-auto p-4">
-                <div className="header">
-                    <h1 className="text-4xl font-bold mb-2">🧮 Calcolatore Valutazione Aziendale</h1>
-                    <p className="text-lg text-gray-300">Valutazione conservativa per il mercato italiano</p>
+                <div className="text-center mb-10">
+                    <h1 className="text-4xl font-bold mb-2 text-gray-800">🧮 Calcolatore Valutazione Aziendale</h1>
+                    <p className="text-lg text-gray-600">Valutazione conservativa per il mercato italiano</p>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -150,7 +151,7 @@ const ValutazioneAziendaleCalculator = () => {
                         </div>
                         
                         <div className="card">
-                            <h2 className="text-xl font-bold mb-4">📈 Informazioni Azienda</h2>
+                            <h2 className="text-xl font-bold mb-4 text-gray-700">📈 Informazioni Azienda</h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div><label htmlFor="industry">Settore</label><select id="industry" value={formData.industry} onChange={handleInputChange}><option value="technology">🚀 Tecnologia & Software</option><option value="healthcare">🏥 Sanità & Life Sciences</option><option value="fintech">💰 Fintech & Servizi Finanziari</option><option value="ecommerce">🛒 E-commerce & Digital</option><option value="manufacturing">🏭 Manifatturiero & Industria</option><option value="services">🔧 Servizi Professionali</option><option value="energy">⚡ Energia & Utilities</option><option value="real_estate">🏠 Real Estate & Costruzioni</option><option value="media">🎮 Media & Entertainment</option><option value="retail">🛍️ Retail & Consumer</option><option value="automotive">🚗 Automotive & Componentistica</option><option value="food">🍝 Food & Beverage</option></select></div>
                                 <div><label htmlFor="companySize">Dimensione Azienda</label><select id="companySize" value={formData.companySize} onChange={handleInputChange}><option value="micro">Micro (&lt; €2M fatturato)</option><option value="small">Piccola (€2M - €10M)</option><option value="medium">Media (€10M - €50M)</option><option value="large">Grande (&gt; €50M)</option></select></div>
@@ -160,7 +161,7 @@ const ValutazioneAziendaleCalculator = () => {
                         </div>
 
                         <div className="card">
-                             <h3 className="text-xl font-bold mb-4">💰 Dati Finanziari Anno Corrente</h3>
+                             <h3 className="text-xl font-bold mb-4 text-gray-700">💰 Dati Finanziari Anno Corrente</h3>
                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div><label htmlFor="revenue">Ricavi (€)</label><input type="number" id="revenue" value={formData.revenue} onChange={handleInputChange} /></div>
                                 <div><label htmlFor="ebitda">EBITDA (€)</label><input type="number" id="ebitda" value={formData.ebitda} onChange={handleInputChange} /></div>
@@ -169,7 +170,7 @@ const ValutazioneAziendaleCalculator = () => {
                         </div>
                         
                         <div className="card">
-                             <h3 className="text-xl font-bold mb-4">📊 Dati Anno Precedente</h3>
+                             <h3 className="text-xl font-bold mb-4 text-gray-700">📊 Dati Anno Precedente</h3>
                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div><label htmlFor="previousRevenue">Ricavi Anno Precedente (€)</label><input type="number" id="previousRevenue" value={formData.previousRevenue} onChange={handleInputChange} /></div>
                                 <div><label htmlFor="previousEbitda">EBITDA Anno Precedente (€)</label><input type="number" id="previousEbitda" value={formData.previousEbitda} onChange={handleInputChange} /></div>
@@ -178,7 +179,7 @@ const ValutazioneAziendaleCalculator = () => {
                         </div>
 
                         <div className="card">
-                             <h3 className="text-xl font-bold mb-4">📈 Metriche di Performance</h3>
+                             <h3 className="text-xl font-bold mb-4 text-gray-700">📈 Metriche di Performance</h3>
                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div><label htmlFor="grossMargin">Margine Lordo (%)</label><input type="number" id="grossMargin" value={formData.grossMargin} onChange={handleInputChange} /></div>
                                 <div><label htmlFor="recurringRevenue">Ricavi Ricorrenti (%)</label><input type="number" id="recurringRevenue" value={formData.recurringRevenue} onChange={handleInputChange} /></div>
@@ -193,9 +194,9 @@ const ValutazioneAziendaleCalculator = () => {
                     {/* Colonna Risultati */}
                     <div className="lg:col-span-1 results-section-print">
                         <div className="card sticky top-8">
-                            <h2 className="text-2xl font-bold mb-4 text-center">🎯 Valutazione</h2>
-                            <div className="text-4xl font-bold mb-2 text-center">{formatCurrency(results.fairMarketValue)}</div>
-                            <div className="text-gray-400 mb-6 text-center">Scenari di Valutazione</div>
+                            <h2 className="text-2xl font-bold mb-4 text-center text-gray-800">🎯 Valutazione</h2>
+                            <div className="text-4xl font-bold mb-2 text-center text-gray-900">{formatCurrency(results.fairMarketValue)}</div>
+                            <div className="text-gray-500 mb-6 text-center">Scenari di Valutazione</div>
                             
                             <div className="space-y-2">
                                 <div className="scenario scenario-conservative"><span>Conservativo</span><span>{formatCurrency(results.conservativeValue)}</span></div>
@@ -203,19 +204,19 @@ const ValutazioneAziendaleCalculator = () => {
                                 <div className="scenario scenario-optimistic"><span>Ottimistico</span><span>{formatCurrency(results.optimisticValue)}</span></div>
                             </div>
                             
-                            <hr className="border-gray-700 my-6"/>
+                            <hr className="border-gray-200 my-6"/>
 
-                            <h3 className="text-xl font-bold mb-4">🔢 Multipli</h3>
-                            <div className="space-y-4 text-sm">
+                            <h3 className="text-xl font-bold mb-4 text-gray-700">🔢 Multipli</h3>
+                            <div className="space-y-4 text-sm text-gray-600">
                                 <div className="multiple-row"><span>EV/Ricavi</span><span className="multiple-value">{results.evRevenue}x</span></div>
                                 <div className="multiple-row"><span>EV/EBITDA</span><span className="multiple-value">{results.evEbitda}x</span></div>
                                 <div className="multiple-row"><span>P/E Ratio</span><span className="multiple-value">{results.peRatio}x</span></div>
                             </div>
 
-                            <hr className="border-gray-700 my-6"/>
+                            <hr className="border-gray-200 my-6"/>
 
-                            <h3 className="text-xl font-bold mb-4">📊 Metriche</h3>
-                             <div className="space-y-4 text-sm">
+                            <h3 className="text-xl font-bold mb-4 text-gray-700">📊 Metriche</h3>
+                             <div className="space-y-4 text-sm text-gray-600">
                                 <div className="multiple-row"><span>Crescita Ricavi</span><span className={getMetricClass(results.revenueGrowth)}>{formatPercentage(results.revenueGrowth)}</span></div>
                                 <div className="multiple-row"><span>Crescita EBITDA</span><span className={getMetricClass(results.ebitdaGrowth)}>{formatPercentage(results.ebitdaGrowth)}</span></div>
                                 <div className="multiple-row"><span>Score Qualità</span><span className="metric-neutral">{Math.round(results.qualityScore || 0)}%</span></div>
@@ -244,7 +245,7 @@ export default function ValutazioneAziendalePage() {
         <Layout pageTitle="Calcolatore Valutazione Aziendale">
             <div className="back-link container max-w-7xl mx-auto px-4 pt-6">
                  <Link href="/calcolatori">
-                    <a className="text-gray-300 hover:text-white transition-colors inline-flex items-center gap-2">
+                    <a className="text-gray-700 hover:text-gray-900 transition-colors inline-flex items-center gap-2">
                         &larr; Torna ai calcolatori
                     </a>
                 </Link>
