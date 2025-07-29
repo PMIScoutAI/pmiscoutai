@@ -1,6 +1,6 @@
 // pages/calcolatori/valutazione-aziendale.js
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Layout from '../../components/Layout';
 import { useAuth } from '../../hooks/useAuth';
@@ -10,73 +10,69 @@ const industryMultiples = { technology: { revenue: 3.5, ebitda: 12, pe: 18 }, he
 const initialFormData = { industry: 'technology', companySize: 'small', marketPosition: 'challenger', geography: 'national', revenue: '4500000', ebitda: '900000', netIncome: '675000', previousRevenue: '3500000', previousEbitda: '560000', previousNetIncome: '420000', grossMargin: '50', recurringRevenue: '70', debtLevel: 'low', customerConcentration: '30', technologyRisk: 'medium', managementQuality: 'good' };
 const blankFormData = { industry: 'technology', companySize: 'micro', marketPosition: 'follower', geography: 'local', revenue: '', ebitda: '', netIncome: '', previousRevenue: '', previousEbitda: '', previousNetIncome: '', grossMargin: '', recurringRevenue: '', debtLevel: 'medium', customerConcentration: '', technologyRisk: 'medium', managementQuality: 'average' };
 
+// Funzione di calcolo pura, separata dal componente per pulizia
+const performCalculation = (formData) => {
+    const data = { ...formData };
+    Object.keys(data).forEach(key => {
+        if (['revenue', 'ebitda', 'netIncome', 'previousRevenue', 'previousEbitda', 'previousNetIncome', 'grossMargin', 'recurringRevenue', 'customerConcentration'].includes(key)) {
+            data[key] = parseFloat(data[key]) || 0;
+        }
+    });
+
+    if (data.revenue === 0) return {};
+
+    const industryData = industryMultiples[data.industry];
+    if (!industryData) return {};
+
+    let revenueMultiple = data.revenue * industryData.revenue;
+    let ebitdaMultiple = data.ebitda * industryData.ebitda;
+    let peMultiple = data.netIncome * industryData.pe;
+    let adjustmentFactor = 1;
+
+    if (data.companySize === 'micro') adjustmentFactor -= 0.25; else if (data.companySize === 'small') adjustmentFactor -= 0.15; else if (data.companySize === 'medium') adjustmentFactor -= 0.08;
+    let liquidityDiscount = 0.15; if (data.companySize === 'micro') liquidityDiscount = 0.30; else if (data.companySize === 'small') liquidityDiscount = 0.20; else if (data.companySize === 'medium') liquidityDiscount = 0.12; else liquidityDiscount = 0.08;
+    adjustmentFactor -= liquidityDiscount;
+    if (data.geography === 'international') adjustmentFactor += 0.15; else if (data.geography === 'european') adjustmentFactor += 0.08; else if (data.geography === 'national') adjustmentFactor += 0.03; else adjustmentFactor -= 0.05;
+    const revenueGrowth = data.previousRevenue > 0 ? ((data.revenue - data.previousRevenue) / data.previousRevenue) * 100 : 0;
+    if (revenueGrowth > 20) adjustmentFactor += 0.12; else if (revenueGrowth > 10) adjustmentFactor += 0.06; else if (revenueGrowth > 3) adjustmentFactor += 0.02; else if (revenueGrowth < 0) adjustmentFactor -= 0.20;
+    if (data.grossMargin > 60) adjustmentFactor += 0.08; else if (data.grossMargin > 40) adjustmentFactor += 0.04; else if (data.grossMargin < 25) adjustmentFactor -= 0.12;
+    if (data.recurringRevenue > 80) adjustmentFactor += 0.10; else if (data.recurringRevenue > 60) adjustmentFactor += 0.06; else if (data.recurringRevenue > 40) adjustmentFactor += 0.03; else if (data.recurringRevenue < 20) adjustmentFactor -= 0.08;
+    if (data.marketPosition === 'leader') adjustmentFactor += 0.08; else if (data.marketPosition === 'challenger') adjustmentFactor += 0.03; else if (data.marketPosition === 'follower') adjustmentFactor -= 0.08; else if (data.marketPosition === 'niche') adjustmentFactor += 0.02;
+    if (data.technologyRisk === 'low') adjustmentFactor += 0.05; else if (data.technologyRisk === 'high') adjustmentFactor -= 0.15;
+    if (data.customerConcentration > 50) adjustmentFactor -= 0.20; else if (data.customerConcentration > 30) adjustmentFactor -= 0.10; else if (data.customerConcentration < 15) adjustmentFactor += 0.05;
+    if (data.debtLevel === 'high') adjustmentFactor -= 0.15; else if (data.debtLevel === 'medium') adjustmentFactor -= 0.05; else adjustmentFactor += 0.03;
+    if (data.managementQuality === 'excellent') adjustmentFactor += 0.08; else if (data.managementQuality === 'good') adjustmentFactor += 0.03; else if (data.managementQuality === 'poor') adjustmentFactor -= 0.12;
+
+    const baseValuation = (revenueMultiple * 0.25 + ebitdaMultiple * 0.60 + peMultiple * 0.15);
+    const adjustedValuation = Math.max(0, baseValuation * adjustmentFactor);
+    const ebitdaGrowth = data.previousEbitda > 0 ? ((data.ebitda - data.previousEbitda) / data.previousEbitda) * 100 : 0;
+    const qualityScore = Math.min(100, Math.max(0, (data.grossMargin * 0.25) + (data.recurringRevenue * 0.35) + (Math.max(0, Math.min(revenueGrowth, 30)) * 0.25) + (data.geography === 'international' ? 15 : data.geography === 'european' ? 10 : data.geography === 'national' ? 5 : 0)));
+    const riskScore = Math.min(100, Math.max(0, 100 - data.customerConcentration * 0.8 + (data.technologyRisk === 'low' ? 15 : data.technologyRisk === 'medium' ? 5 : -15) + (data.managementQuality === 'excellent' ? 15 : data.managementQuality === 'good' ? 8 : data.managementQuality === 'poor' ? -15 : 0) + (data.debtLevel === 'low' ? 10 : data.debtLevel === 'high' ? -15 : -5)));
+
+    return {
+        fairMarketValue: Math.round(adjustedValuation),
+        conservativeValue: Math.round(adjustedValuation * 0.80),
+        optimisticValue: Math.round(adjustedValuation * 1.20),
+        evRevenue: data.revenue > 0 ? (adjustedValuation / data.revenue).toFixed(1) : 'N/A',
+        evEbitda: data.ebitda > 0 ? (adjustedValuation / data.ebitda).toFixed(1) : 'N/A',
+        peRatio: data.netIncome > 0 ? (adjustedValuation / data.netIncome).toFixed(1) : 'N/A',
+        revenueGrowth, ebitdaGrowth, qualityScore, riskScore, liquidityDiscount
+    };
+};
 
 // Componente principale del calcolatore
 const ValutazioneAziendaleCalculator = () => {
     const { user } = useAuth();
     const [formData, setFormData] = useState(initialFormData);
-    const [results, setResults] = useState({});
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // I risultati vengono calcolati in modo reattivo ogni volta che formData cambia
+    const results = useMemo(() => performCalculation(formData), [formData]);
 
     const handleInputChange = (e) => {
         const { id, value } = e.target;
         setFormData(prev => ({ ...prev, [id]: value }));
     };
-
-    const calculateValuation = () => {
-        const data = { ...formData };
-        // Converte i valori numerici da stringa a numero per i calcoli
-        Object.keys(data).forEach(key => {
-            if (['revenue', 'ebitda', 'netIncome', 'previousRevenue', 'previousEbitda', 'previousNetIncome', 'grossMargin', 'recurringRevenue', 'customerConcentration'].includes(key)) {
-                data[key] = parseFloat(data[key]) || 0;
-            }
-        });
-
-        if (data.revenue === 0) {
-            setResults({}); // Pulisce i risultati se non ci sono ricavi
-            return;
-        };
-
-        const industryData = industryMultiples[data.industry];
-        if (!industryData) return;
-
-        let revenueMultiple = data.revenue * industryData.revenue;
-        let ebitdaMultiple = data.ebitda * industryData.ebitda;
-        let peMultiple = data.netIncome * industryData.pe;
-        let adjustmentFactor = 1;
-
-        if (data.companySize === 'micro') adjustmentFactor -= 0.25; else if (data.companySize === 'small') adjustmentFactor -= 0.15; else if (data.companySize === 'medium') adjustmentFactor -= 0.08;
-        let liquidityDiscount = 0.15; if (data.companySize === 'micro') liquidityDiscount = 0.30; else if (data.companySize === 'small') liquidityDiscount = 0.20; else if (data.companySize === 'medium') liquidityDiscount = 0.12; else liquidityDiscount = 0.08;
-        adjustmentFactor -= liquidityDiscount;
-        if (data.geography === 'international') adjustmentFactor += 0.15; else if (data.geography === 'european') adjustmentFactor += 0.08; else if (data.geography === 'national') adjustmentFactor += 0.03; else adjustmentFactor -= 0.05;
-        const revenueGrowth = data.previousRevenue > 0 ? ((data.revenue - data.previousRevenue) / data.previousRevenue) * 100 : 0;
-        if (revenueGrowth > 20) adjustmentFactor += 0.12; else if (revenueGrowth > 10) adjustmentFactor += 0.06; else if (revenueGrowth > 3) adjustmentFactor += 0.02; else if (revenueGrowth < 0) adjustmentFactor -= 0.20;
-        if (data.grossMargin > 60) adjustmentFactor += 0.08; else if (data.grossMargin > 40) adjustmentFactor += 0.04; else if (data.grossMargin < 25) adjustmentFactor -= 0.12;
-        if (data.recurringRevenue > 80) adjustmentFactor += 0.10; else if (data.recurringRevenue > 60) adjustmentFactor += 0.06; else if (data.recurringRevenue > 40) adjustmentFactor += 0.03; else if (data.recurringRevenue < 20) adjustmentFactor -= 0.08;
-        if (data.marketPosition === 'leader') adjustmentFactor += 0.08; else if (data.marketPosition === 'challenger') adjustmentFactor += 0.03; else if (data.marketPosition === 'follower') adjustmentFactor -= 0.08; else if (data.marketPosition === 'niche') adjustmentFactor += 0.02;
-        if (data.technologyRisk === 'low') adjustmentFactor += 0.05; else if (data.technologyRisk === 'high') adjustmentFactor -= 0.15;
-        if (data.customerConcentration > 50) adjustmentFactor -= 0.20; else if (data.customerConcentration > 30) adjustmentFactor -= 0.10; else if (data.customerConcentration < 15) adjustmentFactor += 0.05;
-        if (data.debtLevel === 'high') adjustmentFactor -= 0.15; else if (data.debtLevel === 'medium') adjustmentFactor -= 0.05; else adjustmentFactor += 0.03;
-        if (data.managementQuality === 'excellent') adjustmentFactor += 0.08; else if (data.managementQuality === 'good') adjustmentFactor += 0.03; else if (data.managementQuality === 'poor') adjustmentFactor -= 0.12;
-
-        const baseValuation = (revenueMultiple * 0.25 + ebitdaMultiple * 0.60 + peMultiple * 0.15);
-        const adjustedValuation = Math.max(0, baseValuation * adjustmentFactor);
-        const ebitdaGrowth = data.previousEbitda > 0 ? ((data.ebitda - data.previousEbitda) / data.previousEbitda) * 100 : 0;
-        const qualityScore = Math.min(100, Math.max(0, (data.grossMargin * 0.25) + (data.recurringRevenue * 0.35) + (Math.max(0, Math.min(revenueGrowth, 30)) * 0.25) + (data.geography === 'international' ? 15 : data.geography === 'european' ? 10 : data.geography === 'national' ? 5 : 0)));
-        const riskScore = Math.min(100, Math.max(0, 100 - data.customerConcentration * 0.8 + (data.technologyRisk === 'low' ? 15 : data.technologyRisk === 'medium' ? 5 : -15) + (data.managementQuality === 'excellent' ? 15 : data.managementQuality === 'good' ? 8 : data.managementQuality === 'poor' ? -15 : 0) + (data.debtLevel === 'low' ? 10 : data.debtLevel === 'high' ? -15 : -5)));
-
-        setResults({
-            fairMarketValue: Math.round(adjustedValuation),
-            conservativeValue: Math.round(adjustedValuation * 0.80),
-            optimisticValue: Math.round(adjustedValuation * 1.20),
-            evRevenue: data.revenue > 0 ? (adjustedValuation / data.revenue).toFixed(1) : 'N/A',
-            evEbitda: data.ebitda > 0 ? (adjustedValuation / data.ebitda).toFixed(1) : 'N/A',
-            peRatio: data.netIncome > 0 ? (adjustedValuation / data.netIncome).toFixed(1) : 'N/A',
-            revenueGrowth, ebitdaGrowth, qualityScore, riskScore, liquidityDiscount
-        });
-    };
-
-    useEffect(() => { calculateValuation(); }, [formData]);
 
     const saveValuation = async () => {
         if (!user || Object.keys(results).length === 0) return;
@@ -101,9 +97,9 @@ const ValutazioneAziendaleCalculator = () => {
     const getMetricClass = (value) => value >= 0 ? 'metric-positive' : 'metric-negative';
 
     return (
-        <>
-            <style jsx global>{`
-                .layout-dark-theme { background: linear-gradient(135deg, #1a1a1a 0%, #2d3748 50%, #1a1a1a 100%) !important; color: white !important; }
+        <div className="layout-dark-theme">
+            <style jsx>{`
+                .layout-dark-theme { background: linear-gradient(135deg, #1a1a1a 0%, #2d3748 50%, #1a1a1a 100%); color: white; }
                 .card { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 24px; margin-bottom: 20px; }
                 label { display: block; margin-bottom: 8px; font-weight: 500; color: #e2e8f0; }
                 input, select { width: 100%; background: rgba(55, 65, 81, 0.5); border: 1px solid #4a5568; border-radius: 8px; padding: 12px 16px; color: white; font-size: 14px; transition: all 0.3s ease; }
@@ -222,15 +218,6 @@ const ValutazioneAziendaleCalculator = () => {
 };
 
 export default function ValutazioneAziendalePage() {
-    // Aggiungiamo una classe al body solo per questa pagina per applicare il tema scuro
-    useEffect(() => {
-        document.body.classList.add('layout-dark-theme');
-        // Rimuoviamo la classe quando il componente viene smontato
-        return () => {
-            document.body.classList.remove('layout-dark-theme');
-        };
-    }, []);
-
     return (
         <Layout pageTitle="Calcolatore Valutazione Aziendale">
              <ValutazioneAziendaleCalculator />
