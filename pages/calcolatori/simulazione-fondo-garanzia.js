@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import Layout from '../../components/Layout';
+import { useAuth } from '../../hooks/useAuth';
 
 // Stato iniziale del form, riutilizzato per il reset
 const initialFormData = {
@@ -38,12 +39,13 @@ const DisclaimerBox = () => (
 
 // Componente principale del calcolatore
 const FondoGaranziaCalculator = () => {
+    const { user } = useAuth(); // Recupera i dati dell'utente autenticato
     const [currentStep, setCurrentStep] = useState(1);
     const [results, setResults] = useState(null);
     const [formData, setFormData] = useState(initialFormData);
     const [formErrors, setFormErrors] = useState({});
-    // Nuovo stato per la gestione del disclaimer
     const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
 
     const handleInputChange = (e) => {
@@ -87,7 +89,7 @@ const FondoGaranziaCalculator = () => {
         setCurrentStep(1);
         setFormData(initialFormData);
         setFormErrors({});
-        setDisclaimerAccepted(false); // Resetta anche il disclaimer
+        setDisclaimerAccepted(false);
     };
     
     // --- LOGICA DI CALCOLO (COMPLETA E FORMATTATA CORRETTAMENTE) ---
@@ -153,22 +155,89 @@ const FondoGaranziaCalculator = () => {
     
     const getCoveragePercentage = (classeDiMerito, finalita, durataMesi) => { if (classeDiMerito > 4) return 0; if (finalita === 'sabatini' || finalita === 'microcredito') return 80; if (finalita === 'risanamento') return coverageTable.risanamento[classeDiMerito - 1]; if (finalita === 'investimento') return coverageTable.investimenti[classeDiMerito - 1]; let operationType = 'fin_oltre_36_mesi_senza_pa'; if (durataMesi <= 12) operationType = 'fin_fino_12_mesi'; else if (durataMesi <= 36) operationType = 'fin_oltre_12_fino_36_mesi_senza_pa'; return coverageTable[operationType][classeDiMerito - 1]; };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!disclaimerAccepted) return; // Sicurezza aggiuntiva
-        const dataCostituzione = new Date(formData['data-costituzione']); const oggi = new Date(); const anniAttivita = (oggi - dataCostituzione) / (1000 * 60 * 60 * 24 * 365.25); const isStartup = anniAttivita <= 3;
-        const numericData = { settore: formData['settore-ateco'], importo: parseFloat(formData.importo) || 0, durata: parseInt(formData.durata) || 0, finalita: formData.finalita, fatturato: parseFloat(formData.fatturato) || 0, ebitda: parseFloat(formData.ebitda) || 0, pfn: parseFloat(formData.pfn) || 0, patrimonioNetto: parseFloat(formData['patrimonio-netto']) || 0, oneriFinanziari: parseFloat(formData['oneri-finanziari']) || 0 };
-        const stimaIniziale = estimateCreditClass(isStartup, numericData); let classeDiMerito = stimaIniziale.meritClass; let finalNotes = [stimaIniziale.notes];
-        if (formData['pregiudizievole-fallimento']) { classeDiMerito = 5; finalNotes.push("La presenza di procedure concorsuali determina la non ammissibilità."); } else if (formData['pregiudizievole-grave']) { const classeOriginale = classeDiMerito; classeDiMerito = Math.min(5, classeDiMerito + 2); finalNotes.push(`Declassamento da classe ${classeOriginale} a ${classeDiMerito} per eventi pregiudizievoli gravi.`); }
-        const coveragePercentage = getCoveragePercentage(classeDiMerito, numericData.finalita, numericData.durata); const importoGarantito = numericData.importo * (coveragePercentage / 100);
-        setResults({ meritClass: classeDiMerito, percentuale: coveragePercentage, importoGarantito: importoGarantito, notes: finalNotes.join(' ') });
-        window.scrollTo(0, 0);
+        if (!disclaimerAccepted || !user) return;
+        
+        setIsSubmitting(true);
+
+        // 1. Calcolo dei risultati
+        const dataCostituzione = new Date(formData['data-costituzione']);
+        const oggi = new Date();
+        const anniAttivita = (oggi - dataCostituzione) / (1000 * 60 * 60 * 24 * 365.25);
+        const isStartup = anniAttivita <= 3;
+        const numericData = {
+            settore: formData['settore-ateco'],
+            importo: parseFloat(formData.importo) || 0,
+            durata: parseInt(formData.durata) || 0,
+            finalita: formData.finalita,
+            fatturato: parseFloat(formData.fatturato) || 0,
+            ebitda: parseFloat(formData.ebitda) || 0,
+            pfn: parseFloat(formData.pfn) || 0,
+            patrimonioNetto: parseFloat(formData['patrimonio-netto']) || 0,
+            oneriFinanziari: parseFloat(formData['oneri-finanziari']) || 0
+        };
+        const stimaIniziale = estimateCreditClass(isStartup, numericData);
+        let classeDiMerito = stimaIniziale.meritClass;
+        let finalNotes = [stimaIniziale.notes];
+        if (formData['pregiudizievole-fallimento']) {
+            classeDiMerito = 5;
+            finalNotes.push("La presenza di procedure concorsuali determina la non ammissibilità.");
+        } else if (formData['pregiudizievole-grave']) {
+            const classeOriginale = classeDiMerito;
+            classeDiMerito = Math.min(5, classeDiMerito + 2);
+            finalNotes.push(`Declassamento da classe ${classeOriginale} a ${classeDiMerito} per eventi pregiudizievoli gravi.`);
+        }
+        const coveragePercentage = getCoveragePercentage(classeDiMerito, numericData.finalita, numericData.durata);
+        const importoGarantito = numericData.importo * (coveragePercentage / 100);
+        const simulationResults = {
+            meritClass: classeDiMerito,
+            percentuale: coveragePercentage,
+            importoGarantito: importoGarantito,
+            notes: finalNotes.join(' ')
+        };
+
+        // 2. Chiamata all'API di Vercel per registrare i dati
+        try {
+            const response = await fetch('/api/save-simulation', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    user: user,
+                    inputs: formData,
+                    outputs: simulationResults,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error('La risposta dal server non è stata positiva.');
+            }
+            console.log('Simulazione salvata con successo tramite API!');
+
+        } catch (error) {
+            console.error('Errore durante la chiamata all\'API:', error.message);
+            // Qui potresti mostrare un messaggio di errore all'utente se necessario
+        } finally {
+             // 3. Mostra i risultati e resetta lo stato di caricamento
+            setResults(simulationResults);
+            setIsSubmitting(false);
+            window.scrollTo(0, 0);
+        }
     };
 
     return (
         <div className="bg-white p-6 md:p-8 rounded-2xl shadow-lg">
             <style jsx>{`
-                /* ... stili ... */
+                .step-indicator { transition: all 0.3s ease; }
+                .step-indicator.active { background-color: #2563eb; color: white; border-color: #2563eb; }
+                .step-indicator.completed { background-color: #16a34a; color: white; border-color: #16a34a; }
+                @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+                .form-section-active { animation: fadeIn 0.5s ease-in-out; }
+                .tooltip { position: relative; display: inline-block; cursor: help; }
+                .tooltip .tooltiptext { visibility: hidden; width: 220px; background-color: #555; color: #fff; text-align: center; border-radius: 6px; padding: 5px; position: absolute; z-index: 1; bottom: 125%; left: 50%; margin-left: -110px; opacity: 0; transition: opacity 0.3s; }
+                .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
             `}</style>
 
             {!results ? (
@@ -177,10 +246,7 @@ const FondoGaranziaCalculator = () => {
                         <h1 className="text-3xl md:text-4xl font-bold text-gray-900">Simulatore Garanzia MCC</h1>
                         <p className="mt-2 text-lg text-gray-600">Verifica l'ammissibilità e stima la copertura del Fondo di Garanzia.</p>
                     </div>
-                    
-                    {/* DISCLAIMER VISIBILE PRIMA DEL FORM */}
                     {currentStep === 1 && <DisclaimerBox />}
-
                     <div className="flex items-center justify-center space-x-4 md:space-x-8 mb-10">
                         {[1, 2, 3].map((step, index) => (
                             <React.Fragment key={step}>
@@ -189,45 +255,55 @@ const FondoGaranziaCalculator = () => {
                             </React.Fragment>
                         ))}
                     </div>
-
                     <form onSubmit={handleSubmit}>
                         {currentStep === 1 && (
-                            <section> {/* ... form step 1 ... */} </section>
+                            <section className="form-section-active">
+                                <h2 className="text-2xl font-semibold mb-6 text-center">Fase 1: Dati dell'Impresa</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div><label htmlFor="forma-giuridica" className="block text-sm font-medium text-gray-700 mb-1">Forma Giuridica</label><select id="forma-giuridica" value={formData['forma-giuridica']} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500"><option value="srl">SRL / Società di Capitali</option><option value="persone">Società di Persone / Ditta Individuale</option></select></div>
+                                    <div><label htmlFor="data-costituzione" className="block text-sm font-medium text-gray-700 mb-1">Data di Costituzione</label><input type="date" id="data-costituzione" value={formData['data-costituzione']} onChange={handleInputChange} required className={`w-full p-3 border rounded-lg shadow-sm ${formErrors['data-costituzione'] ? 'border-red-500' : 'border-gray-300'}`} /></div>
+                                    <div className="md:col-span-2"><label htmlFor="settore-ateco" className="block text-sm font-medium text-gray-700 mb-1">Settore ATECO</label><select id="settore-ateco" value={formData['settore-ateco']} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500"><option value="industria">Industria</option><option value="commercio">Commercio</option><option value="servizi">Servizi</option><option value="edilizia">Edilizia</option><option value="immobiliare">Immobiliare</option></select></div>
+                                    <div className="md:col-span-2"><fieldset className="mt-2"><legend className="text-sm font-medium text-gray-700">Caratteristiche Impresa</legend><div className="mt-2 space-y-2"><div className="flex items-center"><input id="impresa-femminile" type="checkbox" checked={formData['impresa-femminile']} onChange={handleInputChange} className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" /><label htmlFor="impresa-femminile" className="ml-3 block text-sm text-gray-800">Impresa Femminile</label></div><div className="flex items-center"><input id="impresa-giovanile" type="checkbox" checked={formData['impresa-giovanile']} onChange={handleInputChange} className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" /><label htmlFor="impresa-giovanile" className="ml-3 block text-sm text-gray-800">Impresa Giovanile</label></div></div></fieldset></div>
+                                </div>
+                                <div className="mt-8 text-right"><button type="button" onClick={nextStep} className="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors">Prosegui &rarr;</button></div>
+                            </section>
                         )}
                         {currentStep === 2 && (
-                             <section> {/* ... form step 2 ... */} </section>
+                            <section className="form-section-active">
+                                <h2 className="text-2xl font-semibold mb-6 text-center">Fase 2: Dati del Finanziamento</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div><label htmlFor="importo" className="block text-sm font-medium text-gray-700 mb-1">Importo Richiesto (€)</label><input type="number" id="importo" placeholder="Es. 50000" value={formData.importo} onChange={handleInputChange} required className={`w-full p-3 border rounded-lg shadow-sm ${formErrors.importo ? 'border-red-500' : 'border-gray-300'}`} /></div>
+                                    <div><label htmlFor="durata" className="block text-sm font-medium text-gray-700 mb-1">Durata (mesi)</label><input type="number" id="durata" placeholder="Es. 60" value={formData.durata} onChange={handleInputChange} required className={`w-full p-3 border rounded-lg shadow-sm ${formErrors.durata ? 'border-red-500' : 'border-gray-300'}`} /></div>
+                                    <div className="md:col-span-2"><label htmlFor="finalita" className="block text-sm font-medium text-gray-700 mb-1">Finalità del Finanziamento</label><select id="finalita" value={formData.finalita} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500"><option value="investimento">Investimenti</option><option value="liquidita">Liquidità / Capitale Circolante</option><option value="risanamento">Risanamento Finanziario</option><option value="sabatini">Investimenti Nuova Sabatini / PMI Innovative</option><option value="microcredito">Microcredito / Start-up Innovative</option></select></div>
+                                </div>
+                                <div className="mt-8 flex justify-between"><button type="button" onClick={prevStep} className="bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-colors">&larr; Indietro</button><button type="button" onClick={nextStep} className="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors">Prosegui &rarr;</button></div>
+                            </section>
                         )}
                         {currentStep === 3 && (
-                            <section>
-                                {/* ... campi form step 3 ... */}
+                            <section className="form-section-active">
+                                <h2 className="text-2xl font-semibold mb-4 text-center">Fase 3: Dati Economici e Pregiudizievoli</h2>
+                                <p className="text-center text-gray-600 mb-6">Inserisci i dati dell'ultimo bilancio. Se sei una start-up, lascia 0.</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div><label htmlFor="fatturato" className="block text-sm font-medium text-gray-700 mb-1">Ricavi / Fatturato Annuo (€)</label><input type="number" id="fatturato" value={formData.fatturato} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm"/></div>
+                                    <div><label htmlFor="ebitda" className="block text-sm font-medium text-gray-700 mb-1">EBITDA (MOL) (€)</label><input type="number" id="ebitda" value={formData.ebitda} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm"/></div>
+                                    <div><label htmlFor="pfn" className="block text-sm font-medium text-gray-700 mb-1">Posizione Finanziaria Netta (€) <span className="tooltip text-gray-400">(?)<span className="tooltiptext">Totale Debiti Finanziari - Liquidità</span></span></label><input type="number" id="pfn" value={formData.pfn} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm"/></div>
+                                    <div><label htmlFor="patrimonio-netto" className="block text-sm font-medium text-gray-700 mb-1">Patrimonio Netto (€)</label><input type="number" id="patrimonio-netto" value={formData['patrimonio-netto']} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm"/></div>
+                                    <div className="md:col-span-2"><label htmlFor="oneri-finanziari" className="block text-sm font-medium text-gray-700 mb-1">Oneri Finanziari Annui (€)</label><input type="number" id="oneri-finanziari" value={formData['oneri-finanziari']} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm"/></div>
+                                </div>
                                 <hr className="my-8" />
                                 <h3 className="text-xl font-semibold mb-4 text-center">Eventi Pregiudizievoli</h3>
-                                <fieldset> {/* ... fieldset ... */} </fieldset>
-
-                                {/* CHECKBOX DISCLAIMER OBBLIGATORIA */}
+                                <fieldset> <div className="space-y-2"> <div className="flex items-center"><input id="pregiudizievole-fallimento" type="checkbox" checked={formData['pregiudizievole-fallimento']} onChange={handleInputChange} className="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500" /><label htmlFor="pregiudizievole-fallimento" className="ml-3 block text-sm text-gray-800">Presenza di procedure concorsuali</label></div> <div className="flex items-center"><input id="pregiudizievole-grave" type="checkbox" checked={formData['pregiudizievole-grave']} onChange={handleInputChange} className="h-4 w-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500" /><label htmlFor="pregiudizievole-grave" className="ml-3 block text-sm text-gray-800">Presenza di Ipoteca Giudiziale o Pignoramento</label></div> </div> </fieldset>
                                 <div className="mt-8 p-4 bg-gray-50 rounded-lg">
                                     <div className="flex items-start">
-                                        <input 
-                                            id="disclaimer-accepted" 
-                                            type="checkbox" 
-                                            checked={disclaimerAccepted} 
-                                            onChange={(e) => setDisclaimerAccepted(e.target.checked)}
-                                            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mt-1" 
-                                        />
-                                        <label htmlFor="disclaimer-accepted" className="ml-3 block text-sm text-gray-800">
-                                            Dichiaro di aver letto e compreso le <a href="#disclaimer" className="font-medium text-blue-600 hover:underline">avvertenze e limitazioni</a> dello strumento, consapevole che il risultato è una stima preliminare e non vincolante.
-                                        </label>
+                                        <input id="disclaimer-accepted" type="checkbox" checked={disclaimerAccepted} onChange={(e) => setDisclaimerAccepted(e.target.checked)} className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mt-1" />
+                                        <label htmlFor="disclaimer-accepted" className="ml-3 block text-sm text-gray-800">Dichiaro di aver letto e compreso le <a href="#disclaimer" className="font-medium text-blue-600 hover:underline">avvertenze e limitazioni</a> dello strumento, consapevole che il risultato è una stima preliminare e non vincolante.</label>
                                     </div>
                                 </div>
-
                                 <div className="mt-8 flex justify-between">
                                     <button type="button" onClick={prevStep} className="bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-colors">&larr; Indietro</button>
-                                    <button 
-                                        type="submit" 
-                                        disabled={!disclaimerAccepted}
-                                        className="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        Calcola Risultato
+                                    <button type="submit" disabled={!disclaimerAccepted || isSubmitting} className="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center">
+                                        {isSubmitting && (<svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>)}
+                                        {isSubmitting ? 'Salvataggio...' : 'Calcola Risultato'}
                                     </button>
                                 </div>
                             </section>
@@ -235,7 +311,17 @@ const FondoGaranziaCalculator = () => {
                     </form>
                 </>
             ) : (
-                <section> {/* ... sezione risultati ... */} </section>
+                <section className="form-section-active">
+                    <h2 className="text-2xl font-semibold mb-6 text-center">Risultato della Simulazione</h2>
+                    <div className={`border-l-4 ${results.percentuale > 0 ? 'border-green-600' : 'border-red-600'} bg-white p-6 rounded-lg shadow-md mb-6 text-center`}><p className={`text-2xl font-bold ${results.percentuale > 0 ? 'text-green-600' : 'text-red-600'} flex items-center justify-center`}>{results.percentuale > 0 ? 'Ammissibilità Indicativa: POSITIVA' : 'Ammissibilità Indicativa: NEGATIVA'}</p></div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">Classe di Merito Finale</p><p className="text-3xl font-bold text-blue-600">{results.meritClass}</p></div>
+                        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">Copertura Massima Stimata</p><p className="text-3xl font-bold text-blue-600">{results.percentuale}%</p></div>
+                        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">Importo Garantito Stimato</p><p className="text-3xl font-bold text-blue-600">{new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(results.importoGarantito)}</p></div>
+                    </div>
+                    <div className="mt-6 bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg"><h4 className="font-bold text-gray-800">Note sulla Valutazione</h4><p className="mt-2 text-sm text-gray-700">{results.notes}</p></div>
+                    <div className="mt-6 text-center"><button onClick={resetCalculator} className="bg-gray-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-600 transition-colors">Nuova Simulazione</button></div>
+                </section>
             )}
             <footer id="disclaimer" className="text-center mt-8 text-sm text-gray-500 border-t pt-6">
                 <h3 className="font-semibold text-base text-gray-700 mb-2">Avvertenze e Limitazioni</h3>
