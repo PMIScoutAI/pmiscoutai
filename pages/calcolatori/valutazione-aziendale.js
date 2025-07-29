@@ -30,7 +30,7 @@ const performCalculation = (formData) => {
     let adjustmentFactor = 1;
 
     if (data.companySize === 'micro') adjustmentFactor -= 0.25; else if (data.companySize === 'small') adjustmentFactor -= 0.15; else if (data.companySize === 'medium') adjustmentFactor -= 0.08;
-    let liquidityDiscount = 0.15; if (data.companySize === 'micro') liquidityDiscount = 0.30; else if (data.companySize === 'small') liquidityDiscount = 0.20; else if (data.companySize === 'medium') liquidityDiscount = 0.12; else liquidityDiscount = 0.08;
+    let liquidityDiscount = 0.15; if (data.companySize === 'micro') liquidityDiscount = 0.30; else if (data.companySize === 'small') liquidityDiscount = 0.20; else if (data.companySize === 'medium') liquidityDiscount = 0.12; else if (data.companySize === 'large') liquidityDiscount = 0.08;
     adjustmentFactor -= liquidityDiscount;
     if (data.geography === 'international') adjustmentFactor += 0.15; else if (data.geography === 'european') adjustmentFactor += 0.08; else if (data.geography === 'national') adjustmentFactor += 0.03; else adjustmentFactor -= 0.05;
     const revenueGrowth = data.previousRevenue > 0 ? ((data.revenue - data.previousRevenue) / data.previousRevenue) * 100 : 0;
@@ -213,7 +213,7 @@ const ValutazioneAziendaleCalculator = () => {
                     </div>
                 </div>
             </div>
-        </>
+        </div>
     );
 };
 
