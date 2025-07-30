@@ -96,7 +96,7 @@ function ReportPageLayout({ user }) {
   );
 }
 
-// --- Componente Pagina Analisi (Logica di fetch AGGIORNATA) ---
+// --- Componente Pagina Analisi (Logica di fetch SEMPLIFICATA) ---
 function AnalisiReportPage({ user }) {
   const router = useRouter();
   const { sessionId } = router.query;
@@ -112,18 +112,13 @@ function AnalisiReportPage({ user }) {
       }
 
       try {
-        // Ottieni il token Outseta
-        const outsetaToken = window.Outseta?.getUser()?.access_token;
-        if (!outsetaToken) {
-          throw new Error('Token di autenticazione non trovato');
-        }
-
         console.log('🔄 Caricamento dati completi...');
 
-        // UNA SOLA chiamata API per tutto
-        const response = await fetch(`/api/get-session-complete?sessionId=${sessionId}`, {
+        // Passa semplicemente l'ID dell'utente già autenticato
+        const response = await fetch(`/api/get-session-complete?sessionId=${sessionId}&userId=${user.id}`, {
+          method: 'GET',
           headers: {
-            'Authorization': `Bearer ${outsetaToken}`
+            'Content-Type': 'application/json'
           }
         });
 
