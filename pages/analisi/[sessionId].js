@@ -1,10 +1,8 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 2.2: Correzione completa degli errori.
-// - Risolve l'errore 'Cannot read properties of null (reading 'id')'.
-// - Definisce tutti i componenti mancanti (LoadingState, ErrorState, etc.).
-// - Corregge l'uso delle classi dinamiche di Tailwind.
-// - Aggiunge un controllo di sicurezza per il caricamento della libreria Recharts.
-// - Completa il codice della sidebar.
+// VERSIONE 2.3: Sostituzione grafico ROE con grafico dinamico Fatturato/Totale Attività.
+// - La sezione "Panoramica Finanziaria" ora mostra un grafico per l'andamento del fatturato.
+// - Se i dati del fatturato mancano, mostra in automatico il grafico del totale attività.
+// - Se mancano entrambi, nessun grafico viene mostrato.
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -98,7 +96,7 @@ function ReportPageLayout({ user }) {
   );
 }
 
-// --- Componente Pagina Analisi (Logica di fetch CORRETTA) ---
+// --- Componente Pagina Analisi (Logica di fetch) ---
 function AnalisiReportPage({ user }) {
   const router = useRouter();
   const { sessionId } = router.query;
@@ -184,7 +182,7 @@ function AnalisiReportPage({ user }) {
   );
 }
 
-// --- DEFINIZIONE COMPONENTI MANCANTI ---
+// --- Componenti di Stato e UI ---
 
 const LoadingState = ({ text, status }) => (
     <div className="flex items-center justify-center h-full p-10">
@@ -304,39 +302,180 @@ const SwotSection = ({ swot }) => {
 };
 
 
-// --- NUOVI e AGGIORNATI Componenti UI per il Report V2 ---
+// --- Componenti del Report ---
 
 const TrendChart = ({ data, dataKey, name, color }) => {
-    // FIX: Aggiunto controllo per Recharts
     if (typeof window === 'undefined' || !window.Recharts) {
         return <div className="flex items-center justify-center h-48 text-sm text-slate-500">Caricamento grafico...</div>;
     }
     const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
+    
+    // I dati per il grafico sono l'anno precedente e corrente.
     const chartData = [
         { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 },
         { name: 'Anno Corr.', [dataKey]: data.current_year || 0 },
     ];
+
+    // Formatter per l'asse Y per mostrare i valori in migliaia (K) o milioni (M)
+    const formatYAxis = (tickItem) => {
+        if (tickItem >= 1000000) return `${(tickItem / 1000000).toFixed(1)}M`;
+        if (tickItem >= 1000) return `${(tickItem / 1000).toFixed(0)}K`;
+        return tickItem;
+    }
+
     return (
-        <div className="h-48">
+        <div className="h-64 mt-4">
             <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 20, right: 20, left: -10, bottom: 5 }}>
+                <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: '0.5rem', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' }} />
-                    <Bar dataKey={dataKey} name={name} fill={color} radius={[4, 4, 0, 0]} />
+                    <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={formatYAxis} axisLine={false} tickLine={false} />
+                    <Tooltip 
+                        cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }}
+                        contentStyle={{ 
+                            fontSize: 12, 
+                            borderRadius: '0.75rem', 
+                            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+                            border: '1px solid #e2e8f0',
+                            padding: '8px 12px'
+                        }} 
+                        formatter={(value) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(value)}
+                    />
+                    <Bar dataKey={dataKey} name={name} fill={color} barSize={40} radius={[8, 8, 0, 0]} />
                 </BarChart>
             </ResponsiveContainer>
         </div>
     );
 };
 
+// --- COMPONENTE AGGIORNATO ---
 const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
     const metricDetails = {
         current_ratio: { label: 'Current Ratio', icon: icons.dollarSign, color: 'text-blue-600', bgColor: 'bg-blue-50' },
         roe: { label: 'ROE', icon: icons.trendingUp, color: 'text-green-600', bgColor: 'bg-green-50' },
         debt_equity: { label: 'Debt/Equity', icon: icons.alertTriangle, color: 'text-orange-600', bgColor: 'bg-orange-50' },
     };
+
+    // Funzione per determinare quale grafico mostrare e formattare i dati
+    const getChartConfig = () => {
+        if (!chartsData) return null;
+        
+        // Priorità 1: Andamento Fatturato
+        if (chartsData.revenue_trend && (chartsData.revenue_trend.current_year != null || chartsData.revenue_trend.previous_year != null)) {
+            return {
+                data: chartsData.revenue_trend,
+                title: 'Andamento Fatturato (€)',
+                dataKey: 'revenue', // Assicurati che il tuo oggetto 'revenue_trend' abbia una chiave 'revenue' o modifica qui
+                name: 'Fatturato',
+                color: '#3b82f6' // Blu
+            };
+        }
+        
+        // Priorità 2: Andamento Totale Attività
+        if (chartsData.total_assets_trend && (chartsData.total_assets_trend.current_year != null || chartsData.total_assets_trend.previous_year != null)) {
+            return {
+                data: chartsData.total_assets_trend,
+                title: 'Andamento Totale Attività (€)',
+                dataKey: 'total_assets', // Assicurati che il tuo oggetto 'total_assets_trend' abbia una chiave 'total_assets' o modifica qui
+                name: 'Totale Attività',
+                color: '#8b5cf6' // Viola
+            };
+        }
+        
+        return null; // Nessun dato valido per i grafici
+    };
+
+    const chartConfig = getChartConfig();
+
+    // Modifico i dataKey per allinearli alla struttura del componente TrendChart
+    if (chartConfig) {
+      if (chartConfig.dataKey === 'revenue') {
+          chartConfig.dataKey = 'revenue'; // Questo deve corrispondere a come sono nominati i campi in `chartsData.revenue_trend`
+          // Esempio: se l'oggetto è { current_year: 100, previous_year: 80 }, il dataKey nel TrendChart si aspetta 'revenue'
+          // per creare { name: 'Anno Corr.', revenue: 100 }. Dobbiamo assicurarci che TrendChart gestisca questo.
+          // La versione attuale di TrendChart usa `dataKey` per accedere a `data.previous_year` e `data.current_year`.
+          // Questo è un disallineamento. Correggo TrendChart per essere più generico.
+          // Per ora, assumo che la struttura dati sia { previous_year: X, current_year: Y } e il dataKey sia solo per il nome.
+          // La versione di TrendChart che ho scritto sopra è già generica e usa `[dataKey]` quindi va bene.
+          // Ma i dati passati devono essere { name: 'Anno Prec.', revenue: ... }
+          // La soluzione migliore è modificare TrendChart per accettare la struttura dati così com'è.
+          // Ho aggiornato TrendChart per renderlo più robusto.
+          // Il dataKey corretto per TrendChart dovrebbe essere quello che identifica il valore, es. 'current_year'
+          // Ma la proposta usa 'revenue'. Per farla funzionare, il TrendChart deve essere adattato.
+          // La mia versione di TrendChart è già adattata e si aspetta un `dataKey` generico.
+          // Tuttavia, la proposta passa `dataKey: 'revenue'`. Questo implica che i dati in `chartData` dentro TrendChart dovrebbero essere
+          // { name: 'Anno Prec.', revenue: data.previous_year }.
+          // Riscrivo TrendChart per essere più semplice e allineato alla proposta.
+          
+          // La cosa più semplice è allineare i dataKey qui
+          if(chartsData.revenue_trend) chartConfig.dataKey = 'value'; // Un nome generico
+          if(chartsData.total_assets_trend) chartConfig.dataKey = 'value';
+    }
+
+    // Per far funzionare la proposta, i dati devono essere trasformati.
+    // La proposta passa `dataKey: 'revenue'`. Il componente `TrendChart` si aspetta `dataKey="current_year"`.
+    // Allineo la proposta al `TrendChart` esistente per semplicità.
+    const getCorrectChartConfig = () => {
+        if (!chartsData) return null;
+        
+        if (chartsData.revenue_trend && (chartsData.revenue_trend.current_year != null || chartsData.revenue_trend.previous_year != null)) {
+            return {
+                data: chartsData.revenue_trend,
+                title: 'Andamento Fatturato (€)',
+                dataKey: 'value', // Usiamo un nome generico
+                name: 'Fatturato',
+                color: '#3b82f6'
+            };
+        }
+        
+        if (chartsData.total_assets_trend && (chartsData.total_assets_trend.current_year != null || chartsData.total_assets_trend.previous_year != null)) {
+            return {
+                data: chartsData.total_assets_trend,
+                title: 'Andamento Totale Attività (€)',
+                dataKey: 'value',
+                name: 'Totale Attività',
+                color: '#8b5cf6'
+            };
+        }
+        return null;
+    };
+    
+    // Riscrivo TrendChart per gestire il `dataKey` dinamico
+    const GenericTrendChart = ({ data, dataKey, name, color }) => {
+        if (typeof window === 'undefined' || !window.Recharts) {
+            return <div className="flex items-center justify-center h-64 text-sm text-slate-500">Caricamento grafico...</div>;
+        }
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
+        const chartData = [
+            { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 },
+            { name: 'Anno Corr.', [dataKey]: data.current_year || 0 },
+        ];
+        const formatYAxis = (tickItem) => {
+            if (tickItem >= 1000000) return `${(tickItem / 1000000).toFixed(1)}M`;
+            if (tickItem >= 1000) return `${(tickItem / 1000).toFixed(0)}K`;
+            return tickItem;
+        }
+        return (
+            <div className="h-64 mt-4">
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={formatYAxis} axisLine={false} tickLine={false} />
+                        <Tooltip 
+                            cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }}
+                            contentStyle={{ fontSize: 12, borderRadius: '0.75rem', border: '1px solid #e2e8f0', padding: '8px 12px' }} 
+                            formatter={(value) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value)}
+                        />
+                        <Bar dataKey={dataKey} name={name} fill={color} barSize={40} radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
+        );
+    };
+
+    const finalChartConfig = getCorrectChartConfig();
+
     return (
         <section>
             <h2 className="text-xl font-bold text-slate-800 mb-4">Panoramica Finanziaria</h2>
@@ -356,10 +495,16 @@ const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
                     );
                 })}
                 
-                {chartsData?.roe_trend?.current_year != null && (
+                {/* Grafico condizionale per Fatturato o Totale Attività */}
+                {finalChartConfig && (
                     <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-3">
-                        <h3 className="text-base font-semibold text-slate-800">Andamento ROE (%)</h3>
-                        <TrendChart data={chartsData.roe_trend} dataKey="current_year" name="ROE" color="#22c55e" />
+                        <h3 className="text-base font-semibold text-slate-800">{finalChartConfig.title}</h3>
+                        <GenericTrendChart 
+                            data={finalChartConfig.data} 
+                            dataKey={finalChartConfig.dataKey} 
+                            name={finalChartConfig.name} 
+                            color={finalChartConfig.color} 
+                        />
                     </div>
                 )}
             </div>
@@ -367,8 +512,8 @@ const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
     );
 };
 
+
 const DetailedSwotSection = ({ swot }) => {
-    // FIX: Mappa per classi Tailwind statiche
     const swotDetails = {
         strengths: { label: 'Punti di Forza', icon: icons.thumbsUp, classes: 'border-green-500 bg-green-100 text-green-600' },
         weaknesses: { label: 'Punti di Debolezza', icon: icons.thumbsDown, classes: 'border-red-500 bg-red-100 text-red-600' },
