@@ -1,9 +1,8 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 2.3: Grafico aggiornato per Fatturato/Totale Attività con miglioramenti UI
-// - Sostituisce il grafico ROE con fatturato o totale attività
-// - Aggiunge formattazione monetaria migliorata
-// - Migliora l'aspetto visivo dei grafici
-// - Mantiene tutte le funzionalità tecniche esistenti
+// VERSIONE 2.4: Correzione errore di build e pulizia del codice.
+// - Risolto errore di sintassi "Expected '}'" che bloccava la build di Vercel.
+// - Semplificato il componente KeyMetricsAndChartsSection per maggiore chiarezza.
+// - La logica del grafico dinamico (Fatturato/Totale Attività) è mantenuta.
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -57,7 +56,6 @@ const icons = {
   dollarSign: <><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></>,
   shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></>,
   zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></>,
-  barChart: <><line x1="12" y1="20" x2="12" y2="10"></line><line x1="18" y1="20" x2="18" y2="4"></line><line x1="6" y1="20" x2="6" y2="16"></line></>,
 };
 
 // --- Layout della Pagina Report ---
@@ -98,7 +96,7 @@ function ReportPageLayout({ user }) {
   );
 }
 
-// --- Componente Pagina Analisi (Logica di fetch CORRETTA) ---
+// --- Componente Pagina Analisi (Logica di fetch) ---
 function AnalisiReportPage({ user }) {
   const router = useRouter();
   const { sessionId } = router.query;
@@ -184,7 +182,7 @@ function AnalisiReportPage({ user }) {
   );
 }
 
-// --- DEFINIZIONE COMPONENTI MANCANTI ---
+// --- Componenti di Stato e UI ---
 
 const LoadingState = ({ text, status }) => (
     <div className="flex items-center justify-center h-full p-10">
@@ -281,138 +279,7 @@ const SwotSection = ({ swot }) => {
     };
     return (
         <section>
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Panoramica Finanziaria</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {metrics && Object.keys(metrics).map(key => {
-                    const detail = metricDetails[key];
-                    if (!detail) return null;
-                    return (
-                        <div key={key} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${detail.bgColor}`}>
-                                <Icon path={detail.icon} className={`w-6 h-6 ${detail.color}`} />
-                            </div>
-                            <p className="text-sm text-slate-500 mt-4">{detail.label}</p>
-                            <p className="text-3xl font-bold text-slate-900">{metrics[key].value}</p>
-                            <p className="text-xs text-slate-400 mt-1">Benchmark: {metrics[key].benchmark}</p>
-                        </div>
-                    );
-                })}
-                
-                {/* Grafico condizionale per Fatturato o Totale Attività */}
-                {chartConfig && (
-                    <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-3 hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between mb-2">
-                            <div>
-                                <h3 className="text-lg font-semibold text-slate-800">{chartConfig.title}</h3>
-                                <p className="text-sm text-slate-500">{chartConfig.subtitle}</p>
-                            </div>
-                            <div className="p-2 bg-slate-100 rounded-lg">
-                                <Icon path={icons.barChart} className="w-5 h-5 text-slate-600" />
-                            </div>
-                        </div>
-                        <TrendChart 
-                            data={chartConfig.data} 
-                            dataKey={chartConfig.dataKey} 
-                            name={chartConfig.title.split(' ')[1]} // Prende la seconda parola del titolo
-                            color={chartConfig.color} 
-                        />
-                    </div>
-                )}
-            </div>
-        </section>
-    );
-};
-
-const DetailedSwotSection = ({ swot }) => {
-    // FIX: Mappa per classi Tailwind statiche
-    const swotDetails = {
-        strengths: { label: 'Punti di Forza', icon: icons.thumbsUp, classes: 'border-green-500 bg-green-100 text-green-600' },
-        weaknesses: { label: 'Punti di Debolezza', icon: icons.thumbsDown, classes: 'border-red-500 bg-red-100 text-red-600' },
-        opportunities: { label: 'Opportunità', icon: icons.target, classes: 'border-blue-500 bg-blue-100 text-blue-600' },
-        threats: { label: 'Minacce', icon: icons.alertTriangle, classes: 'border-orange-500 bg-orange-100 text-orange-600' },
-    };
-    return (
-        <section>
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi SWOT Dettagliata</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {swot && Object.keys(swot).map(key => {
-                    const detail = swotDetails[key];
-                    if (!detail) return null;
-                    const items = swot[key] || [];
-                    return (
-                        <div key={key} className={`p-6 bg-white rounded-xl shadow-sm border-t-4 ${detail.classes.split(' ')[0]} hover:shadow-md transition-shadow`}>
-                            <div className="flex items-center text-lg font-bold text-slate-800">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 ${detail.classes.split(' ')[1]}`}>
-                                    <Icon path={detail.icon} className={`w-5 h-5 ${detail.classes.split(' ')[2]}`} />
-                                </div>
-                                {detail.label}
-                            </div>
-                            <div className="mt-4 space-y-3 text-sm">
-                                {items.length > 0 ? items.map((item, idx) => (
-                                    <div key={idx} className="p-3 bg-slate-50 rounded-lg">
-                                        <p className="font-semibold text-slate-700">{item.point}</p>
-                                        <p className="text-slate-500 mt-1">{item.explanation}</p>
-                                    </div>
-                                )) : <p className="text-slate-500">Nessun dato disponibile.</p>}
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-        </section>
-    );
-};
-
-const RiskAnalysisSection = ({ risks }) => (
-    <section>
-        <h2 className="text-xl font-bold text-slate-800 mb-6">Analisi dei Rischi Principali</h2>
-        <div className="space-y-4">
-            {risks.map((item, i) => (
-                <div key={i} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-                    <div className="flex items-start">
-                        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center mr-4">
-                            <Icon path={icons.shield} className="w-5 h-5 text-red-500" />
-                        </div>
-                        <div className="flex-1">
-                            <h3 className="font-semibold text-slate-800 mb-2">{item.risk}</h3>
-                            <p className="text-sm text-slate-600 leading-relaxed">{item.mitigation}</p>
-                        </div>
-                    </div>
-                </div>
-            ))}
-        </div>
-    </section>
-);
-
-const ProTeaserSection = ({ teaser }) => (
-    <section className="mt-12">
-        <div className="text-center mb-8">
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">Sblocca il Tuo Potenziale con Pro</h2>
-            <p className="text-slate-600">Analisi avanzate e strumenti professionali per far crescere la tua azienda</p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div className="p-8 bg-gradient-to-br from-blue-50 via-blue-100 to-indigo-100 text-slate-800 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 text-center group">
-                <div className="w-16 h-16 mx-auto mb-4 bg-white rounded-full flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
-                    <Icon path={icons.zap} className="w-8 h-8 text-blue-500" />
-                </div>
-                <h3 className="text-lg font-bold mb-3">Analisi Competitor</h3>
-                <p className="text-sm text-slate-600 leading-relaxed">{teaser.competitor_analysis}</p>
-            </div>
-             <div className="p-8 bg-gradient-to-br from-green-50 via-green-100 to-emerald-100 text-slate-800 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 text-center group">
-                <div className="w-16 h-16 mx-auto mb-4 bg-white rounded-full flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
-                    <Icon path={icons.trendingUp} className="w-8 h-8 text-green-500" />
-                </div>
-                <h3 className="text-lg font-bold mb-3">Previsione Cash Flow</h3>
-                <p className="text-sm text-slate-600 leading-relaxed">{teaser.cash_flow_forecast}</p>
-            </div>
-        </div>
-        <div className="text-center">
-            <a href="/pro" className="inline-flex items-center px-8 py-3 font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg shadow-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105">
-                <Icon path={icons.award} className="w-5 h-5 mr-2" />
-                Scopri PMIScout Pro
-            </a>
-        </div>
-    </section>-bold text-slate-800 mb-4">Analisi SWOT</h2>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi SWOT</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {Object.keys(swotDetails).map(key => {
                     const detail = swotDetails[key];
@@ -434,151 +301,205 @@ const ProTeaserSection = ({ teaser }) => (
     );
 };
 
-// --- COMPONENTI GRAFICI AGGIORNATI ---
+
+// --- Componenti del Report ---
 
 const TrendChart = ({ data, dataKey, name, color }) => {
-    // FIX: Aggiunto controllo per Recharts
     if (typeof window === 'undefined' || !window.Recharts) {
-        return (
-            <div className="flex items-center justify-center h-48 text-sm text-slate-500 bg-slate-50 rounded-lg">
-                <div className="text-center">
-                    <Icon path={icons.barChart} className="w-8 h-8 mx-auto mb-2 text-slate-400" />
-                    <p>Caricamento grafico...</p>
-                </div>
-            </div>
-        );
+        return <div className="flex items-center justify-center h-64 text-sm text-slate-500">Caricamento grafico...</div>;
     }
     const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
     
+    // I dati per il grafico sono l'anno precedente e corrente.
+    // La chiave `dataKey` (es. 'revenue') viene usata per accedere ai valori.
     const chartData = [
-        { name: 'Anno Precedente', [dataKey]: data.previous_year || 0 },
-        { name: 'Anno Corrente', [dataKey]: data.current_year || 0 },
+        { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 },
+        { name: 'Anno Corr.', [dataKey]: data.current_year || 0 },
     ];
-    
-    // Formatter per valori monetari migliorato
-    const formatCurrency = (value) => {
-        if (value >= 1000000) {
-            return `€${(value / 1000000).toFixed(1)}M`;
-        } else if (value >= 1000) {
-            return `€${(value / 1000).toFixed(0)}K`;
-        } else if (value > 0) {
-            return `€${Math.round(value).toLocaleString('it-IT')}`;
-        }
-        return '€0';
-    };
-    
-    // Determina se i valori sono monetari (fatturato o attività)
-    const isMonetary = dataKey === 'revenue' || dataKey === 'total_assets';
-    
-    // Calcola variazione percentuale
-    const previousValue = data.previous_year || 0;
-    const currentValue = data.current_year || 0;
-    const variation = previousValue > 0 ? ((currentValue - previousValue) / previousValue * 100) : 0;
-    const isPositive = variation >= 0;
-    
+
+    // Formatter per l'asse Y per mostrare i valori in migliaia (K) o milioni (M)
+    const formatYAxis = (tickItem) => {
+        if (tickItem >= 1000000) return `${(tickItem / 1000000).toFixed(1)}M`;
+        if (tickItem >= 1000) return `${(tickItem / 1000).toFixed(0)}K`;
+        return tickItem;
+    }
+
     return (
-        <div className="space-y-4">
-            {/* Indicatore di variazione */}
-            {previousValue > 0 && currentValue > 0 && (
-                <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600">Variazione anno su anno:</span>
-                    <span className={`font-semibold flex items-center ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                        <Icon 
-                            path={isPositive ? icons.trendingUp : icons.alertTriangle} 
-                            className={`w-4 h-4 mr-1 ${isPositive ? 'text-green-500' : 'text-red-500'}`} 
-                        />
-                        {isPositive ? '+' : ''}{variation.toFixed(1)}%
-                    </span>
-                </div>
-            )}
-            
-            <div className="h-48 bg-gradient-to-br from-slate-50 to-white rounded-lg p-2">
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} margin={{ top: 20, right: 20, left: 20, bottom: 20 }}>
-                        <defs>
-                            <linearGradient id={`gradient-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor={color} stopOpacity={0.8}/>
-                                <stop offset="100%" stopColor={color} stopOpacity={0.3}/>
-                            </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                        <XAxis 
-                            dataKey="name" 
-                            tick={{ fontSize: 11, fill: '#64748b' }}
-                            axisLine={false}
-                            tickLine={false}
-                        />
-                        <YAxis 
-                            tick={{ fontSize: 11, fill: '#64748b' }}
-                            tickFormatter={isMonetary ? formatCurrency : undefined}
-                            axisLine={false}
-                            tickLine={false}
-                        />
-                        <Tooltip 
-                            contentStyle={{ 
-                                fontSize: 12, 
-                                borderRadius: '0.75rem', 
-                                boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
-                                border: 'none',
-                                backgroundColor: 'white'
-                            }}
-                            formatter={isMonetary ? [(value) => [formatCurrency(value), name]] : [(value) => [value, name]]}
-                            labelStyle={{ color: '#374151', fontWeight: '600' }}
-                        />
-                        <Bar 
-                            dataKey={dataKey} 
-                            name={name} 
-                            fill={`url(#gradient-${dataKey})`}
-                            radius={[6, 6, 0, 0]}
-                            stroke={color}
-                            strokeWidth={1}
-                        />
-                    </BarChart>
-                </ResponsiveContainer>
-            </div>
+        <div className="h-64 mt-4">
+            <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={formatYAxis} axisLine={false} tickLine={false} />
+                    <Tooltip 
+                        cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }}
+                        contentStyle={{ 
+                            fontSize: 12, 
+                            borderRadius: '0.75rem', 
+                            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+                            border: '1px solid #e2e8f0',
+                            padding: '8px 12px'
+                        }} 
+                        formatter={(value) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value)}
+                    />
+                    <Bar dataKey={dataKey} name={name} fill={color} barSize={40} radius={[8, 8, 0, 0]} />
+                </BarChart>
+            </ResponsiveContainer>
         </div>
     );
 };
 
+// --- COMPONENTE AGGIORNATO E CORRETTO ---
 const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
     const metricDetails = {
         current_ratio: { label: 'Current Ratio', icon: icons.dollarSign, color: 'text-blue-600', bgColor: 'bg-blue-50' },
         roe: { label: 'ROE', icon: icons.trendingUp, color: 'text-green-600', bgColor: 'bg-green-50' },
         debt_equity: { label: 'Debt/Equity', icon: icons.alertTriangle, color: 'text-orange-600', bgColor: 'bg-orange-50' },
     };
-    
-    // Funzione per determinare quale grafico mostrare e formattare i dati
-    const getRevenueChartData = () => {
+
+    // Funzione per determinare quale grafico mostrare e preparare la sua configurazione.
+    const getChartConfig = () => {
         if (!chartsData) return null;
         
-        // Priorità: fatturato > totale attività
-        if (chartsData.revenue_trend && 
-            (chartsData.revenue_trend.current_year != null || chartsData.revenue_trend.previous_year != null)) {
+        // Priorità 1: Andamento Fatturato
+        if (chartsData.revenue_trend && (chartsData.revenue_trend.current_year != null || chartsData.revenue_trend.previous_year != null)) {
             return {
                 data: chartsData.revenue_trend,
-                title: 'Andamento Fatturato',
-                subtitle: 'Confronto anno su anno',
-                dataKey: 'revenue',
-                color: '#3b82f6' // blu
+                title: 'Andamento Fatturato (€)',
+                dataKey: 'revenue', // Questa chiave verrà usata per creare la proprietà nel grafico
+                name: 'Fatturato',
+                color: '#3b82f6' // Blu
             };
         }
         
-        if (chartsData.total_assets_trend && 
-            (chartsData.total_assets_trend.current_year != null || chartsData.total_assets_trend.previous_year != null)) {
+        // Priorità 2: Andamento Totale Attività
+        if (chartsData.total_assets_trend && (chartsData.total_assets_trend.current_year != null || chartsData.total_assets_trend.previous_year != null)) {
             return {
                 data: chartsData.total_assets_trend,
-                title: 'Andamento Totale Attività',
-                subtitle: 'Confronto anno su anno',
-                dataKey: 'total_assets',
-                color: '#8b5cf6' // viola
+                title: 'Andamento Totale Attività (€)',
+                dataKey: 'total_assets', // Questa chiave verrà usata per creare la proprietà nel grafico
+                name: 'Totale Attività',
+                color: '#8b5cf6' // Viola
             };
         }
         
-        return null;
+        return null; // Nessun dato valido per i grafici
     };
 
-    const chartConfig = getRevenueChartData();
+    const chartConfig = getChartConfig();
 
     return (
         <section>
-            <h2 className="text-xl font
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Panoramica Finanziaria</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {metrics && Object.keys(metrics).map(key => {
+                    const detail = metricDetails[key];
+                    if (!detail) return null;
+                    return (
+                        <div key={key} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${detail.bgColor}`}>
+                                <Icon path={detail.icon} className={`w-6 h-6 ${detail.color}`} />
+                            </div>
+                            <p className="text-sm text-slate-500 mt-4">{detail.label}</p>
+                            <p className="text-3xl font-bold text-slate-900">{metrics[key].value}</p>
+                            <p className="text-xs text-slate-400 mt-1">Benchmark: {metrics[key].benchmark}</p>
+                        </div>
+                    );
+                })}
+                
+                {/* Grafico condizionale per Fatturato o Totale Attività */}
+                {chartConfig && (
+                    <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-3">
+                        <h3 className="text-base font-semibold text-slate-800">{chartConfig.title}</h3>
+                        <TrendChart 
+                            data={chartConfig.data} 
+                            dataKey={chartConfig.dataKey} 
+                            name={chartConfig.name} 
+                            color={chartConfig.color} 
+                        />
+                    </div>
+                )}
+            </div>
+        </section>
+    );
+};
+
+
+const DetailedSwotSection = ({ swot }) => {
+    const swotDetails = {
+        strengths: { label: 'Punti di Forza', icon: icons.thumbsUp, classes: 'border-green-500 bg-green-100 text-green-600' },
+        weaknesses: { label: 'Punti di Debolezza', icon: icons.thumbsDown, classes: 'border-red-500 bg-red-100 text-red-600' },
+        opportunities: { label: 'Opportunità', icon: icons.target, classes: 'border-blue-500 bg-blue-100 text-blue-600' },
+        threats: { label: 'Minacce', icon: icons.alertTriangle, classes: 'border-orange-500 bg-orange-100 text-orange-600' },
+    };
+    return (
+        <section>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi SWOT Dettagliata</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {swot && Object.keys(swot).map(key => {
+                    const detail = swotDetails[key];
+                    if (!detail) return null;
+                    const items = swot[key] || [];
+                    return (
+                        <div key={key} className={`p-6 bg-white rounded-xl shadow-sm border-t-4 ${detail.classes.split(' ')[0]}`}>
+                            <div className="flex items-center text-lg font-bold text-slate-800">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 ${detail.classes.split(' ')[1]}`}>
+                                    <Icon path={detail.icon} className={`w-5 h-5 ${detail.classes.split(' ')[2]}`} />
+                                </div>
+                                {detail.label}
+                            </div>
+                            <div className="mt-4 space-y-3 text-sm">
+                                {items.length > 0 ? items.map((item, idx) => (
+                                    <div key={idx}>
+                                        <p className="font-semibold text-slate-700">{item.point}</p>
+                                        <p className="text-slate-500">{item.explanation}</p>
+                                    </div>
+                                )) : <p className="text-slate-500">Nessun dato disponibile.</p>}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </section>
+    );
+};
+
+const RiskAnalysisSection = ({ risks }) => (
+    <section>
+        <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi dei Rischi Principali</h2>
+        <div className="space-y-4">
+            {risks.map((item, i) => (
+                <div key={i} className="p-4 bg-white rounded-xl shadow-sm border border-slate-200">
+                    <div className="flex items-center font-semibold text-slate-700">
+                        <Icon path={icons.shield} className="w-5 h-5 mr-3 text-red-500" />
+                        {item.risk}
+                    </div>
+                    <p className="mt-2 pl-8 text-sm text-slate-600">{item.mitigation}</p>
+                </div>
+            ))}
+        </div>
+    </section>
+);
+
+const ProTeaserSection = ({ teaser }) => (
+    <section>
+        <h2 className="text-xl font-bold text-slate-800 mb-4">Sblocca il Tuo Potenziale con Pro</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="p-6 bg-gradient-to-br from-blue-50 to-indigo-100 text-slate-800 rounded-xl shadow-sm text-center">
+                <Icon path={icons.zap} className="w-10 h-10 mx-auto text-blue-500" />
+                <h3 className="mt-2 font-bold">Analisi Competitor</h3>
+                <p className="mt-1 text-sm text-slate-600">{teaser.competitor_analysis}</p>
+            </div>
+             <div className="p-6 bg-gradient-to-br from-green-50 to-emerald-100 text-slate-800 rounded-xl shadow-sm text-center">
+                <Icon path={icons.trendingUp} className="w-10 h-10 mx-auto text-green-500" />
+                <h3 className="mt-2 font-bold">Previsione Cash Flow</h3>
+                <p className="mt-1 text-sm text-slate-600">{teaser.cash_flow_forecast}</p>
+            </div>
+        </div>
+        <div className="text-center mt-6">
+            <a href="/pro" className="inline-block px-6 py-2 font-semibold bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-colors">
+                Scopri PMIScout Pro
+            </a>
+        </div>
+    </section>
+);
