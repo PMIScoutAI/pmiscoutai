@@ -1,8 +1,8 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 2.4: Correzione errore di build e pulizia del codice.
-// - Risolto errore di sintassi "Expected '}'" che bloccava la build di Vercel.
-// - Semplificato il componente KeyMetricsAndChartsSection per maggiore chiarezza.
-// - La logica del grafico dinamico (Fatturato/Totale Attività) è mantenuta.
+// VERSIONE 5.0: Allineamento con il prompt basato su "Crescita Fatturato".
+// - Sostituisce la metrica "ROE" con "Crescita Fatturato" (revenue_growth).
+// - Assicura che la logica del grafico dinamico funzioni correttamente con i dati del nuovo prompt.
+// - Mantiene la struttura e le funzionalità esistenti.
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -17,7 +17,7 @@ export default function AnalisiReportPageWrapper() {
   return (
     <>
       <Head>
-        <title>Report Analisi AI V2 - PMIScout</title>
+        <title>Report Analisi AI - PMIScout</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -206,8 +206,9 @@ const ErrorState = ({ message }) => (
 
 const HealthScoreGauge = ({ score }) => {
     const getScoreColor = (s) => {
-        if (s >= 75) return 'text-green-500';
-        if (s >= 50) return 'text-yellow-500';
+        if (s >= 81) return 'text-green-500';
+        if (s >= 61) return 'text-blue-500';
+        if (s >= 41) return 'text-yellow-500';
         return 'text-red-500';
     };
     const circumference = 2 * Math.PI * 52;
@@ -310,14 +311,11 @@ const TrendChart = ({ data, dataKey, name, color }) => {
     }
     const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
     
-    // I dati per il grafico sono l'anno precedente e corrente.
-    // La chiave `dataKey` (es. 'revenue') viene usata per accedere ai valori.
     const chartData = [
         { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 },
         { name: 'Anno Corr.', [dataKey]: data.current_year || 0 },
     ];
 
-    // Formatter per l'asse Y per mostrare i valori in migliaia (K) o milioni (M)
     const formatYAxis = (tickItem) => {
         if (tickItem >= 1000000) return `${(tickItem / 1000000).toFixed(1)}M`;
         if (tickItem >= 1000) return `${(tickItem / 1000).toFixed(0)}K`;
@@ -351,9 +349,10 @@ const TrendChart = ({ data, dataKey, name, color }) => {
 
 // --- COMPONENTE AGGIORNATO E CORRETTO ---
 const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
+    // Definizione delle metriche da visualizzare, allineate al nuovo prompt
     const metricDetails = {
         current_ratio: { label: 'Current Ratio', icon: icons.dollarSign, color: 'text-blue-600', bgColor: 'bg-blue-50' },
-        roe: { label: 'ROE', icon: icons.trendingUp, color: 'text-green-600', bgColor: 'bg-green-50' },
+        revenue_growth: { label: 'Crescita Fatturato (%)', icon: icons.trendingUp, color: 'text-green-600', bgColor: 'bg-green-50' },
         debt_equity: { label: 'Debt/Equity', icon: icons.alertTriangle, color: 'text-orange-600', bgColor: 'bg-orange-50' },
     };
 
@@ -393,15 +392,21 @@ const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
             <h2 className="text-xl font-bold text-slate-800 mb-4">Panoramica Finanziaria</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {metrics && Object.keys(metrics).map(key => {
+                    // Cerca la definizione della metrica in metricDetails
                     const detail = metricDetails[key];
+                    // Se la metrica non è tra quelle che vogliamo visualizzare, non fare nulla
                     if (!detail) return null;
+                    
+                    // Aggiunge il simbolo % se la metrica è revenue_growth
+                    const value = key === 'revenue_growth' ? `${metrics[key].value}%` : metrics[key].value;
+
                     return (
                         <div key={key} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
                             <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${detail.bgColor}`}>
                                 <Icon path={detail.icon} className={`w-6 h-6 ${detail.color}`} />
                             </div>
                             <p className="text-sm text-slate-500 mt-4">{detail.label}</p>
-                            <p className="text-3xl font-bold text-slate-900">{metrics[key].value}</p>
+                            <p className="text-3xl font-bold text-slate-900">{value}</p>
                             <p className="text-xs text-slate-400 mt-1">Benchmark: {metrics[key].benchmark}</p>
                         </div>
                     );
