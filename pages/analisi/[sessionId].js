@@ -96,7 +96,7 @@ function ReportPageLayout({ user }) {
   );
 }
 
-// --- Componente Pagina Analisi (Logica di fetch) ---
+// --- Componente Pagina Analisi (Logica di fetch AGGIORNATA) ---
 function AnalisiReportPage({ user }) {
   const router = useRouter();
   const { sessionId } = router.query;
@@ -112,27 +112,56 @@ function AnalisiReportPage({ user }) {
       }
 
       try {
-        const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
-        if (sessionError) throw new Error('Sessione non trovata o accesso negato.');
-        
-        if (session.user_id !== user.id) throw new Error('Non sei autorizzato a visualizzare questa analisi.');
-        
-        setSessionData(session);
-
-        if (session.status === 'completed') {
-          const { data: results, error: resultsError } = await supabase.from('analysis_results').select('*').eq('session_id', sessionId).single();
-          if (resultsError) throw new Error('Impossibile caricare i risultati dell\'analisi.');
-          setAnalysisData(results);
-        } else if (session.status === 'failed') {
-          setError(session.error_message || 'Errore durante l\'analisi.');
+        // Ottieni il token Outseta
+        const outsetaToken = window.Outseta?.getUser()?.access_token;
+        if (!outsetaToken) {
+          throw new Error('Token di autenticazione non trovato');
         }
+
+        console.log('🔄 Caricamento dati completi...');
+
+        // UNA SOLA chiamata API per tutto
+        const response = await fetch(`/api/get-session-complete?sessionId=${sessionId}`, {
+          headers: {
+            'Authorization': `Bearer ${outsetaToken}`
+          }
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || 'Errore nel caricamento dei dati');
+        }
+
+        const data = await response.json();
+        
+        // Verifica che l'utente sia autorizzato (check aggiuntivo lato frontend)
+        if (data.user_id !== user.id) {
+          throw new Error('Non sei autorizzato a visualizzare questa analisi.');
+        }
+        
+        // Imposta i dati della sessione
+        setSessionData(data);
+        
+        // Se ci sono risultati dell'analisi, impostali
+        if (data.analysisData) {
+          setAnalysisData(data.analysisData);
+          console.log('✅ Dati completi caricati (sessione + analisi)');
+        } else if (data.status === 'completed') {
+          console.log('⚠️ Sessione completata ma nessun risultato di analisi trovato');
+        } else if (data.status === 'failed') {
+          setError(data.error_message || 'Errore durante l\'analisi.');
+        } else {
+          console.log('⏳ Analisi in corso, status:', data.status);
+        }
+
       } catch (err) {
-        console.error('Data fetching error:', err);
+        console.error('❌ Data fetching error:', err);
         setError(err.message);
       } finally {
         setIsLoading(false);
       }
     };
+
     fetchSessionData();
   }, [sessionId, user]);
 
