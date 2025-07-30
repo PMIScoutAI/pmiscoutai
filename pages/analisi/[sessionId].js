@@ -1,8 +1,8 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 2.3: Sostituzione grafico ROE con grafico dinamico Fatturato/Totale Attività.
-// - La sezione "Panoramica Finanziaria" ora mostra un grafico per l'andamento del fatturato.
-// - Se i dati del fatturato mancano, mostra in automatico il grafico del totale attività.
-// - Se mancano entrambi, nessun grafico viene mostrato.
+// VERSIONE 2.4: Correzione errore di build e pulizia del codice.
+// - Risolto errore di sintassi "Expected '}'" che bloccava la build di Vercel.
+// - Semplificato il componente KeyMetricsAndChartsSection per maggiore chiarezza.
+// - La logica del grafico dinamico (Fatturato/Totale Attività) è mantenuta.
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -306,11 +306,12 @@ const SwotSection = ({ swot }) => {
 
 const TrendChart = ({ data, dataKey, name, color }) => {
     if (typeof window === 'undefined' || !window.Recharts) {
-        return <div className="flex items-center justify-center h-48 text-sm text-slate-500">Caricamento grafico...</div>;
+        return <div className="flex items-center justify-center h-64 text-sm text-slate-500">Caricamento grafico...</div>;
     }
     const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
     
     // I dati per il grafico sono l'anno precedente e corrente.
+    // La chiave `dataKey` (es. 'revenue') viene usata per accedere ai valori.
     const chartData = [
         { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 },
         { name: 'Anno Corr.', [dataKey]: data.current_year || 0 },
@@ -339,7 +340,7 @@ const TrendChart = ({ data, dataKey, name, color }) => {
                             border: '1px solid #e2e8f0',
                             padding: '8px 12px'
                         }} 
-                        formatter={(value) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(value)}
+                        formatter={(value) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value)}
                     />
                     <Bar dataKey={dataKey} name={name} fill={color} barSize={40} radius={[8, 8, 0, 0]} />
                 </BarChart>
@@ -348,7 +349,7 @@ const TrendChart = ({ data, dataKey, name, color }) => {
     );
 };
 
-// --- COMPONENTE AGGIORNATO ---
+// --- COMPONENTE AGGIORNATO E CORRETTO ---
 const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
     const metricDetails = {
         current_ratio: { label: 'Current Ratio', icon: icons.dollarSign, color: 'text-blue-600', bgColor: 'bg-blue-50' },
@@ -356,7 +357,7 @@ const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
         debt_equity: { label: 'Debt/Equity', icon: icons.alertTriangle, color: 'text-orange-600', bgColor: 'bg-orange-50' },
     };
 
-    // Funzione per determinare quale grafico mostrare e formattare i dati
+    // Funzione per determinare quale grafico mostrare e preparare la sua configurazione.
     const getChartConfig = () => {
         if (!chartsData) return null;
         
@@ -365,7 +366,7 @@ const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
             return {
                 data: chartsData.revenue_trend,
                 title: 'Andamento Fatturato (€)',
-                dataKey: 'revenue', // Assicurati che il tuo oggetto 'revenue_trend' abbia una chiave 'revenue' o modifica qui
+                dataKey: 'revenue', // Questa chiave verrà usata per creare la proprietà nel grafico
                 name: 'Fatturato',
                 color: '#3b82f6' // Blu
             };
@@ -376,7 +377,7 @@ const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
             return {
                 data: chartsData.total_assets_trend,
                 title: 'Andamento Totale Attività (€)',
-                dataKey: 'total_assets', // Assicurati che il tuo oggetto 'total_assets_trend' abbia una chiave 'total_assets' o modifica qui
+                dataKey: 'total_assets', // Questa chiave verrà usata per creare la proprietà nel grafico
                 name: 'Totale Attività',
                 color: '#8b5cf6' // Viola
             };
@@ -386,95 +387,6 @@ const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
     };
 
     const chartConfig = getChartConfig();
-
-    // Modifico i dataKey per allinearli alla struttura del componente TrendChart
-    if (chartConfig) {
-      if (chartConfig.dataKey === 'revenue') {
-          chartConfig.dataKey = 'revenue'; // Questo deve corrispondere a come sono nominati i campi in `chartsData.revenue_trend`
-          // Esempio: se l'oggetto è { current_year: 100, previous_year: 80 }, il dataKey nel TrendChart si aspetta 'revenue'
-          // per creare { name: 'Anno Corr.', revenue: 100 }. Dobbiamo assicurarci che TrendChart gestisca questo.
-          // La versione attuale di TrendChart usa `dataKey` per accedere a `data.previous_year` e `data.current_year`.
-          // Questo è un disallineamento. Correggo TrendChart per essere più generico.
-          // Per ora, assumo che la struttura dati sia { previous_year: X, current_year: Y } e il dataKey sia solo per il nome.
-          // La versione di TrendChart che ho scritto sopra è già generica e usa `[dataKey]` quindi va bene.
-          // Ma i dati passati devono essere { name: 'Anno Prec.', revenue: ... }
-          // La soluzione migliore è modificare TrendChart per accettare la struttura dati così com'è.
-          // Ho aggiornato TrendChart per renderlo più robusto.
-          // Il dataKey corretto per TrendChart dovrebbe essere quello che identifica il valore, es. 'current_year'
-          // Ma la proposta usa 'revenue'. Per farla funzionare, il TrendChart deve essere adattato.
-          // La mia versione di TrendChart è già adattata e si aspetta un `dataKey` generico.
-          // Tuttavia, la proposta passa `dataKey: 'revenue'`. Questo implica che i dati in `chartData` dentro TrendChart dovrebbero essere
-          // { name: 'Anno Prec.', revenue: data.previous_year }.
-          // Riscrivo TrendChart per essere più semplice e allineato alla proposta.
-          
-          // La cosa più semplice è allineare i dataKey qui
-          if(chartsData.revenue_trend) chartConfig.dataKey = 'value'; // Un nome generico
-          if(chartsData.total_assets_trend) chartConfig.dataKey = 'value';
-    }
-
-    // Per far funzionare la proposta, i dati devono essere trasformati.
-    // La proposta passa `dataKey: 'revenue'`. Il componente `TrendChart` si aspetta `dataKey="current_year"`.
-    // Allineo la proposta al `TrendChart` esistente per semplicità.
-    const getCorrectChartConfig = () => {
-        if (!chartsData) return null;
-        
-        if (chartsData.revenue_trend && (chartsData.revenue_trend.current_year != null || chartsData.revenue_trend.previous_year != null)) {
-            return {
-                data: chartsData.revenue_trend,
-                title: 'Andamento Fatturato (€)',
-                dataKey: 'value', // Usiamo un nome generico
-                name: 'Fatturato',
-                color: '#3b82f6'
-            };
-        }
-        
-        if (chartsData.total_assets_trend && (chartsData.total_assets_trend.current_year != null || chartsData.total_assets_trend.previous_year != null)) {
-            return {
-                data: chartsData.total_assets_trend,
-                title: 'Andamento Totale Attività (€)',
-                dataKey: 'value',
-                name: 'Totale Attività',
-                color: '#8b5cf6'
-            };
-        }
-        return null;
-    };
-    
-    // Riscrivo TrendChart per gestire il `dataKey` dinamico
-    const GenericTrendChart = ({ data, dataKey, name, color }) => {
-        if (typeof window === 'undefined' || !window.Recharts) {
-            return <div className="flex items-center justify-center h-64 text-sm text-slate-500">Caricamento grafico...</div>;
-        }
-        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
-        const chartData = [
-            { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 },
-            { name: 'Anno Corr.', [dataKey]: data.current_year || 0 },
-        ];
-        const formatYAxis = (tickItem) => {
-            if (tickItem >= 1000000) return `${(tickItem / 1000000).toFixed(1)}M`;
-            if (tickItem >= 1000) return `${(tickItem / 1000).toFixed(0)}K`;
-            return tickItem;
-        }
-        return (
-            <div className="h-64 mt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={formatYAxis} axisLine={false} tickLine={false} />
-                        <Tooltip 
-                            cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }}
-                            contentStyle={{ fontSize: 12, borderRadius: '0.75rem', border: '1px solid #e2e8f0', padding: '8px 12px' }} 
-                            formatter={(value) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value)}
-                        />
-                        <Bar dataKey={dataKey} name={name} fill={color} barSize={40} radius={[8, 8, 0, 0]} />
-                    </BarChart>
-                </ResponsiveContainer>
-            </div>
-        );
-    };
-
-    const finalChartConfig = getCorrectChartConfig();
 
     return (
         <section>
@@ -496,14 +408,14 @@ const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
                 })}
                 
                 {/* Grafico condizionale per Fatturato o Totale Attività */}
-                {finalChartConfig && (
+                {chartConfig && (
                     <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-3">
-                        <h3 className="text-base font-semibold text-slate-800">{finalChartConfig.title}</h3>
-                        <GenericTrendChart 
-                            data={finalChartConfig.data} 
-                            dataKey={finalChartConfig.dataKey} 
-                            name={finalChartConfig.name} 
-                            color={finalChartConfig.color} 
+                        <h3 className="text-base font-semibold text-slate-800">{chartConfig.title}</h3>
+                        <TrendChart 
+                            data={chartConfig.data} 
+                            dataKey={chartConfig.dataKey} 
+                            name={chartConfig.name} 
+                            color={chartConfig.color} 
                         />
                     </div>
                 )}
