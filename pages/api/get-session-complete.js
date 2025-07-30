@@ -1,5 +1,5 @@
 // /pages/api/get-session-complete.js
-// API unica che restituisce sessione + analisi + company in una sola chiamata
+// Versione semplificata che usa l'userId direttamente
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -14,37 +14,19 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Verifica token Outseta
-    const outsetaToken = req.headers.authorization?.split(' ')[1];
-    if (!outsetaToken) {
-      return res.status(401).json({ error: 'Token mancante.' });
-    }
-
-    const outsetaResponse = await fetch(`https://pmiscout.outseta.com/api/v1/profile`, {
-      headers: { Authorization: `Bearer ${outsetaToken}` }
-    });
-
-    if (!outsetaResponse.ok) {
-      return res.status(401).json({ error: 'Token non valido.' });
-    }
-
-    const outsetaUser = await outsetaResponse.json();
-    
-    // Ottieni l'ID utente interno
-    const { data: userId } = await supabase.rpc('get_or_create_user', {
-      p_outseta_id: outsetaUser.Uid,
-      p_email: outsetaUser.Email,
-      p_first_name: outsetaUser.FirstName,
-      p_last_name: outsetaUser.LastName
-    });
-
-    const { sessionId } = req.query;
+    const { sessionId, userId } = req.query;
 
     if (!sessionId) {
       return res.status(400).json({ error: 'SessionId è richiesto' });
     }
 
-    // Query COMPLETA: sessione + company + risultati analisi in una sola chiamata
+    if (!userId) {
+      return res.status(400).json({ error: 'UserId è richiesto' });
+    }
+
+    console.log(`🔍 Recupero dati per sessione ${sessionId} e utente ${userId}`);
+
+    // Query COMPLETA: sessione + company + risultati analisi
     const { data: sessionData, error: sessionError } = await supabase
       .from('checkup_sessions')
       .select(`
@@ -78,6 +60,7 @@ export default async function handler(req, res) {
       analysisData: sessionData.analysis_results?.[0] || null
     };
 
+    console.log(`✅ Dati recuperati per sessione ${sessionId}`);
     res.status(200).json(response);
 
   } catch (error) {
