@@ -200,7 +200,11 @@ const ChartEmptyState = ({ title, message }) => (
 
 // --- KeyMetricsAndChartsSection AGGIORNATO E CORRETTO ---
 
-const KeyMetricsAndChartsSection = ({ metrics, chartsData, isLoading }) => {
+<KeyMetricsAndChartsSection 
+    metrics={analysisData.key_metrics} 
+    chartsData={analysisData.charts_data}
+    isLoading={isLoading} 
+/>
     // Definizione delle metriche da visualizzare
     const metricDetails = {
         current_ratio: { label: 'Current Ratio', icon: icons.dollarSign, color: 'text-blue-600', bgColor: 'bg-blue-50' },
