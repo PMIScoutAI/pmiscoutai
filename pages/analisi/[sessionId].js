@@ -1,8 +1,8 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 5.0: Allineamento con il prompt basato su "Crescita Fatturato".
-// - Sostituisce la metrica "ROE" con "Crescita Fatturato" (revenue_growth).
-// - Assicura che la logica del grafico dinamico funzioni correttamente con i dati del nuovo prompt.
-// - Mantiene la struttura e le funzionalità esistenti.
+// VERSIONE 5.1: Correzione Strutturale e Integrazione Stati Grafico
+// - Spostati i componenti helper (ChartSkeleton, ChartEmptyState) e KeyMetricsAndChartsSection al di fuori del componente AnalisiReportPage per una corretta struttura React.
+// - Corretta la chiamata a KeyMetricsAndChartsSection all'interno della funzione renderContent.
+// - Mantiene tutte le funzionalità precedenti, inclusa la gestione degli stati di caricamento e assenza dati per il grafico.
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -96,7 +96,7 @@ function ReportPageLayout({ user }) {
   );
 }
 
-// --- Componente Pagina Analisi (Logica di fetch SEMPLIFICATA) ---
+// --- Componente Pagina Analisi (Logica di fetch) ---
 function AnalisiReportPage({ user }) {
   const router = useRouter();
   const { sessionId } = router.query;
@@ -113,13 +113,9 @@ function AnalisiReportPage({ user }) {
 
       try {
         console.log('🔄 Caricamento dati completi...');
-
-        // Passa semplicemente l'ID dell'utente già autenticato
         const response = await fetch(`/api/get-session-complete?sessionId=${sessionId}&userId=${user.id}`, {
           method: 'GET',
-          headers: {
-            'Content-Type': 'application/json'
-          }
+          headers: { 'Content-Type': 'application/json' }
         });
 
         if (!response.ok) {
@@ -129,15 +125,12 @@ function AnalisiReportPage({ user }) {
 
         const data = await response.json();
         
-        // Verifica che l'utente sia autorizzato (check aggiuntivo lato frontend)
         if (data.user_id !== user.id) {
           throw new Error('Non sei autorizzato a visualizzare questa analisi.');
         }
         
-        // Imposta i dati della sessione
         setSessionData(data);
         
-        // Se ci sono risultati dell'analisi, impostali
         if (data.analysisData) {
           setAnalysisData(data.analysisData);
           console.log('✅ Dati completi caricati (sessione + analisi)');
@@ -174,130 +167,41 @@ function AnalisiReportPage({ user }) {
       <div className="space-y-8">
         <ReportHeader companyName={companyName} healthScore={healthScore} summary={analysisData.summary} />
         
-      // --- Componenti di Supporto per il Grafico ---
+        <KeyMetricsAndChartsSection 
+            metrics={analysisData.key_metrics} 
+            chartsData={analysisData.charts_data}
+            isLoading={isLoading} 
+        />
 
-// Componente "Scheletro" da mostrare durante il caricamento
-const ChartSkeleton = () => (
-    <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-3">
-        <div className="animate-pulse flex flex-col space-y-4">
-            <div className="h-4 bg-slate-200 rounded w-1/3"></div> {/* Placeholder per il Titolo */}
-            <div className="h-64 bg-slate-200 rounded-lg"></div> {/* Placeholder per l'Area Grafico */}
+        {analysisData.detailed_swot ? 
+            <DetailedSwotSection swot={analysisData.detailed_swot} /> : 
+            (analysisData.raw_ai_response?.swot && <SwotSection swot={analysisData.raw_ai_response.swot} />)
+        }
+        
+        {analysisData.risk_analysis && analysisData.risk_analysis.length > 0 && <RiskAnalysisSection risks={analysisData.risk_analysis} />}
+
+        {analysisData.recommendations?.length > 0 && <RecommendationsSection recommendations={analysisData.recommendations} />}
+        
+        <div className="flex justify-center items-center space-x-4 mt-10">
+            <button onClick={() => window.print()} className="flex items-center justify-center px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg shadow-sm hover:bg-slate-50 transition-colors">
+                <Icon path={icons.print} className="w-5 h-5 mr-2" />
+                Stampa Report
+            </button>
         </div>
-    </div>
-);
 
-// Componente "Stato Vuoto" da mostrare se non ci sono dati
-const ChartEmptyState = ({ title, message }) => (
-    <div className="flex flex-col items-center justify-center text-center h-full bg-slate-50 rounded-lg p-6 lg:col-span-3">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-10 h-10 text-slate-400 mb-3">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-        </svg>
-        <h4 className="font-semibold text-slate-700">{title}</h4>
-        <p className="text-sm text-slate-500 mt-1">{message}</p>
-    </div>
-);
-
-
-// --- KeyMetricsAndChartsSection AGGIORNATO E CORRETTO ---
-
-<KeyMetricsAndChartsSection 
-    metrics={analysisData.key_metrics} 
-    chartsData={analysisData.charts_data}
-    isLoading={isLoading} 
-/>
-    // Definizione delle metriche da visualizzare
-    const metricDetails = {
-        current_ratio: { label: 'Current Ratio', icon: icons.dollarSign, color: 'text-blue-600', bgColor: 'bg-blue-50' },
-        revenue_growth: { label: 'Crescita Fatturato (%)', icon: icons.trendingUp, color: 'text-green-600', bgColor: 'bg-green-50' },
-        debt_equity: { label: 'Debt/Equity', icon: icons.alertTriangle, color: 'text-orange-600', bgColor: 'bg-orange-50' },
-    };
-
-    // Funzione per determinare quale grafico mostrare (Graceful Degradation)
-    const getChartConfig = () => {
-        if (!chartsData) return null;
-        
-        // Priorità 1: Andamento Fatturato
-        if (chartsData.revenue_trend && (chartsData.revenue_trend.current_year != null || chartsData.revenue_trend.previous_year != null)) {
-            return {
-                data: chartsData.revenue_trend,
-                title: 'Andamento Fatturato (€)',
-                dataKey: 'revenue', // Questa chiave viene inventata qui per il grafico
-                name: 'Fatturato',
-                color: '#3b82f6' // Blu
-            };
-        }
-        
-        // Priorità 2: Andamento Totale Attività (se il fatturato non è disponibile)
-        if (chartsData.total_assets_trend && (chartsData.total_assets_trend.current_year != null || chartsData.total_assets_trend.previous_year != null)) {
-            return {
-                data: chartsData.total_assets_trend,
-                title: 'Andamento Totale Attività (€)',
-                dataKey: 'total_assets', // Questa chiave viene inventata qui per il grafico
-                name: 'Totale Attività',
-                color: '#8b5cf6' // Viola
-            };
-        }
-        
-        return null; // Nessun dato valido per i grafici
-    };
-
-    const chartConfig = getChartConfig();
-
-    return (
-        <section>
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Panoramica Finanziaria</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                
-                {/* Renderizzazione delle card con le metriche principali */}
-                {metrics && Object.keys(metricDetails).map(key => {
-                    const detail = metricDetails[key];
-                    // Salta la metrica se non è definita o non ha dati
-                    if (!detail || !metrics[key]) return null;
-                    
-                    const value = key === 'revenue_growth' ? `${metrics[key].value}%` : metrics[key].value;
-
-                    return (
-                        <div key={key} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
-                             <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${detail.bgColor}`}>
-                                 <Icon path={detail.icon} className={`w-6 h-6 ${detail.color}`} />
-                             </div>
-                             <p className="text-sm text-slate-500 mt-4">{detail.label}</p>
-                             <p className="text-3xl font-bold text-slate-900">{value}</p>
-                             <p className="text-xs text-slate-400 mt-1">Benchmark: {metrics[key].benchmark}</p>
-                        </div>
-                    );
-                })}
-                
-                {/* --- LOGICA DI VISUALIZZAZIONE CONDIZIONALE DEL GRAFICO --- */}
-                
-                {/* 1. Se sta caricando, mostra lo Skeleton */}
-                {isLoading && <ChartSkeleton />}
-
-                {/* 2. Se ha finito di caricare e ci sono dati validi, mostra il grafico */}
-                {!isLoading && chartConfig && (
-                    <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-3">
-                        <h3 className="text-base font-semibold text-slate-800">{chartConfig.title}</h3>
-                        <TrendChart 
-                            data={chartConfig.data} 
-                            dataKey={chartConfig.dataKey} 
-                            name={chartConfig.name} 
-                            color={chartConfig.color} 
-                        />
-                    </div>
-                )}
-
-                {/* 3. Se ha finito di caricare e NON ci sono dati validi, mostra l'Empty State */}
-                {!isLoading && !chartConfig && (
-                     <ChartEmptyState
-                        title="Dati per il grafico non disponibili"
-                        message="Non è stato possibile recuperare i dati storici per generare un'analisi visuale dell'andamento."
-                    />
-                )}
-            </div>
-        </section>
+        {analysisData.pro_features_teaser && <ProTeaserSection teaser={analysisData.pro_features_teaser} />}
+      </div>
     );
-};
+  };
 
+  return (
+    <main className="relative flex-1 overflow-y-auto focus:outline-none">
+      <div className="py-8 mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+        {renderContent()}
+      </div>
+    </main>
+  );
+}
 
 // --- Componenti di Stato e UI ---
 
@@ -372,6 +276,8 @@ const ReportHeader = ({ companyName, healthScore, summary }) => (
     </div>
 );
 
+// --- Componenti del Report ---
+
 const RecommendationsSection = ({ recommendations }) => (
     <section>
         <h2 className="text-xl font-bold text-slate-800 mb-4">Raccomandazioni Strategiche</h2>
@@ -419,15 +325,14 @@ const SwotSection = ({ swot }) => {
     );
 };
 
-
-// --- Componenti del Report ---
-
 const TrendChart = ({ data, dataKey, name, color }) => {
     if (typeof window === 'undefined' || !window.Recharts) {
         return <div className="flex items-center justify-center h-64 text-sm text-slate-500">Caricamento grafico...</div>;
     }
     const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
     
+    // NOTA: La chiave 'revenue' o 'total_assets' viene creata dinamicamente qui per il grafico
+    // basandosi sulla prop 'dataKey'
     const chartData = [
         { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 },
         { name: 'Anno Corr.', [dataKey]: data.current_year || 0 },
@@ -464,42 +369,58 @@ const TrendChart = ({ data, dataKey, name, color }) => {
     );
 };
 
-// --- COMPONENTE AGGIORNATO E CORRETTO ---
-const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
-    // Definizione delle metriche da visualizzare, allineate al nuovo prompt
+// --- Componenti di Supporto per il Grafico ---
+
+const ChartSkeleton = () => (
+    <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-3">
+        <div className="animate-pulse flex flex-col space-y-4">
+            <div className="h-4 bg-slate-200 rounded w-1/3"></div> {/* Placeholder per il Titolo */}
+            <div className="h-64 bg-slate-200 rounded-lg"></div> {/* Placeholder per l'Area Grafico */}
+        </div>
+    </div>
+);
+
+const ChartEmptyState = ({ title, message }) => (
+    <div className="flex flex-col items-center justify-center text-center h-full bg-slate-50 rounded-lg p-6 lg:col-span-3">
+        <Icon path={icons.alertTriangle} className="w-10 h-10 text-slate-400 mb-3" />
+        <h4 className="font-semibold text-slate-700">{title}</h4>
+        <p className="text-sm text-slate-500 mt-1">{message}</p>
+    </div>
+);
+
+// --- Sezione Panoramica Finanziaria (AGGIORNATO E CORRETTO) ---
+
+const KeyMetricsAndChartsSection = ({ metrics, chartsData, isLoading }) => {
     const metricDetails = {
         current_ratio: { label: 'Current Ratio', icon: icons.dollarSign, color: 'text-blue-600', bgColor: 'bg-blue-50' },
         revenue_growth: { label: 'Crescita Fatturato (%)', icon: icons.trendingUp, color: 'text-green-600', bgColor: 'bg-green-50' },
         debt_equity: { label: 'Debt/Equity', icon: icons.alertTriangle, color: 'text-orange-600', bgColor: 'bg-orange-50' },
     };
 
-    // Funzione per determinare quale grafico mostrare e preparare la sua configurazione.
     const getChartConfig = () => {
         if (!chartsData) return null;
         
-        // Priorità 1: Andamento Fatturato
         if (chartsData.revenue_trend && (chartsData.revenue_trend.current_year != null || chartsData.revenue_trend.previous_year != null)) {
             return {
                 data: chartsData.revenue_trend,
                 title: 'Andamento Fatturato (€)',
-                dataKey: 'revenue', // Questa chiave verrà usata per creare la proprietà nel grafico
+                dataKey: 'revenue',
                 name: 'Fatturato',
-                color: '#3b82f6' // Blu
+                color: '#3b82f6'
             };
         }
         
-        // Priorità 2: Andamento Totale Attività
         if (chartsData.total_assets_trend && (chartsData.total_assets_trend.current_year != null || chartsData.total_assets_trend.previous_year != null)) {
             return {
                 data: chartsData.total_assets_trend,
                 title: 'Andamento Totale Attività (€)',
-                dataKey: 'total_assets', // Questa chiave verrà usata per creare la proprietà nel grafico
+                dataKey: 'total_assets',
                 name: 'Totale Attività',
-                color: '#8b5cf6' // Viola
+                color: '#8b5cf6'
             };
         }
         
-        return null; // Nessun dato valido per i grafici
+        return null;
     };
 
     const chartConfig = getChartConfig();
@@ -508,29 +429,28 @@ const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
         <section>
             <h2 className="text-xl font-bold text-slate-800 mb-4">Panoramica Finanziaria</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {metrics && Object.keys(metrics).map(key => {
-                    // Cerca la definizione della metrica in metricDetails
+                
+                {metrics && Object.keys(metricDetails).map(key => {
                     const detail = metricDetails[key];
-                    // Se la metrica non è tra quelle che vogliamo visualizzare, non fare nulla
-                    if (!detail) return null;
+                    if (!detail || !metrics[key]) return null;
                     
-                    // Aggiunge il simbolo % se la metrica è revenue_growth
                     const value = key === 'revenue_growth' ? `${metrics[key].value}%` : metrics[key].value;
 
                     return (
                         <div key={key} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
-                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${detail.bgColor}`}>
-                                <Icon path={detail.icon} className={`w-6 h-6 ${detail.color}`} />
-                            </div>
-                            <p className="text-sm text-slate-500 mt-4">{detail.label}</p>
-                            <p className="text-3xl font-bold text-slate-900">{value}</p>
-                            <p className="text-xs text-slate-400 mt-1">Benchmark: {metrics[key].benchmark}</p>
+                             <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${detail.bgColor}`}>
+                                 <Icon path={detail.icon} className={`w-6 h-6 ${detail.color}`} />
+                             </div>
+                             <p className="text-sm text-slate-500 mt-4">{detail.label}</p>
+                             <p className="text-3xl font-bold text-slate-900">{value}</p>
+                             <p className="text-xs text-slate-400 mt-1">Benchmark: {metrics[key].benchmark}</p>
                         </div>
                     );
                 })}
                 
-                {/* Grafico condizionale per Fatturato o Totale Attività */}
-                {chartConfig && (
+                {isLoading && <ChartSkeleton />}
+
+                {!isLoading && chartConfig && (
                     <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-3">
                         <h3 className="text-base font-semibold text-slate-800">{chartConfig.title}</h3>
                         <TrendChart 
@@ -540,6 +460,13 @@ const KeyMetricsAndChartsSection = ({ metrics, chartsData }) => {
                             color={chartConfig.color} 
                         />
                     </div>
+                )}
+
+                {!isLoading && !chartConfig && (
+                     <ChartEmptyState
+                        title="Dati per il grafico non disponibili"
+                        message="Non è stato possibile recuperare i dati storici per generare un'analisi visuale dell'andamento."
+                    />
                 )}
             </div>
         </section>
