@@ -1,19 +1,20 @@
 // /pages/api/analyze-pdf.js
-// VERSIONE 5: Implementazione Analisi Multi-Modale (Vision)
-// - Abbandona `pdf-parse` in favore di `pdfjs-dist` e `canvas` per convertire le pagine del PDF in immagini.
-// - Invia le immagini direttamente a GPT-4o, che "vede" le tabelle invece di leggere testo non strutturato.
-// - Questo approccio risolve alla radice i problemi di estrazione e allucinazione dei dati.
+// VERSIONE 6: Sostituzione di `canvas` con `skia-canvas`
+// - Rimosso `canvas` per risolvere i problemi di build su Vercel.
+// - Introdotto `skia-canvas`, un'alternativa basata su WebAssembly senza dipendenze di sistema.
+// - Aggiornata la logica di creazione del canvas per essere compatibile con la nuova libreria.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
-// NUOVE DIPENDENZE per l'analisi Vision
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
-import { createCanvas } from 'canvas';
+// NUOVA DIPENDENZA: skia-canvas invece di canvas
+import { Canvas } from 'skia-canvas';
 
-// Helper per renderizzare una pagina PDF su un canvas Node.js
+// Helper per renderizzare una pagina PDF, aggiornato per skia-canvas
 class NodeCanvasFactory {
   create(width, height) {
-    const canvas = createCanvas(width, height);
+    // La sintassi cambia leggermente: new Canvas() invece di createCanvas()
+    const canvas = new Canvas(width, height);
     const context = canvas.getContext('2d');
     return {
       canvas,
@@ -72,19 +73,16 @@ export default async function handler(req, res) {
 
     const pdfBuffer = await pdfData.arrayBuffer();
 
-    // --- INIZIO NUOVA LOGICA VISION ---
-
-    console.log(`[${sessionId}] Conversione delle pagine PDF in immagini...`);
+    console.log(`[${sessionId}] Conversione delle pagine PDF in immagini con skia-canvas...`);
     const loadingTask = pdfjsLib.getDocument(new Uint8Array(pdfBuffer));
     const pdfDocument = await loadingTask.promise;
     const imageBase64Strings = [];
     
-    // Processiamo le prime 7 pagine, che solitamente contengono i dati cruciali
     const numPagesToProcess = Math.min(pdfDocument.numPages, 7);
 
     for (let i = 1; i <= numPagesToProcess; i++) {
       const page = await pdfDocument.getPage(i);
-      const viewport = page.getViewport({ scale: 1.5 }); // Aumentiamo la scala per una migliore risoluzione
+      const viewport = page.getViewport({ scale: 1.5 });
       const canvasFactory = new NodeCanvasFactory();
       const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
       
@@ -95,26 +93,20 @@ export default async function handler(req, res) {
       };
 
       await page.render(renderContext).promise;
-      // Convertiamo il canvas in una stringa Base64
-      const imageBase64 = canvas.toDataURL('image/jpeg').split(';base64,').pop();
+      const imageBase64 = (await canvas.toBuffer('image/jpeg')).toString('base64');
       imageBase64Strings.push(imageBase64);
       console.log(`[${sessionId}] Pagina ${i} convertita in immagine.`);
     }
-
-    // --- FINE NUOVA LOGICA VISION ---
     
     console.log(`[${sessionId}] Recupero prompt...`);
     const { data: promptData, error: promptError } = await supabase
       .from('ai_prompts')
       .select('prompt_template')
-      .eq('name', 'FINANCIAL_ANALYSIS_V2') // Assicurati che questo sia il nome del prompt v8.1
+      .eq('name', 'FINANCIAL_ANALYSIS_V2')
       .single();
 
-    if (promptError) {
-      throw new Error(`Prompt non trovato: ${promptError.message}`);
-    }
+    if (promptError) throw new Error(`Prompt non trovato: ${promptError.message}`);
     
-    // Costruiamo il messaggio multi-modale per l'API di OpenAI
     const userMessages = [
         { type: 'text', text: promptData.prompt_template + "\n\nANALIZZA LE SEGUENTI IMMAGINI DELLE PAGINE DI BILANCIO:" }
     ];
@@ -124,20 +116,20 @@ export default async function handler(req, res) {
             type: 'image_url',
             image_url: {
                 url: `data:image/jpeg;base64,${base64}`,
-                detail: "high" // Usiamo alta risoluzione per leggere bene i numeri
+                detail: "high"
             }
         });
     });
 
     console.log(`[${sessionId}] 🤖 Chiamata OpenAI GPT-4o con Vision...`);
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o', // Il modello più potente per task multi-modali
+      model: 'gpt-4o',
       messages: [
         { role: 'system', content: 'Sei un analista finanziario esperto. Analizza le immagini fornite e rispondi SOLO in formato JSON valido.' },
         { role: 'user', content: userMessages }
       ],
       response_format: { type: "json_object" },
-      temperature: 0.1, // Bassa temperatura per una maggiore precisione
+      temperature: 0.1,
       max_tokens: 4096 
     });
     const analysisResult = JSON.parse(completion.choices[0].message.content);
@@ -159,9 +151,7 @@ export default async function handler(req, res) {
         pro_features_teaser: analysisResult.pro_features_teaser || {}
       });
 
-    if (saveError) {
-      throw new Error(`Errore salvataggio: ${saveError.message}`);
-    }
+    if (saveError) throw new Error(`Errore salvataggio: ${saveError.message}`);
 
     await supabase.from('checkup_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
 
