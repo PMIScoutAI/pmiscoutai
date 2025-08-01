@@ -1,7 +1,8 @@
 // /pages/api/analyze-pdf.js
-// VERSIONE 3: Corretta l'estrazione del testo dal PDF.
-// - Aumentato il limite di caratteri da 4.000 a 30.000 per inviare il testo completo del bilancio.
-// - Modificata la logica di pulizia del testo per preservare gli "a capo" (\n), mantenendo la struttura delle tabelle.
+// VERSIONE 4: Estrazione Testo Robusta
+// - Rimuoviamo la pulizia degli spazi multipli per preservare l'allineamento delle tabelle.
+// - L'AI riceve ora un testo molto più fedele al PDF originale, riducendo le allucinazioni.
+// - Aumentato il limite di caratteri a 35.000 per massima sicurezza.
 
 import { createClient } from '@supabase/supabase-js';
 import pdfParse from 'pdf-parse';
@@ -47,19 +48,16 @@ export default async function handler(req, res) {
     
     // --- INIZIO MODIFICHE CRITICHE ---
     
-    // VECCHIA VERSIONE (PROBLEMATICA):
-    // let extractedText = pdfResult.text.replace(/\s+/g, ' ').trim().substring(0, 4000);
-
-    // NUOVA VERSIONE CORRETTA:
-    // 1. Preserviamo gli "a capo" (\n) per mantenere la struttura delle tabelle, fondamentale per l'AI.
-    // 2. Riduciamo solo gli spazi multipli sulla stessa riga.
-    // 3. Aumentiamo il limite di caratteri a 30.000 per assicurare che l'intero bilancio venga inviato.
+    // NUOVA VERSIONE v4:
+    // 1. Normalizziamo solo gli "a capo" per avere una struttura a righe consistente.
+    // 2. NON tocchiamo più gli spazi. Lasciamo che l'AI interpreti l'allineamento delle colonne.
+    // 3. Aumentiamo il limite di caratteri a 35.000 per essere sicuri di includere tutto.
     const textWithLineBreaks = pdfResult.text.replace(/(\r\n|\n|\r)/gm, "\n");
-    const extractedText = textWithLineBreaks.replace(/ {2,}/g, ' ').trim().substring(0, 30000);
+    const extractedText = textWithLineBreaks.trim().substring(0, 35000);
 
     // --- FINE MODIFICHE CRITICHE ---
     
-    console.log(`[${sessionId}] Recupero prompt V2...`); // Nota: il nome del prompt è rimasto V2, ma la logica è aggiornata
+    console.log(`[${sessionId}] Recupero prompt...`);
     const { data: promptData, error: promptError } = await supabase
       .from('ai_prompts')
       .select('prompt_template')
@@ -67,24 +65,24 @@ export default async function handler(req, res) {
       .single();
 
     if (promptError) {
-      throw new Error(`Prompt V2 non trovato: ${promptError.message}`);
+      throw new Error(`Prompt non trovato: ${promptError.message}`);
     }
 
-    console.log(`[${sessionId}] 🤖 Chiamata OpenAI GPT con prompt V2 e testo corretto...`);
+    console.log(`[${sessionId}] 🤖 Chiamata OpenAI GPT con testo pulito e non troncato...`);
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o', // CONSIGLIO: Per un compito così critico, considera di usare il modello più potente.
       messages: [
         { role: 'system', content: 'Sei un analista finanziario esperto. Rispondi SOLO in formato JSON valido.' },
         { role: 'user', content: promptData.prompt_template + `\n\nBILANCIO DA ANALIZZARE:\n${extractedText}` }
       ],
       response_format: { type: "json_object" },
-      temperature: 0.3,
-      max_tokens: 4096 // Aumentato per gestire output più grandi
+      temperature: 0.2,
+      max_tokens: 4096 
     });
     const analysisResult = JSON.parse(completion.choices[0].message.content);
-    console.log(`[${sessionId}] ✅ Analisi GPT V2 completata`);
+    console.log(`[${sessionId}] ✅ Analisi GPT completata`);
 
-    console.log(`[${sessionId}] Salvataggio risultati V2...`);
+    console.log(`[${sessionId}] Salvataggio risultati...`);
     const { error: saveError } = await supabase
       .from('analysis_results')
       .insert({
@@ -92,7 +90,6 @@ export default async function handler(req, res) {
         health_score: analysisResult.health_score || 0,
         summary: analysisResult.summary || '',
         key_metrics: analysisResult.key_metrics || {},
-        swot: analysisResult.swot || {}, // Questo campo potrebbe essere obsoleto se usi solo detailed_swot
         recommendations: analysisResult.recommendations || [],
         raw_ai_response: analysisResult,
         charts_data: analysisResult.charts_data || {},
@@ -102,12 +99,12 @@ export default async function handler(req, res) {
       });
 
     if (saveError) {
-      throw new Error(`Errore salvataggio V2: ${saveError.message}`);
+      throw new Error(`Errore salvataggio: ${saveError.message}`);
     }
 
     await supabase.from('checkup_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
 
-    console.log(`[${sessionId}] 🎉 Analisi V2 completata con successo!`);
+    console.log(`[${sessionId}] 🎉 Analisi completata con successo!`);
     return res.status(200).json({ success: true, sessionId: sessionId });
 
   } catch (error) {
