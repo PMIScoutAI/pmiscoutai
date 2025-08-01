@@ -49,8 +49,8 @@ export default async function handler(req, res) {
     const { data: sessionData, error: sessionError } = await supabase.from('checkup_sessions').insert({ 
         user_id: userId, 
         company_id: company.id, 
-        // Imposta lo stato su 'uploaded'. Sarà 'processing' quando analyze-pdf partirà.
-        status: 'uploaded',
+        // FIX: Imposta lo stato su 'processing', un valore valido per il check constraint del database.
+        status: 'processing',
         session_name: `Check-UP ${companyName} - ${new Date().toLocaleDateString('it-IT')}`
     }).select().single();
 
