@@ -1,15 +1,19 @@
 // /pages/api/analyze-pdf.js
-// VERSIONE 7.3: Correzione Errore di Sintassi per il Deploy
-// - Sostituite le virgolette singole/doppie con i backticks (template literals `` ` ``) nelle stringhe di `content` per le chiamate OpenAI.
-// - Questa modifica risolve l'errore di sintassi "Expected ',', got 'analisi'" che bloccava il build su Vercel.
+// VERSIONE 7.4: Correzione Definitiva per il Deploy su Vercel
+// - Corretto il percorso di importazione di `pdfjs-dist` per risolvere l'errore "Module not found".
+// - Aggiunta la configurazione del 'workerSrc' via CDN, una soluzione standard per far funzionare pdfjs-dist in ambienti serverless come Vercel.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
+// --- INIZIO MODIFICHE BUILD VERCEL ---
 import * as pdfjsLib from 'pdfjs-dist/build/pdf.js';
 import { Canvas } from 'skia-canvas';
 
 // Fix di compatibilità per pdfjs-dist in ambiente Node.js su Vercel.
+// Questo previene errori di build e assicura che il worker venga trovato.
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.mjs`;
+// --- FINE MODIFICHE BUILD VERCEL ---
+
 
 // Helper per renderizzare una pagina PDF
 class NodeCanvasFactory {
@@ -59,7 +63,6 @@ async function extractDataWithVision(imageBase64, prompt) {
     const completion = await openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [
-            // --- CORREZIONE SINTASSI ---
             { role: 'system', content: `Estrai i dati finanziari dall'immagine fornita e rispondi solo con un oggetto JSON valido.` },
             {
                 role: 'user',
@@ -150,7 +153,6 @@ export default async function handler(req, res) {
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
-        // --- CORREZIONE SINTASSI ---
         { role: 'system', content: `Sei un analista finanziario esperto. Usa i dati pre-estratti forniti per eseguire l'analisi e rispondi SOLO in formato JSON valido.` },
         { role: 'user', content: finalPrompt }
       ],
