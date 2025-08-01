@@ -1,7 +1,5 @@
 // /pages/api/analyze-pdf.js
-// VERSIONE 7.3: Correzione Errore di Sintassi per il Deploy
-// - Sostituite le virgolette singole/doppie con i backticks (template literals `` ` ``) nelle stringhe di `content` per le chiamate OpenAI.
-// - Questa modifica risolve l'errore di sintassi "Expected ',', got 'analisi'" che bloccava il build su Vercel.
+// VERSIONE FINALE: Codice completo con tutti i miglioramenti di robustezza e precisione.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -30,6 +28,7 @@ class NodeCanvasFactory {
   }
 }
 
+// Inizializzazione client Supabase e OpenAI
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -42,6 +41,7 @@ const openai = new OpenAI({
 // Funzione helper per convertire una pagina specifica in immagine Base64
 async function getPageImageAsBase64(pdfDocument, pageNumber) {
     const page = await pdfDocument.getPage(pageNumber);
+    // ✅ MIGLIORAMENTO 1: Aumentata la risoluzione per una migliore qualità OCR
     const viewport = page.getViewport({ scale: 3.0 });
     const canvasFactory = new NodeCanvasFactory();
     const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
@@ -54,12 +54,11 @@ async function getPageImageAsBase64(pdfDocument, pageNumber) {
     return (await canvas.toBuffer('image/jpeg')).toString('base64');
 }
 
-// Funzione helper per una chiamata Vision mirata
+// Funzione helper per una chiamata Vision mirata e robusta
 async function extractDataWithVision(imageBase64, prompt) {
     const completion = await openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [
-            // --- CORREZIONE SINTASSI ---
             { role: 'system', content: `Estrai i dati finanziari dall'immagine fornita e rispondi solo con un oggetto JSON valido.` },
             {
                 role: 'user',
@@ -72,10 +71,19 @@ async function extractDataWithVision(imageBase64, prompt) {
         response_format: { type: "json_object" },
         temperature: 0.0,
     });
-    return JSON.parse(completion.choices[0].message.content);
+
+    // ✅ MIGLIORAMENTO 2: Parsing del JSON sicuro con gestione degli errori
+    try {
+        return JSON.parse(completion.choices[0].message.content);
+    } catch (e) {
+        console.error('❌ Vision output malformato:', completion.choices[0].message.content);
+        // Lancia un nuovo errore più specifico che verrà catturato dal blocco principale
+        throw new Error('Errore parsing JSON da Vision');
+    }
 }
 
 
+// Handler principale dell'API
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -129,13 +137,54 @@ export default async function handler(req, res) {
     }
     console.log(`[${sessionId}] Pagine identificate -> Stato Patrimoniale: ${spPageNum}, Conto Economico: ${cePageNum}`);
 
-    // FASE 2: ESTRAZIONE MIRATA CON VISION
-    console.log(`[${sessionId}] FASE 2: Estrazione dati mirata con Vision...`);
+    // FASE 2: ESTRAZIONE MIRATA CON VISION (APPROCCIO IBRIDO)
+    console.log(`[${sessionId}] FASE 2: Estrazione dati mirata con Vision (Ibrido)...`);
+    
+    // Estrai immagini e testo grezzo per l'approccio ibrido
     const spImage = await getPageImageAsBase64(pdfDocument, spPageNum);
     const ceImage = await getPageImageAsBase64(pdfDocument, cePageNum);
 
-    const spData = await extractDataWithVision(spImage, `Estrai 'Totale attivo', 'Totale debiti (D)', e 'Totale patrimonio netto (A)' per l'anno corrente e precedente. Usa le chiavi: total_assets_current, total_assets_previous, total_debt_current, total_debt_previous, net_equity_current, net_equity_previous.`);
-    const ceData = await extractDataWithVision(ceImage, `Estrai 'ricavi delle vendite e delle prestazioni' per l'anno corrente e precedente. Usa le chiavi: revenue_current, revenue_previous.`);
+    const spPage = await pdfDocument.getPage(spPageNum);
+    const spTextContent = await spPage.getTextContent();
+    const spRawText = spTextContent.items.map(item => item.str).join(' ');
+
+    const cePage = await pdfDocument.getPage(cePageNum);
+    const ceTextContent = await cePage.getTextContent();
+    const ceRawText = ceTextContent.items.map(item => item.str).join(' ');
+
+    // ✅ MIGLIORAMENTO 3: Prompt ibridi e strutturati per la massima affidabilità
+    const spPromptHybrid = `Estrai i dati dall'immagine usando la struttura JSON fornita. Usa l'immagine come fonte primaria. Se un dato non è chiaro nell'immagine, usa il testo grezzo fornito come riferimento per trovarlo.
+
+**Testo Grezzo di Riferimento:**
+"""
+${spRawText}
+"""
+
+**Formato JSON di Output (solo numeri):**
+{
+  "total_assets_current": ...,
+  "total_assets_previous": ...,
+  "total_debt_current": ...,
+  "total_debt_previous": ...,
+  "net_equity_current": ...,
+  "net_equity_previous": ...
+}`;
+    
+    const cePromptHybrid = `Estrai i dati dall'immagine usando la struttura JSON fornita. Usa l'immagine come fonte primaria. Se un dato non è chiaro nell'immagine, usa il testo grezzo fornito come riferimento per trovarlo.
+
+**Testo Grezzo di Riferimento:**
+"""
+${ceRawText}
+"""
+
+**Formato JSON di Output (solo numeri):**
+{
+  "revenue_current": ...,
+  "revenue_previous": ...
+}`;
+
+    const spData = await extractDataWithVision(spImage, spPromptHybrid);
+    const ceData = await extractDataWithVision(ceImage, cePromptHybrid);
     
     const extractedRawData = { ...spData, ...ceData };
     console.log(`[${sessionId}] Dati grezzi estratti:`, extractedRawData);
@@ -150,7 +199,6 @@ export default async function handler(req, res) {
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
-        // --- CORREZIONE SINTASSI ---
         { role: 'system', content: `Sei un analista finanziario esperto. Usa i dati pre-estratti forniti per eseguire l'analisi e rispondi SOLO in formato JSON valido.` },
         { role: 'user', content: finalPrompt }
       ],
