@@ -16,7 +16,9 @@
     "formidable": "^3.5.1",
     "pdf-parse": "^1.1.1",
     "openai": "^4.20.1",
-    "lucide-react": "^0.292.0"
+    "lucide-react": "^0.292.0",
+    "pdfjs-dist": "^4.4.168",
+    "canvas": "^2.11.2"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.14",
