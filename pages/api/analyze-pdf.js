@@ -1,5 +1,7 @@
 // /pages/api/analyze-pdf.js
-// VERSIONE 2: Aggiornato per usare il prompt V2 e salvare i nuovi dati.
+// VERSIONE 3: Corretta l'estrazione del testo dal PDF.
+// - Aumentato il limite di caratteri da 4.000 a 30.000 per inviare il testo completo del bilancio.
+// - Modificata la logica di pulizia del testo per preservare gli "a capo" (\n), mantenendo la struttura delle tabelle.
 
 import { createClient } from '@supabase/supabase-js';
 import pdfParse from 'pdf-parse';
@@ -42,20 +44,33 @@ export default async function handler(req, res) {
 
     const pdfBuffer = await pdfData.arrayBuffer();
     const pdfResult = await pdfParse(Buffer.from(pdfBuffer));
-    let extractedText = pdfResult.text.replace(/\s+/g, ' ').trim().substring(0, 4000);
     
-    console.log(`[${sessionId}] Recupero prompt V2...`);
+    // --- INIZIO MODIFICHE CRITICHE ---
+    
+    // VECCHIA VERSIONE (PROBLEMATICA):
+    // let extractedText = pdfResult.text.replace(/\s+/g, ' ').trim().substring(0, 4000);
+
+    // NUOVA VERSIONE CORRETTA:
+    // 1. Preserviamo gli "a capo" (\n) per mantenere la struttura delle tabelle, fondamentale per l'AI.
+    // 2. Riduciamo solo gli spazi multipli sulla stessa riga.
+    // 3. Aumentiamo il limite di caratteri a 30.000 per assicurare che l'intero bilancio venga inviato.
+    const textWithLineBreaks = pdfResult.text.replace(/(\r\n|\n|\r)/gm, "\n");
+    const extractedText = textWithLineBreaks.replace(/ {2,}/g, ' ').trim().substring(0, 30000);
+
+    // --- FINE MODIFICHE CRITICHE ---
+    
+    console.log(`[${sessionId}] Recupero prompt V2...`); // Nota: il nome del prompt è rimasto V2, ma la logica è aggiornata
     const { data: promptData, error: promptError } = await supabase
       .from('ai_prompts')
       .select('prompt_template')
-      .eq('name', 'FINANCIAL_ANALYSIS_V2')
+      .eq('name', 'FINANCIAL_ANALYSIS_V2') // Assicurati che questo sia il nome del prompt v8.1 in Supabase
       .single();
 
     if (promptError) {
       throw new Error(`Prompt V2 non trovato: ${promptError.message}`);
     }
 
-    console.log(`[${sessionId}] 🤖 Chiamata OpenAI GPT con prompt V2...`);
+    console.log(`[${sessionId}] 🤖 Chiamata OpenAI GPT con prompt V2 e testo corretto...`);
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
@@ -64,7 +79,7 @@ export default async function handler(req, res) {
       ],
       response_format: { type: "json_object" },
       temperature: 0.3,
-      max_tokens: 2500
+      max_tokens: 4096 // Aumentato per gestire output più grandi
     });
     const analysisResult = JSON.parse(completion.choices[0].message.content);
     console.log(`[${sessionId}] ✅ Analisi GPT V2 completata`);
@@ -77,7 +92,7 @@ export default async function handler(req, res) {
         health_score: analysisResult.health_score || 0,
         summary: analysisResult.summary || '',
         key_metrics: analysisResult.key_metrics || {},
-        swot: analysisResult.swot || {},
+        swot: analysisResult.swot || {}, // Questo campo potrebbe essere obsoleto se usi solo detailed_swot
         recommendations: analysisResult.recommendations || [],
         raw_ai_response: analysisResult,
         charts_data: analysisResult.charts_data || {},
