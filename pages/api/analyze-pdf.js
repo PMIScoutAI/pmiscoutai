@@ -1,7 +1,6 @@
 // /pages/api/analyze-pdf.js
-// VERSIONE MIGLIORATA CON PARSING TESTUALE + VISION + COLONNA raw_parsed_data
+// VERSIONE COMPLETA CON PARSING TESTUALE + VISION + COLONNA raw_parsed_data ESTESA
 
-// ...import identici
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import * as pdfjsLib from 'pdfjs-dist/build/pdf.js';
@@ -31,6 +30,40 @@ class NodeCanvasFactory {
     canvasAndContext.canvas = null;
     canvasAndContext.context = null;
   }
+}
+
+function parseFinancialsFromText(spText, ceText) {
+  const extract = (regex, text) => {
+    const match = text.match(regex);
+    if (!match) return null;
+    const value = parseFloat(match[1].replace(/\./g, '').replace(',', '.'));
+    return isNaN(value) ? null : value;
+  };
+
+  const revenue_current = extract(/ricavi.*?([\d.,]+)/i, ceText);
+  const revenue_previous = extract(/ricavi.*?(?:\d[\d.,]+)[^\d]+([\d.,]+)/i, ceText); // seconda colonna
+  const total_assets = extract(/totale attivo[^0-9]*([\d.,]+)/i, spText);
+  const total_debt = extract(/debiti[^0-9]*([\d.,]+)/i, spText);
+  const net_equity = extract(/patrimonio netto[^0-9]*([\d.,]+)/i, spText);
+  const current_assets = extract(/attivo circolante[^0-9]*([\d.,]+)/i, spText);
+  const short_term_debt = extract(/debiti.*?entro.*?(?:\d[\d.,]+)[^\d]+([\d.,]+)/i, spText);
+
+  const current_ratio = (current_assets && short_term_debt) ? current_assets / short_term_debt : null;
+  const revenue_growth = (revenue_current && revenue_previous) ? ((revenue_current - revenue_previous) / revenue_previous) * 100 : null;
+  const debt_equity = (net_equity && net_equity !== 0) ? total_debt / net_equity : null;
+
+  return {
+    revenue_current,
+    revenue_previous,
+    total_assets,
+    total_debt,
+    net_equity,
+    current_assets,
+    short_term_debt,
+    current_ratio,
+    revenue_growth,
+    debt_equity
+  };
 }
 
 async function getPageImageAsBase64(pdfDocument, pageNumber) {
@@ -103,22 +136,13 @@ export default async function handler(req, res) {
     const spText = (await spPage.getTextContent()).items.map(i => i.str).join(' ');
     const ceText = (await cePage.getTextContent()).items.map(i => i.str).join(' ');
 
-    // 👇 Parsing Testuale + Fallback GPT Vision
-    const parsedData = {
-      total_assets_current: parseFloat((spText.match(/totale attivo[^0-9]*([\d.,]+)/i) || [])[1]?.replace(/\./g, '').replace(',', '.') || 0),
-      total_debt_current: parseFloat((spText.match(/debiti[^0-9]*([\d.,]+)/i) || [])[1]?.replace(/\./g, '').replace(',', '.') || 0),
-      net_equity_current: parseFloat((spText.match(/patrimonio netto[^0-9]*([\d.,]+)/i) || [])[1]?.replace(/\./g, '').replace(',', '.') || 0),
-      revenue_current: parseFloat((ceText.match(/ricavi[^0-9]*([\d.,]+)/i) || [])[1]?.replace(/\./g, '').replace(',', '.') || 0),
-    };
+    const parsedData = parseFinancialsFromText(spText, ceText);
 
-    // Immagine backup + prompt ibrido
     const spImg = await getPageImageAsBase64(pdfDocument, spPageNum);
     const ceImg = await getPageImageAsBase64(pdfDocument, cePageNum);
 
-    const spPrompt = `Estrai i dati JSON da questa pagina di stato patrimoniale:
-${spText}`;
-    const cePrompt = `Estrai i ricavi da questa pagina di conto economico:
-${ceText}`;
+    const spPrompt = `Estrai i dati JSON da questa pagina di stato patrimoniale:\n${spText}`;
+    const cePrompt = `Estrai i ricavi da questa pagina di conto economico:\n${ceText}`;
 
     const spAI = await extractDataWithVision(spImg, spPrompt);
     const ceAI = await extractDataWithVision(ceImg, cePrompt);
@@ -129,7 +153,6 @@ ${ceText}`;
       ...ceAI
     };
 
-    // 🔍 Prompt finale analisi
     const { data: promptData } = await supabase.from('ai_prompts').select('prompt_template').eq('name', 'FINANCIAL_ANALYSIS_V2').single();
     const finalPrompt = promptData.prompt_template + `\n\nUSA SOLO QUESTI DATI:\n${JSON.stringify(extractedData)}`;
 
@@ -145,7 +168,6 @@ ${ceText}`;
 
     const analysis = JSON.parse(completion.choices[0].message.content);
 
-    // 🔐 Salvataggio in Supabase
     await supabase.from('analysis_results').insert({
       session_id: sessionId,
       health_score: analysis.health_score || 0,
