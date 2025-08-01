@@ -1,22 +1,17 @@
 // /pages/api/analyze-pdf.js
-// VERSIONE 7.1: Correzione Build Vercel
-// - Corretto il percorso di importazione di `pdfjs-dist` per risolvere l'errore "Module not found".
-// - Aggiunta la configurazione del 'worker' per `pdfjs-dist`, necessaria per l'esecuzione in un ambiente Node.js come Vercel.
+// VERSIONE 7.3: Correzione Errore di Sintassi per il Deploy
+// - Sostituite le virgolette singole/doppie con i backticks (template literals `` ` ``) nelle stringhe di `content` per le chiamate OpenAI.
+// - Questa modifica risolve l'errore di sintassi "Expected ',', got 'analisi'" che bloccava il build su Vercel.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
-// --- INIZIO MODIFICHE BUILD ---
 import * as pdfjsLib from 'pdfjs-dist/build/pdf.js';
 import { Canvas } from 'skia-canvas';
-import pdfParse from 'pdf-parse';
 
 // Fix di compatibilità per pdfjs-dist in ambiente Node.js su Vercel.
-// Questo previene errori di build e assicura che il worker venga trovato.
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.mjs`;
-// --- FINE MODIFICHE BUILD ---
 
-
-// Helper per renderizzare una pagina PDF, aggiornato per skia-canvas
+// Helper per renderizzare una pagina PDF
 class NodeCanvasFactory {
   create(width, height) {
     const canvas = new Canvas(width, height);
@@ -47,7 +42,7 @@ const openai = new OpenAI({
 // Funzione helper per convertire una pagina specifica in immagine Base64
 async function getPageImageAsBase64(pdfDocument, pageNumber) {
     const page = await pdfDocument.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 2.0 }); // Scala maggiore per massima precisione
+    const viewport = page.getViewport({ scale: 2.0 });
     const canvasFactory = new NodeCanvasFactory();
     const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
     const renderContext = {
@@ -64,7 +59,8 @@ async function extractDataWithVision(imageBase64, prompt) {
     const completion = await openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [
-            { role: 'system', content: 'Estrai i dati finanziari dall\'immagine fornita e rispondi solo con un oggetto JSON valido.' },
+            // --- CORREZIONE SINTASSI ---
+            { role: 'system', content: `Estrai i dati finanziari dall'immagine fornita e rispondi solo con un oggetto JSON valido.` },
             {
                 role: 'user',
                 content: [
@@ -108,17 +104,16 @@ export default async function handler(req, res) {
     if (downloadError) throw new Error(`Errore download: ${downloadError.message}`);
     const pdfBuffer = await pdfData.arrayBuffer();
     
-    // --- FASE 1: IDENTIFICA LE PAGINE CHIAVE ---
-    console.log(`[${sessionId}] FASE 1: Identificazione pagine chiave...`);
-    const pdfTextData = await pdfParse(Buffer.from(pdfBuffer));
+    const pdfDocument = await pdfjsLib.getDocument(new Uint8Array(pdfBuffer)).promise;
     
-    // Logica per trovare le pagine basandosi sul contenuto testuale
+    // FASE 1: IDENTIFICA LE PAGINE CHIAVE
+    console.log(`[${sessionId}] FASE 1: Identificazione pagine chiave...`);
     let spPageNum = -1, cePageNum = -1;
-    const numPages = pdfTextData.numpages;
-
-    for (let i = 1; i <= numPages; i++) {
-        const pageData = await pdfParse(Buffer.from(pdfBuffer), { max: 1, page_range: [i, i] });
-        const lowerPageText = pageData.text.toLowerCase();
+    
+    for (let i = 1; i <= pdfDocument.numPages; i++) {
+        const page = await pdfDocument.getPage(i);
+        const textContent = await page.getTextContent();
+        const lowerPageText = textContent.items.map(item => item.str).join(' ').toLowerCase();
         
         if (spPageNum === -1 && lowerPageText.includes('stato patrimoniale') && lowerPageText.includes('totale attivo')) {
             spPageNum = i;
@@ -126,7 +121,7 @@ export default async function handler(req, res) {
         if (cePageNum === -1 && lowerPageText.includes('conto economico') && (lowerPageText.includes('valore della produzione') || lowerPageText.includes('ricavi delle vendite'))) {
             cePageNum = i;
         }
-        if (spPageNum !== -1 && cePageNum !== -1) break; // Interrompi appena le trovi entrambe
+        if (spPageNum !== -1 && cePageNum !== -1) break;
     }
 
     if (spPageNum === -1 || cePageNum === -1) {
@@ -134,20 +129,18 @@ export default async function handler(req, res) {
     }
     console.log(`[${sessionId}] Pagine identificate -> Stato Patrimoniale: ${spPageNum}, Conto Economico: ${cePageNum}`);
 
-    // --- FASE 2: ESTRAZIONE MIRATA CON VISION ---
+    // FASE 2: ESTRAZIONE MIRATA CON VISION
     console.log(`[${sessionId}] FASE 2: Estrazione dati mirata con Vision...`);
-    const pdfDocument = await pdfjsLib.getDocument(new Uint8Array(pdfBuffer)).promise;
-
     const spImage = await getPageImageAsBase64(pdfDocument, spPageNum);
     const ceImage = await getPageImageAsBase64(pdfDocument, cePageNum);
 
-    const spData = await extractDataWithVision(spImage, "Estrai 'Totale attivo', 'Totale debiti (D)', e 'Totale patrimonio netto (A)' per l'anno corrente e precedente. Usa le chiavi: total_assets_current, total_assets_previous, total_debt_current, total_debt_previous, net_equity_current, net_equity_previous.");
-    const ceData = await extractDataWithVision(ceImage, "Estrai 'ricavi delle vendite e delle prestazioni' per l'anno corrente e precedente. Usa le chiavi: revenue_current, revenue_previous.");
+    const spData = await extractDataWithVision(spImage, `Estrai 'Totale attivo', 'Totale debiti (D)', e 'Totale patrimonio netto (A)' per l'anno corrente e precedente. Usa le chiavi: total_assets_current, total_assets_previous, total_debt_current, total_debt_previous, net_equity_current, net_equity_previous.`);
+    const ceData = await extractDataWithVision(ceImage, `Estrai 'ricavi delle vendite e delle prestazioni' per l'anno corrente e precedente. Usa le chiavi: revenue_current, revenue_previous.`);
     
     const extractedRawData = { ...spData, ...ceData };
     console.log(`[${sessionId}] Dati grezzi estratti:`, extractedRawData);
 
-    // --- FASE 3: ANALISI FINALE SU DATI PULITI ---
+    // FASE 3: ANALISI FINALE SU DATI PULITI
     console.log(`[${sessionId}] FASE 3: Analisi finale su dati puliti...`);
     const { data: promptData, error: promptError } = await supabase.from('ai_prompts').select('prompt_template').eq('name', 'FINANCIAL_ANALYSIS_V2').single();
     if (promptError) throw new Error(`Prompt non trovato: ${promptError.message}`);
@@ -157,7 +150,8 @@ export default async function handler(req, res) {
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
-        { role: 'system', content: 'Sei un analista finanziario esperto. Usa i dati pre-estratti forniti per eseguire l'analisi e rispondi SOLO in formato JSON valido.' },
+        // --- CORREZIONE SINTASSI ---
+        { role: 'system', content: `Sei un analista finanziario esperto. Usa i dati pre-estratti forniti per eseguire l'analisi e rispondi SOLO in formato JSON valido.` },
         { role: 'user', content: finalPrompt }
       ],
       response_format: { type: "json_object" },
