@@ -1,15 +1,20 @@
 // /pages/api/analyze-pdf.js
-// VERSIONE 7: Architettura a 3 Fasi (Identifica -> Estrai -> Analizza)
-// - Utilizza un approccio multi-step per garantire la massima accuratezza.
-// - FASE 1: Usa `pdf-parse` per scansionare il testo e identificare i numeri di pagina corretti per le tabelle chiave.
-// - FASE 2: Converte solo le pagine identificate in immagini e fa chiamate Vision mirate e semplici per estrarre solo i dati grezzi.
-// - FASE 3: Fa una chiamata finale basata su testo, usando i dati puliti e verificati, per generare l'analisi completa.
+// VERSIONE 7.1: Correzione Build Vercel
+// - Corretto il percorso di importazione di `pdfjs-dist` per risolvere l'errore "Module not found".
+// - Aggiunta la configurazione del 'worker' per `pdfjs-dist`, necessaria per l'esecuzione in un ambiente Node.js come Vercel.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
+// --- INIZIO MODIFICHE BUILD ---
+import * as pdfjsLib from 'pdfjs-dist/build/pdf.js';
 import { Canvas } from 'skia-canvas';
-import pdfParse from 'pdf-parse'; // Riutilizzato per la Fase 1
+import pdfParse from 'pdf-parse';
+
+// Fix di compatibilità per pdfjs-dist in ambiente Node.js su Vercel.
+// Questo previene errori di build e assicura che il worker venga trovato.
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.mjs`;
+// --- FINE MODIFICHE BUILD ---
+
 
 // Helper per renderizzare una pagina PDF, aggiornato per skia-canvas
 class NodeCanvasFactory {
@@ -106,18 +111,23 @@ export default async function handler(req, res) {
     // --- FASE 1: IDENTIFICA LE PAGINE CHIAVE ---
     console.log(`[${sessionId}] FASE 1: Identificazione pagine chiave...`);
     const pdfTextData = await pdfParse(Buffer.from(pdfBuffer));
-    const pagesText = pdfTextData.text.split(/--- PAGE \d+ ---/);
+    
+    // Logica per trovare le pagine basandosi sul contenuto testuale
     let spPageNum = -1, cePageNum = -1;
+    const numPages = pdfTextData.numpages;
 
-    pagesText.forEach((pageText, index) => {
-        const lowerPageText = pageText.toLowerCase();
+    for (let i = 1; i <= numPages; i++) {
+        const pageData = await pdfParse(Buffer.from(pdfBuffer), { max: 1, page_range: [i, i] });
+        const lowerPageText = pageData.text.toLowerCase();
+        
         if (spPageNum === -1 && lowerPageText.includes('stato patrimoniale') && lowerPageText.includes('totale attivo')) {
-            spPageNum = index + 1;
+            spPageNum = i;
         }
-        if (cePageNum === -1 && lowerPageText.includes('conto economico') && lowerPageText.includes('valore della produzione')) {
-            cePageNum = index + 1;
+        if (cePageNum === -1 && lowerPageText.includes('conto economico') && (lowerPageText.includes('valore della produzione') || lowerPageText.includes('ricavi delle vendite'))) {
+            cePageNum = i;
         }
-    });
+        if (spPageNum !== -1 && cePageNum !== -1) break; // Interrompi appena le trovi entrambe
+    }
 
     if (spPageNum === -1 || cePageNum === -1) {
         throw new Error(`Impossibile identificare le pagine necessarie. Stato Patrimoniale: ${spPageNum}, Conto Economico: ${cePageNum}`);
