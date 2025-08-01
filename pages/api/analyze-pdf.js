@@ -42,7 +42,7 @@ const openai = new OpenAI({
 // Funzione helper per convertire una pagina specifica in immagine Base64
 async function getPageImageAsBase64(pdfDocument, pageNumber) {
     const page = await pdfDocument.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 2.0 });
+    const viewport = page.getViewport({ scale: 3.0 });
     const canvasFactory = new NodeCanvasFactory();
     const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
     const renderContext = {
