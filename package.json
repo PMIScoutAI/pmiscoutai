@@ -17,7 +17,8 @@
     "openai": "^4.20.1",
     "lucide-react": "^0.292.0",
     "pdfjs-dist": "3.11.174",
-    "skia-canvas": "^1.0.1"
+    "skia-canvas": "^1.0.1",
+    "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.14",
