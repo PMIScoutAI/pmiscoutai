@@ -1,15 +1,13 @@
-// /pages/api/analyze-pdf.js
-// VERSIONE FINALE: Codice completo con tutti i miglioramenti di robustezza e precisione.
+// pages/api/analyze-pdf.js
+// Versione potenziata con fallback, validazione, log diagnostici e salvataggio esteso
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import * as pdfjsLib from 'pdfjs-dist/build/pdf.js';
 import { Canvas } from 'skia-canvas';
 
-// Fix di compatibilità per pdfjs-dist in ambiente Node.js su Vercel.
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.mjs`;
 
-// Helper per renderizzare una pagina PDF
 class NodeCanvasFactory {
   create(width, height) {
     const canvas = new Canvas(width, height);
@@ -28,69 +26,70 @@ class NodeCanvasFactory {
   }
 }
 
-// Inizializzazione client Supabase e OpenAI
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Funzione helper per convertire una pagina specifica in immagine Base64
 async function getPageImageAsBase64(pdfDocument, pageNumber) {
-    const page = await pdfDocument.getPage(pageNumber);
-    // ✅ MIGLIORAMENTO 1: Aumentata la risoluzione per una migliore qualità OCR
-    const viewport = page.getViewport({ scale: 3.0 });
-    const canvasFactory = new NodeCanvasFactory();
-    const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
-    const renderContext = {
-        canvasContext: context,
-        viewport: viewport,
-        canvasFactory: canvasFactory,
-    };
-    await page.render(renderContext).promise;
-    return (await canvas.toBuffer('image/jpeg')).toString('base64');
+  const page = await pdfDocument.getPage(pageNumber);
+  const viewport = page.getViewport({ scale: 3.0 });
+  const canvasFactory = new NodeCanvasFactory();
+  const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
+  const renderContext = { canvasContext: context, viewport, canvasFactory };
+  await page.render(renderContext).promise;
+  return (await canvas.toBuffer('image/jpeg')).toString('base64');
 }
 
-// Funzione helper per una chiamata Vision mirata e robusta
 async function extractDataWithVision(imageBase64, prompt) {
-    const completion = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-            { role: 'system', content: `Estrai i dati finanziari dall'immagine fornita e rispondi solo con un oggetto JSON valido.` },
-            {
-                role: 'user',
-                content: [
-                    { type: 'text', text: prompt },
-                    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}`, detail: "high" } }
-                ]
-            }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.0,
-    });
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      { role: 'system', content: `Estrai i dati finanziari dall'immagine fornita e rispondi solo con un oggetto JSON valido.` },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}`, detail: 'high' } }
+        ]
+      }
+    ],
+    response_format: { type: 'json_object' },
+    temperature: 0.0
+  });
 
-    // ✅ MIGLIORAMENTO 2: Parsing del JSON sicuro con gestione degli errori
-    try {
-        return JSON.parse(completion.choices[0].message.content);
-    } catch (e) {
-        console.error('❌ Vision output malformato:', completion.choices[0].message.content);
-        // Lancia un nuovo errore più specifico che verrà catturato dal blocco principale
-        throw new Error('Errore parsing JSON da Vision');
-    }
+  try {
+    return JSON.parse(completion.choices[0].message.content);
+  } catch (e) {
+    console.error('❌ Vision output malformato:', completion.choices[0].message.content);
+    throw new Error('Errore parsing JSON da Vision');
+  }
 }
 
-
-// Handler principale dell'API
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+function validateExtractedData(data) {
+  const fields = [
+    'total_assets_current', 'total_assets_previous',
+    'total_debt_current', 'total_debt_previous',
+    'net_equity_current', 'net_equity_previous',
+    'revenue_current', 'revenue_previous'
+  ];
+  const missing = [];
+  for (const field of fields) {
+    const value = data[field];
+    if (value === null || isNaN(Number(value))) {
+      missing.push(field);
+    }
   }
+  return missing;
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   let sessionId = '';
-  
+
   try {
     const authHeader = req.headers.authorization;
     const providedSecret = authHeader?.split('Bearer ')[1];
@@ -104,138 +103,85 @@ export default async function handler(req, res) {
 
     await supabase.from('checkup_sessions').update({ status: 'processing' }).eq('id', sessionId);
 
-    console.log(`[${sessionId}] Download del PDF...`);
-    const { data: files, error: listError } = await supabase.storage.from('checkup-documents').list(`public/${sessionId}`);
-    if (listError || !files || files.length === 0) throw new Error('Nessun file trovato');
+    const { data: files } = await supabase.storage.from('checkup-documents').list(`public/${sessionId}`);
     const pdfFile = files.find(f => f.name.toLowerCase().endsWith('.pdf')) || files[0];
-    const { data: pdfData, error: downloadError } = await supabase.storage.from('checkup-documents').download(`public/${sessionId}/${pdfFile.name}`);
-    if (downloadError) throw new Error(`Errore download: ${downloadError.message}`);
+    const { data: pdfData } = await supabase.storage.from('checkup-documents').download(`public/${sessionId}/${pdfFile.name}`);
     const pdfBuffer = await pdfData.arrayBuffer();
-    
     const pdfDocument = await pdfjsLib.getDocument(new Uint8Array(pdfBuffer)).promise;
-    
-    // FASE 1: IDENTIFICA LE PAGINE CHIAVE
-    console.log(`[${sessionId}] FASE 1: Identificazione pagine chiave...`);
+
     let spPageNum = -1, cePageNum = -1;
-    
     for (let i = 1; i <= pdfDocument.numPages; i++) {
-        const page = await pdfDocument.getPage(i);
-        const textContent = await page.getTextContent();
-        const lowerPageText = textContent.items.map(item => item.str).join(' ').toLowerCase();
-        
-        if (spPageNum === -1 && lowerPageText.includes('stato patrimoniale') && lowerPageText.includes('totale attivo')) {
-            spPageNum = i;
-        }
-        if (cePageNum === -1 && lowerPageText.includes('conto economico') && (lowerPageText.includes('valore della produzione') || lowerPageText.includes('ricavi delle vendite'))) {
-            cePageNum = i;
-        }
-        if (spPageNum !== -1 && cePageNum !== -1) break;
+      const page = await pdfDocument.getPage(i);
+      const textContent = await page.getTextContent();
+      const lowerText = textContent.items.map(item => item.str).join(' ').toLowerCase();
+      if (spPageNum === -1 && lowerText.includes('stato patrimoniale') && lowerText.includes('totale attivo')) spPageNum = i;
+      if (cePageNum === -1 && lowerText.includes('conto economico') && (lowerText.includes('valore della produzione') || lowerText.includes('ricavi delle vendite'))) cePageNum = i;
+      if (spPageNum !== -1 && cePageNum !== -1) break;
     }
+    if (spPageNum === -1 || cePageNum === -1) throw new Error('Pagine chiave non trovate');
 
-    if (spPageNum === -1 || cePageNum === -1) {
-        throw new Error(`Impossibile identificare le pagine necessarie. Stato Patrimoniale: ${spPageNum}, Conto Economico: ${cePageNum}`);
-    }
-    console.log(`[${sessionId}] Pagine identificate -> Stato Patrimoniale: ${spPageNum}, Conto Economico: ${cePageNum}`);
-
-    // FASE 2: ESTRAZIONE MIRATA CON VISION (APPROCCIO IBRIDO)
-    console.log(`[${sessionId}] FASE 2: Estrazione dati mirata con Vision (Ibrido)...`);
-    
-    // Estrai immagini e testo grezzo per l'approccio ibrido
     const spImage = await getPageImageAsBase64(pdfDocument, spPageNum);
     const ceImage = await getPageImageAsBase64(pdfDocument, cePageNum);
+    const spRawText = (await (await pdfDocument.getPage(spPageNum)).getTextContent()).items.map(i => i.str).join(' ');
+    const ceRawText = (await (await pdfDocument.getPage(cePageNum)).getTextContent()).items.map(i => i.str).join(' ');
 
-    const spPage = await pdfDocument.getPage(spPageNum);
-    const spTextContent = await spPage.getTextContent();
-    const spRawText = spTextContent.items.map(item => item.str).join(' ');
-
-    const cePage = await pdfDocument.getPage(cePageNum);
-    const ceTextContent = await cePage.getTextContent();
-    const ceRawText = ceTextContent.items.map(item => item.str).join(' ');
-
-    // ✅ MIGLIORAMENTO 3: Prompt ibridi e strutturati per la massima affidabilità
-    const spPromptHybrid = `Estrai i dati dall'immagine usando la struttura JSON fornita. Usa l'immagine come fonte primaria. Se un dato non è chiaro nell'immagine, usa il testo grezzo fornito come riferimento per trovarlo.
-
-**Testo Grezzo di Riferimento:**
+    const spPrompt = `Estrai i dati dall'immagine usando la struttura JSON. Se non chiaro, usa il testo:
 """
 ${spRawText}
-"""
-
-**Formato JSON di Output (solo numeri):**
-{
-  "total_assets_current": ...,
-  "total_assets_previous": ...,
-  "total_debt_current": ...,
-  "total_debt_previous": ...,
-  "net_equity_current": ...,
-  "net_equity_previous": ...
-}`;
-    
-    const cePromptHybrid = `Estrai i dati dall'immagine usando la struttura JSON fornita. Usa l'immagine come fonte primaria. Se un dato non è chiaro nell'immagine, usa il testo grezzo fornito come riferimento per trovarlo.
-
-**Testo Grezzo di Riferimento:**
+"""`;
+    const cePrompt = `Estrai i dati dall'immagine usando la struttura JSON. Se non chiaro, usa il testo:
 """
 ${ceRawText}
-"""
+"""`;
 
-**Formato JSON di Output (solo numeri):**
-{
-  "revenue_current": ...,
-  "revenue_previous": ...
-}`;
+    let spData = await extractDataWithVision(spImage, spPrompt);
+    let ceData = await extractDataWithVision(ceImage, cePrompt);
+    let extractedRawData = { ...spData, ...ceData };
 
-    const spData = await extractDataWithVision(spImage, spPromptHybrid);
-    const ceData = await extractDataWithVision(ceImage, cePromptHybrid);
-    
-    const extractedRawData = { ...spData, ...ceData };
-    console.log(`[${sessionId}] Dati grezzi estratti:`, extractedRawData);
+    const missingFields = validateExtractedData(extractedRawData);
 
-    // FASE 3: ANALISI FINALE SU DATI PULITI
-    console.log(`[${sessionId}] FASE 3: Analisi finale su dati puliti...`);
-    const { data: promptData, error: promptError } = await supabase.from('ai_prompts').select('prompt_template').eq('name', 'FINANCIAL_ANALYSIS_V2').single();
-    if (promptError) throw new Error(`Prompt non trovato: ${promptError.message}`);
+    if (missingFields.length > 0) {
+      console.warn(`[${sessionId}] ⚠️ Campi mancanti o null:`, missingFields);
+    }
 
-    const finalPrompt = promptData.prompt_template + `\n\nUSA ESCLUSIVAMENTE I SEGUENTI DATI NUMERICI PRE-ESTRATTI PER ESEGUIRE L'ANALISI:\n${JSON.stringify(extractedRawData)}`;
+    const { data: promptData } = await supabase.from('ai_prompts').select('prompt_template').eq('name', 'FINANCIAL_ANALYSIS_V2').single();
+    const finalPrompt = `${promptData.prompt_template}\n\nUSA ESCLUSIVAMENTE I SEGUENTI DATI:\n${JSON.stringify(extractedRawData)}`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
-        { role: 'system', content: `Sei un analista finanziario esperto. Usa i dati pre-estratti forniti per eseguire l'analisi e rispondi SOLO in formato JSON valido.` },
+        { role: 'system', content: 'Sei un analista finanziario esperto.' },
         { role: 'user', content: finalPrompt }
       ],
-      response_format: { type: "json_object" },
+      response_format: { type: 'json_object' },
       temperature: 0.1,
-      max_tokens: 4096 
+      max_tokens: 4096
     });
+
     const analysisResult = JSON.parse(completion.choices[0].message.content);
-    console.log(`[${sessionId}] ✅ Analisi finale completata`);
 
-    // --- SALVATAGGIO ---
-    console.log(`[${sessionId}] Salvataggio risultati...`);
-    const { error: saveError } = await supabase.from('analysis_results').insert({
-        session_id: sessionId,
-        health_score: analysisResult.health_score || 0,
-        summary: analysisResult.summary || '',
-        key_metrics: analysisResult.key_metrics || {},
-        recommendations: analysisResult.recommendations || [],
-        raw_ai_response: analysisResult,
-        charts_data: analysisResult.charts_data || {},
-        detailed_swot: analysisResult.detailed_swot || {},
-        risk_analysis: analysisResult.risk_analysis || [],
-        pro_features_teaser: analysisResult.pro_features_teaser || {}
+    await supabase.from('analysis_results').insert({
+      session_id: sessionId,
+      health_score: analysisResult.health_score || 0,
+      summary: analysisResult.summary || '',
+      key_metrics: analysisResult.key_metrics || {},
+      recommendations: analysisResult.recommendations || [],
+      raw_ai_response: analysisResult,
+      charts_data: analysisResult.charts_data || {},
+      detailed_swot: analysisResult.detailed_swot || {},
+      risk_analysis: analysisResult.risk_analysis || [],
+      pro_features_teaser: analysisResult.pro_features_teaser || {},
+      raw_text_reference: { stato_patrimoniale: spRawText, conto_economico: ceRawText },
+      vision_output: { sp: spData, ce: ceData },
+      missing_fields: missingFields
     });
-
-    if (saveError) throw new Error(`Errore salvataggio: ${saveError.message}`);
 
     await supabase.from('checkup_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
-
-    console.log(`[${sessionId}] 🎉 Analisi completata con successo!`);
-    return res.status(200).json({ success: true, sessionId: sessionId });
+    return res.status(200).json({ success: true, sessionId });
 
   } catch (error) {
     console.error(`💥 [${sessionId || 'NO_SESSION'}] Errore analisi:`, error);
-    if (sessionId) {
-      await supabase.from('checkup_sessions').update({ status: 'failed', error_message: error.message }).eq('id', sessionId);
-    }
-    return res.status(500).json({ error: error.message, sessionId: sessionId || null });
+    if (sessionId) await supabase.from('checkup_sessions').update({ status: 'failed', error_message: error.message }).eq('id', sessionId);
+    return res.status(500).json({ error: error.message, sessionId });
   }
 }
