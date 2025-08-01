@@ -1,38 +1,32 @@
 // /pages/checkup.js
-// CODICE COMPLETAMENTE RIVISTO NELLA UI/UX
-// - Mantiene la stessa logica tecnica e di autenticazione Outseta.
-// - Integra il layout della dashboard (sidebar + contenuto) per un'esperienza coerente.
-// - Sostituisce l'upload di base con una "drop zone" interattiva.
-// - Migliora il feedback visivo per l'utente (loading spinner, messaggi di errore/successo).
-// - FIX v2: Aggiunto lo script di Tailwind CSS per un corretto rendering grafico.
+// CODICE ORIGINALE DELL'UTENTE CON MODIFICHE MIRATE
+// - Mantiene tutta la struttura e la logica esistente.
+// - FIX v4: Modificata la funzione handleSubmit per aggiungere la chiamata all'API /api/analyze-pdf.
 
 import { useState, useRef } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import Script from 'next/script';
+import { useRouter } from 'next/router'; // ✅ 1. Importa useRouter
 import { api } from '../utils/api';
 import { ProtectedPage } from '../utils/ProtectedPage';
 
-// --- Componente Wrapper (CORRETTO) ---
-// Aggiunti gli script di Outseta e Tailwind CSS per garantire il corretto funzionamento.
+// --- Componente Wrapper (INVARIATO) ---
 export default function CheckupPageWrapper() {
   return (
     <>
       <Head>
         <title>Check-UP AI Azienda - PMIScout</title>
-        {/* Aggiunti per coerenza con la dashboard */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
-        {/* FIX: Aggiunto lo script di Tailwind CSS mancante */}
         <script src="https://cdn.tailwindcss.com"></script>
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
       </Head>
 
-      {/* Script di Outseta per prevenire l'errore di caricamento */}
       <Script id="outseta-options" strategy="beforeInteractive">
         {`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}
       </Script>
@@ -42,17 +36,15 @@ export default function CheckupPageWrapper() {
         strategy="beforeInteractive"
       />
 
-      {/* Il componente ProtectedPage ora troverà Outseta già caricato */}
       <ProtectedPage>
-        {(user) => <CheckupPageLayout user={user} />}
+        {/* Passa il token al layout */}
+        {(user, token) => <CheckupPageLayout user={user} token={token} />}
       </ProtectedPage>
     </>
   );
 }
 
-// --- Componenti UI Riutilizzabili (presi dalla dashboard) ---
-
-// Componente Icona generico
+// --- Componenti UI Riutilizzabili (INVARIATO) ---
 const Icon = ({ path, className = 'w-6 h-6' }) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -67,8 +59,6 @@ const Icon = ({ path, className = 'w-6 h-6' }) => (
     {path}
   </svg>
 );
-
-// Collezione di icone SVG
 const icons = {
   dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
   profile: <><path d="M5.52 19c.64-2.2 1.84-3 3.22-3h6.52c1.38 0 2.58.8 3.22 3" /><circle cx="12" cy="10" r="3" /><circle cx="12" cy="12" r="10" /></>,
@@ -80,11 +70,9 @@ const icons = {
   alert: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></>,
 };
 
-// --- Layout Principale della Pagina ---
-// Questo componente costruisce la pagina con sidebar e area contenuti.
-function CheckupPageLayout({ user }) {
+// --- Layout Principale della Pagina (INVARIATO) ---
+function CheckupPageLayout({ user, token }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
   const navLinks = [
     { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
     { href: '/checkup', text: 'Check-UP AI', icon: icons.checkup, active: true },
@@ -93,7 +81,6 @@ function CheckupPageLayout({ user }) {
 
   return (
     <div className="relative flex min-h-screen bg-slate-50 text-slate-800">
-      {/* Sidebar */}
       <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-center h-16 border-b">
@@ -125,7 +112,6 @@ function CheckupPageLayout({ user }) {
         </div>
       </aside>
 
-      {/* Overlay mobile */}
       {isSidebarOpen && (
         <div 
           className="fixed inset-0 z-10 bg-black bg-opacity-50 md:hidden" 
@@ -133,9 +119,7 @@ function CheckupPageLayout({ user }) {
         />
       )}
 
-      {/* Contenuto Principale */}
       <div className="flex flex-col flex-1 w-0 overflow-hidden">
-        {/* Header mobile */}
         <header className="relative z-10 flex items-center justify-between flex-shrink-0 h-16 px-4 bg-white border-b md:hidden">
           <button 
             onClick={() => setIsSidebarOpen(true)} 
@@ -155,7 +139,6 @@ function CheckupPageLayout({ user }) {
 
         <main className="relative flex-1 overflow-y-auto focus:outline-none">
           <div className="py-8 mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-            {/* Header di Pagina */}
             <div className="pb-6 border-b border-slate-200">
               <h1 className="text-2xl font-bold leading-7 text-slate-900 sm:text-3xl sm:truncate">
                 Check-UP AI Azienda
@@ -165,9 +148,8 @@ function CheckupPageLayout({ user }) {
               </p>
             </div>
             
-            {/* Il Form vero e proprio */}
             <div className="mt-8">
-              <CheckupForm />
+              <CheckupForm token={token} />
             </div>
           </div>
         </main>
@@ -176,22 +158,21 @@ function CheckupPageLayout({ user }) {
   );
 }
 
-// --- Componente del Form (Logica tecnica invariata, UI rivista) ---
-function CheckupForm() {
+// --- Componente del Form (Logica di submit CORRETTA) ---
+function CheckupForm({ token }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
-  // Dati del form
   const [companyName, setCompanyName] = useState('');
   const [vatNumber, setVatNumber] = useState('');
   const [pdfFile, setPdfFile] = useState(null);
 
   const fileInputRef = useRef(null);
+  const router = useRouter(); // ✅ Inizializza il router
 
   const handleFileChange = (selectedFile) => {
     if (!selectedFile) return;
 
-    // Validazione del file
     if (selectedFile.type !== 'application/pdf') {
       setError('Il file deve essere in formato PDF.');
       setPdfFile(null);
@@ -215,6 +196,7 @@ function CheckupForm() {
     }
   };
 
+  // ✅ --- FUNZIONE MODIFICATA --- ✅
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -236,26 +218,37 @@ function CheckupForm() {
       formData.append('vatNumber', vatNumber);
       formData.append('pdfFile', pdfFile);
 
-      // Chiamata API (invariata)
-      const result = await api.startCheckup(formData);
+      // PASSO 1: Chiama start-checkup per creare la sessione
+      const result = await api.startCheckup(formData, token);
+      const { sessionId } = result;
       
-      // Redirect (invariato)
-      window.location.href = `/analisi/${result.sessionId}`;
+      // PASSO 2: Avvia l'analisi in background (chiamata "lancia e dimentica")
+      console.log(`Sessione ${sessionId} creata. Avvio dell'analisi in background...`);
+      fetch('/api/analyze-pdf', {
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.NEXT_PUBLIC_INTERNAL_SECRET}` 
+          },
+          body: JSON.stringify({ session_id: sessionId })
+      });
+
+      // PASSO 3: Reindirizza immediatamente l'utente alla pagina dei risultati
+      router.push(`/analisi/${sessionId}`);
       
     } catch (err) {
       console.error('Errore durante l\'avvio del checkup:', err);
       const errorMessage = err.response?.data?.message || err.message || 'Si è verificato un errore imprevisto.';
       setError(errorMessage);
-    } finally {
-      setLoading(false);
+      setLoading(false); // Riabilita il bottone solo in caso di errore
     }
+    // Rimosso il blocco 'finally' per evitare di impostare loading a false dopo un redirect di successo
   };
 
   return (
     <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
       <form onSubmit={handleSubmit} className="space-y-6">
         
-        {/* Messaggio di Errore Migliorato */}
         {error && (
           <div className="flex items-start p-4 text-sm text-red-700 bg-red-50 rounded-lg">
             <Icon path={icons.alert} className="w-5 h-5 mr-3 flex-shrink-0" />
@@ -263,7 +256,6 @@ function CheckupForm() {
           </div>
         )}
 
-        {/* Nome Azienda */}
         <div>
           <label htmlFor="companyName" className="block text-sm font-medium text-slate-700 mb-1">
             Nome Azienda *
@@ -279,7 +271,6 @@ function CheckupForm() {
           />
         </div>
 
-        {/* Partita IVA */}
         <div>
           <label htmlFor="vatNumber" className="block text-sm font-medium text-slate-700 mb-1">
             Partita IVA (Opzionale)
@@ -294,7 +285,6 @@ function CheckupForm() {
           />
         </div>
 
-        {/* Upload PDF Migliorato */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">
             Bilancio PDF (max 5MB) *
@@ -337,13 +327,11 @@ function CheckupForm() {
           )}
         </div>
 
-        {/* Nota sulla sicurezza */}
         <div className="flex items-center text-xs text-slate-500">
           <Icon path={icons.lock} className="w-4 h-4 mr-2 flex-shrink-0" />
           <span>I tuoi dati sono crittografati e usati solo per l'analisi.</span>
         </div>
 
-        {/* Bottone di Submit */}
         <button
           type="submit"
           disabled={loading}
