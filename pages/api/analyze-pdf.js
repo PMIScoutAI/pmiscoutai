@@ -184,7 +184,8 @@ ${ceRawText}
     const extractedData = { ...spData, ...ceData };
     console.log(`[${sessionId}] Dati grezzi estratti e puliti:`, extractedData);
 
-    if (Object.keys(extractedData).length === 0 || !Object.values(extractedData).some(v => v !== null)) {
+    // Controllo di sicurezza: verifica che l'estrazione abbia prodotto dati
+    if (Object.keys(extractedData).length === 0 || !Object.values(extractedData).some(v => v !== null && v !== undefined)) {
         throw new Error("L'estrazione dati con Vision non ha prodotto risultati validi.");
     }
     
