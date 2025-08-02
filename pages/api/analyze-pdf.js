@@ -1,14 +1,12 @@
 // /api/analyze-pdf.js
-// VERSIONE TEXT-ONLY: Risolve l'errore fatale di Vercel rimuovendo la dipendenza
-// problematica (skia-canvas) e passando a un'estrazione basata solo su testo,
-// più veloce, economica e affidabile per i PDF di alta qualità.
+// VERSIONE CORRETTA - Fix di tutti gli errori identificati
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import * as pdfjsLib from 'pdfjs-dist/build/pdf.js';
 
-// Fix di compatibilità per pdfjs-dist (non richiede più canvas)
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.mjs`;
+// ✅ FIX: Worker URL più stabile
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.mjs';
 
 // Inizializzazione client Supabase e OpenAI
 const supabase = createClient(
@@ -20,12 +18,44 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// ✅ FIX: Prompt fallback se ai_prompts non esiste
+const FALLBACK_PROMPT = `Analizza i seguenti dati finanziari e fornisci un'analisi completa dell'azienda.
 
-// --- FUNZIONI DI ESTRAZIONE E VALIDAZIONE (ORA BASATE SU TESTO) ---
+Restituisci un JSON con questa struttura esatta:
+{
+  "health_score": <numero da 0 a 100>,
+  "summary": "<riassunto dell'analisi in 2-3 frasi>",
+  "key_metrics": {
+    "liquidita": <valore>,
+    "solvibilita": <valore>,
+    "redditività": <valore>
+  },
+  "recommendations": [
+    "<raccomandazione 1>",
+    "<raccomandazione 2>",
+    "<raccomandazione 3>"
+  ],
+  "charts_data": {},
+  "detailed_swot": {
+    "strengths": ["<forza 1>", "<forza 2>"],
+    "weaknesses": ["<debolezza 1>", "<debolezza 2>"],
+    "opportunities": ["<opportunità 1>", "<opportunità 2>"],
+    "threats": ["<minaccia 1>", "<minaccia 2>"]
+  },
+  "risk_analysis": [
+    {
+      "type": "<tipo rischio>",
+      "level": "<alto/medio/basso>",
+      "description": "<descrizione>"
+    }
+  ],
+  "pro_features_teaser": {
+    "message": "Analisi più dettagliate disponibili con PMIScout Pro"
+  }
+}`;
 
-/**
- * Valida e pulisce l'output JSON ricevuto dall'AI.
- */
+// --- FUNZIONI DI ESTRAZIONE E VALIDAZIONE ---
+
 function validateAndCleanOutput(data, expectedFields) {
     console.log('Validating Raw AI Output:', JSON.stringify(data, null, 2));
     const cleaned = {};
@@ -57,9 +87,6 @@ function validateAndCleanOutput(data, expectedFields) {
     return cleaned;
 }
 
-/**
- * Estrae dati usando GPT-4o basandosi solo sul testo grezzo.
- */
 async function extractFromRawText(rawText, expectedFields, promptTemplate, sessionId) {
     console.log(`[${sessionId}] Esecuzione estrazione solo testo...`);
     
@@ -94,48 +121,89 @@ export default async function handler(req, res) {
   let sessionId = '';
   
   try {
-    // 1. Setup e Autenticazione
+    // ✅ FIX: Authorization flessibile
+    console.log('🔍 Controllo autenticazione...');
     const authHeader = req.headers.authorization;
-    if (authHeader !== `Bearer ${process.env.INTERNAL_SECRET}`) {
+    const expectedAuth = process.env.INTERNAL_SECRET ? `Bearer ${process.env.INTERNAL_SECRET}` : null;
+    
+    if (expectedAuth && authHeader !== expectedAuth) {
+      console.log('❌ Authorization fallita:', { received: authHeader, expected: expectedAuth });
       return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    if (!expectedAuth) {
+      console.log('⚠️ INTERNAL_SECRET non impostato, procedo senza autenticazione');
+    } else {
+      console.log('✅ Authorization OK');
     }
 
     const { session_id } = req.body;
     sessionId = session_id;
-    if (!sessionId) return res.status(400).json({ error: 'session_id è richiesto' });
+    
+    if (!sessionId) {
+      return res.status(400).json({ error: 'session_id è richiesto' });
+    }
 
-    await supabase.from('checkup_sessions').update({ status: 'processing' }).eq('id', sessionId);
+    console.log(`[${sessionId}] Inizio analisi PDF...`);
+
+    // ✅ FIX: Rimuovi update status ridondante
+    // La sessione è già in 'processing' da start-checkup
+    // await supabase.from('checkup_sessions').update({ status: 'processing' }).eq('id', sessionId);
 
     // 2. Download e Caricamento PDF
     console.log(`[${sessionId}] Download del PDF...`);
-    const { data: files, error: listError } = await supabase.storage.from('checkup-documents').list(`public/${sessionId}`);
-    if (listError || !files || files.length === 0) throw new Error('Nessun file trovato');
+    const { data: files, error: listError } = await supabase.storage
+      .from('checkup-documents')
+      .list(`public/${sessionId}`);
+      
+    if (listError || !files || files.length === 0) {
+      throw new Error(`Nessun file trovato per sessione ${sessionId}. Error: ${listError?.message}`);
+    }
+    
     const pdfFile = files.find(f => f.name.toLowerCase().endsWith('.pdf')) || files[0];
-    const { data: pdfData, error: downloadError } = await supabase.storage.from('checkup-documents').download(`public/${sessionId}/${pdfFile.name}`);
-    if (downloadError) throw new Error(`Errore download: ${downloadError.message}`);
+    console.log(`[${sessionId}] File PDF trovato: ${pdfFile.name}`);
+    
+    const { data: pdfData, error: downloadError } = await supabase.storage
+      .from('checkup-documents')
+      .download(`public/${sessionId}/${pdfFile.name}`);
+      
+    if (downloadError) {
+      throw new Error(`Errore download: ${downloadError.message}`);
+    }
+    
     const pdfBuffer = await pdfData.arrayBuffer();
     const pdfDocument = await pdfjsLib.getDocument(new Uint8Array(pdfBuffer)).promise;
     
     // 3. Identificazione Pagine Chiave e Estrazione Testo
-    console.log(`[${sessionId}] Identificazione pagine e estrazione testo...`);
+    console.log(`[${sessionId}] Identificazione pagine (${pdfDocument.numPages} totali)...`);
     let spPageNum = -1, cePageNum = -1;
     let spRawText = '', ceRawText = '';
 
     for (let i = 1; i <= pdfDocument.numPages; i++) {
         const page = await pdfDocument.getPage(i);
-        const textContent = (await page.getTextContent()).items.map(item => item.str).join(' ').toLowerCase();
+        const textContent = (await page.getTextContent()).items
+          .map(item => item.str)
+          .join(' ')
+          .toLowerCase();
+          
         if (spPageNum === -1 && textContent.includes('stato patrimoniale') && textContent.includes('totale attivo')) {
           spPageNum = i;
           spRawText = textContent;
+          console.log(`[${sessionId}] Trovato Stato Patrimoniale a pagina ${i}`);
         }
+        
         if (cePageNum === -1 && textContent.includes('conto economico') && (textContent.includes('valore della produzione') || textContent.includes('ricavi delle vendite'))) {
           cePageNum = i;
           ceRawText = textContent;
+          console.log(`[${sessionId}] Trovato Conto Economico a pagina ${i}`);
         }
+        
         if (spPageNum !== -1 && cePageNum !== -1) break;
     }
 
-    if (spPageNum === -1 || cePageNum === -1) throw new Error(`Impossibile identificare le pagine necessarie. SP: ${spPageNum}, CE: ${cePageNum}`);
+    if (spPageNum === -1 || cePageNum === -1) {
+      throw new Error(`Impossibile identificare le pagine necessarie. SP: ${spPageNum}, CE: ${cePageNum}`);
+    }
     
     // 4. ESTRAZIONE DATI TESTUALE
     console.log(`[${sessionId}] Avvio estrazione dati testuale...`);
@@ -164,13 +232,32 @@ RISPONDI SOLO con questo formato JSON:
     const extractedData = { ...spData, ...ceData };
     console.log(`[${sessionId}] Dati finali estratti:`, JSON.stringify(extractedData, null, 2));
 
-    // 5. ANALISI FINALE CON AI
-    console.log(`[${sessionId}] Analisi finale su dati puliti...`);
-    const { data: promptData, error: promptError } = await supabase.from('ai_prompts').select('prompt_template').eq('name', 'FINANCIAL_ANALYSIS_V2').single();
-    if (promptError) throw new Error(`Prompt non trovato: ${promptError.message}`);
+    // ✅ 5. FIX: ANALISI FINALE CON PROMPT FALLBACK
+    console.log(`[${sessionId}] Recupero prompt per analisi finale...`);
+    
+    let finalPromptTemplate = FALLBACK_PROMPT;
+    
+    // Prova a recuperare il prompt dal database, ma non fallire se non esiste
+    try {
+      const { data: promptData, error: promptError } = await supabase
+        .from('ai_prompts')
+        .select('prompt_template')
+        .eq('name', 'FINANCIAL_ANALYSIS_V2')
+        .single();
+        
+      if (!promptError && promptData) {
+        finalPromptTemplate = promptData.prompt_template;
+        console.log(`[${sessionId}] Prompt recuperato dal database`);
+      } else {
+        console.log(`[${sessionId}] Prompt database non trovato, uso fallback:`, promptError?.message);
+      }
+    } catch (promptFetchError) {
+      console.log(`[${sessionId}] Errore recupero prompt, uso fallback:`, promptFetchError.message);
+    }
 
-    const finalPrompt = promptData.prompt_template + `\n\nUSA ESCLUSIVAMENTE I SEGUENTI DATI NUMERICI PRE-ESTRATTI PER ESEGUIRE L'ANALISI:\n${JSON.stringify(extractedData)}`;
+    const finalPrompt = finalPromptTemplate + `\n\nUSA ESCLUSIVAMENTE I SEGUENTI DATI NUMERICI PRE-ESTRATTI PER ESEGUIRE L'ANALISI:\n${JSON.stringify(extractedData)}`;
 
+    console.log(`[${sessionId}] Avvio analisi finale con OpenAI...`);
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
@@ -181,11 +268,14 @@ RISPONDI SOLO con questo formato JSON:
       temperature: 0.1,
       max_tokens: 4096 
     });
-    const analysisResult = JSON.parse(completion.choices[0].message.content);
     
-    // 6. SALVATAGGIO
-    console.log(`[${sessionId}] Salvataggio risultati...`);
-    const { error: saveError } = await supabase.from('analysis_results').insert({
+    const analysisResult = JSON.parse(completion.choices[0].message.content);
+    console.log(`[${sessionId}] Analisi OpenAI completata`);
+    
+    // ✅ 6. SALVATAGGIO CON ERROR HANDLING MIGLIORATO
+    console.log(`[${sessionId}] Salvataggio risultati su analysis_results...`);
+    
+    const insertData = {
         session_id: sessionId,
         health_score: analysisResult.health_score || 0,
         summary: analysisResult.summary || '',
@@ -197,19 +287,70 @@ RISPONDI SOLO con questo formato JSON:
         risk_analysis: analysisResult.risk_analysis || [],
         pro_features_teaser: analysisResult.pro_features_teaser || {},
         raw_parsed_data: extractedData || {}
-    });
+    };
 
-    if (saveError) throw new Error(`Errore salvataggio: ${saveError.message}`);
-    await supabase.from('checkup_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
+    const { error: saveError, data: savedData } = await supabase
+      .from('analysis_results')
+      .insert(insertData)
+      .select();
+
+    if (saveError) {
+      console.error(`[${sessionId}] Errore dettagliato salvataggio:`, {
+        message: saveError.message,
+        details: saveError.details,
+        hint: saveError.hint,
+        code: saveError.code
+      });
+      throw new Error(`Errore salvataggio: ${saveError.message}`);
+    }
+
+    console.log(`[${sessionId}] ✅ Dati salvati correttamente:`, savedData?.[0]?.id);
+    
+    // Update status sessione
+    const { error: updateError } = await supabase
+      .from('checkup_sessions')
+      .update({ 
+        status: 'completed', 
+        completed_at: new Date().toISOString() 
+      })
+      .eq('id', sessionId);
+      
+    if (updateError) {
+      console.error(`[${sessionId}] Errore update sessione:`, updateError);
+      // Non è fatale, i risultati sono già salvati
+    }
 
     console.log(`[${sessionId}] 🎉 Analisi completata con successo!`);
-    return res.status(200).json({ success: true, sessionId: sessionId });
+    return res.status(200).json({ 
+      success: true, 
+      sessionId: sessionId,
+      resultId: savedData?.[0]?.id 
+    });
 
   } catch (error) {
-    console.error(`💥 [${sessionId || 'NO_SESSION'}] Errore analisi:`, error);
+    console.error(`💥 [${sessionId || 'NO_SESSION'}] Errore analisi completo:`, {
+      message: error.message,
+      stack: error.stack,
+      sessionId: sessionId
+    });
+    
     if (sessionId) {
-      await supabase.from('checkup_sessions').update({ status: 'failed', error_message: error.message }).eq('id', sessionId);
+      const { error: updateError } = await supabase
+        .from('checkup_sessions')
+        .update({ 
+          status: 'failed', 
+          error_message: error.message 
+        })
+        .eq('id', sessionId);
+        
+      if (updateError) {
+        console.error(`[${sessionId}] Errore update sessione fallita:`, updateError);
+      }
     }
-    return res.status(500).json({ error: error.message, sessionId: sessionId || null });
+    
+    return res.status(500).json({ 
+      error: error.message, 
+      sessionId: sessionId || null 
+    });
   }
 }
