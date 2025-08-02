@@ -1,12 +1,13 @@
 // /api/analyze-pdf.js
-// VERSIONE CORRETTA - Fix di tutti gli errori identificati
+// FIX WORKER: Versione compatibile con Vercel/serverless
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import * as pdfjsLib from 'pdfjs-dist/build/pdf.js';
 
-// ✅ FIX: Worker URL più stabile
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.mjs';
+// ✅ FIX CRITICO: Disabilita worker per ambiente serverless
+// Invece di impostare un worker esterno, lo disabilitiamo completamente
+pdfjsLib.GlobalWorkerOptions.workerSrc = null;
 
 // Inizializzazione client Supabase e OpenAI
 const supabase = createClient(
@@ -18,7 +19,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// ✅ FIX: Prompt fallback se ai_prompts non esiste
+// Prompt fallback se ai_prompts non esiste
 const FALLBACK_PROMPT = `Analizza i seguenti dati finanziari e fornisci un'analisi completa dell'azienda.
 
 Restituisci un JSON con questa struttura esatta:
@@ -121,7 +122,7 @@ export default async function handler(req, res) {
   let sessionId = '';
   
   try {
-    // ✅ FIX: Authorization flessibile
+    // Authorization flessibile
     console.log('🔍 Controllo autenticazione...');
     const authHeader = req.headers.authorization;
     const expectedAuth = process.env.INTERNAL_SECRET ? `Bearer ${process.env.INTERNAL_SECRET}` : null;
@@ -146,10 +147,6 @@ export default async function handler(req, res) {
 
     console.log(`[${sessionId}] Inizio analisi PDF...`);
 
-    // ✅ FIX: Rimuovi update status ridondante
-    // La sessione è già in 'processing' da start-checkup
-    // await supabase.from('checkup_sessions').update({ status: 'processing' }).eq('id', sessionId);
-
     // 2. Download e Caricamento PDF
     console.log(`[${sessionId}] Download del PDF...`);
     const { data: files, error: listError } = await supabase.storage
@@ -171,34 +168,54 @@ export default async function handler(req, res) {
       throw new Error(`Errore download: ${downloadError.message}`);
     }
     
+    console.log(`[${sessionId}] PDF scaricato, dimensione: ${pdfData.size} bytes`);
+    
+    // ✅ FIX: Caricamento PDF senza worker
     const pdfBuffer = await pdfData.arrayBuffer();
-    const pdfDocument = await pdfjsLib.getDocument(new Uint8Array(pdfBuffer)).promise;
+    
+    console.log(`[${sessionId}] Caricamento PDF con PDF.js (no-worker mode)...`);
+    
+    // Configurazione per ambiente serverless
+    const pdfDocument = await pdfjsLib.getDocument({
+      data: new Uint8Array(pdfBuffer),
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true
+    }).promise;
+    
+    console.log(`[${sessionId}] PDF caricato con successo, ${pdfDocument.numPages} pagine`);
     
     // 3. Identificazione Pagine Chiave e Estrazione Testo
-    console.log(`[${sessionId}] Identificazione pagine (${pdfDocument.numPages} totali)...`);
+    console.log(`[${sessionId}] Identificazione pagine...`);
     let spPageNum = -1, cePageNum = -1;
     let spRawText = '', ceRawText = '';
 
     for (let i = 1; i <= pdfDocument.numPages; i++) {
+        console.log(`[${sessionId}] Analizzando pagina ${i}/${pdfDocument.numPages}...`);
+        
         const page = await pdfDocument.getPage(i);
-        const textContent = (await page.getTextContent()).items
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items
           .map(item => item.str)
           .join(' ')
           .toLowerCase();
           
-        if (spPageNum === -1 && textContent.includes('stato patrimoniale') && textContent.includes('totale attivo')) {
+        if (spPageNum === -1 && pageText.includes('stato patrimoniale') && pageText.includes('totale attivo')) {
           spPageNum = i;
-          spRawText = textContent;
-          console.log(`[${sessionId}] Trovato Stato Patrimoniale a pagina ${i}`);
+          spRawText = pageText;
+          console.log(`[${sessionId}] ✅ Trovato Stato Patrimoniale a pagina ${i}`);
         }
         
-        if (cePageNum === -1 && textContent.includes('conto economico') && (textContent.includes('valore della produzione') || textContent.includes('ricavi delle vendite'))) {
+        if (cePageNum === -1 && pageText.includes('conto economico') && (pageText.includes('valore della produzione') || pageText.includes('ricavi delle vendite'))) {
           cePageNum = i;
-          ceRawText = textContent;
-          console.log(`[${sessionId}] Trovato Conto Economico a pagina ${i}`);
+          ceRawText = pageText;
+          console.log(`[${sessionId}] ✅ Trovato Conto Economico a pagina ${i}`);
         }
         
-        if (spPageNum !== -1 && cePageNum !== -1) break;
+        if (spPageNum !== -1 && cePageNum !== -1) {
+          console.log(`[${sessionId}] ✅ Entrambe le pagine trovate, interrompo scansione`);
+          break;
+        }
     }
 
     if (spPageNum === -1 || cePageNum === -1) {
@@ -232,12 +249,11 @@ RISPONDI SOLO con questo formato JSON:
     const extractedData = { ...spData, ...ceData };
     console.log(`[${sessionId}] Dati finali estratti:`, JSON.stringify(extractedData, null, 2));
 
-    // ✅ 5. FIX: ANALISI FINALE CON PROMPT FALLBACK
+    // 5. ANALISI FINALE CON PROMPT FALLBACK
     console.log(`[${sessionId}] Recupero prompt per analisi finale...`);
     
     let finalPromptTemplate = FALLBACK_PROMPT;
     
-    // Prova a recuperare il prompt dal database, ma non fallire se non esiste
     try {
       const { data: promptData, error: promptError } = await supabase
         .from('ai_prompts')
@@ -249,10 +265,10 @@ RISPONDI SOLO con questo formato JSON:
         finalPromptTemplate = promptData.prompt_template;
         console.log(`[${sessionId}] Prompt recuperato dal database`);
       } else {
-        console.log(`[${sessionId}] Prompt database non trovato, uso fallback:`, promptError?.message);
+        console.log(`[${sessionId}] Prompt database non trovato, uso fallback`);
       }
     } catch (promptFetchError) {
-      console.log(`[${sessionId}] Errore recupero prompt, uso fallback:`, promptFetchError.message);
+      console.log(`[${sessionId}] Errore recupero prompt, uso fallback`);
     }
 
     const finalPrompt = finalPromptTemplate + `\n\nUSA ESCLUSIVAMENTE I SEGUENTI DATI NUMERICI PRE-ESTRATTI PER ESEGUIRE L'ANALISI:\n${JSON.stringify(extractedData)}`;
@@ -272,7 +288,7 @@ RISPONDI SOLO con questo formato JSON:
     const analysisResult = JSON.parse(completion.choices[0].message.content);
     console.log(`[${sessionId}] Analisi OpenAI completata`);
     
-    // ✅ 6. SALVATAGGIO CON ERROR HANDLING MIGLIORATO
+    // 6. SALVATAGGIO
     console.log(`[${sessionId}] Salvataggio risultati su analysis_results...`);
     
     const insertData = {
@@ -317,7 +333,6 @@ RISPONDI SOLO con questo formato JSON:
       
     if (updateError) {
       console.error(`[${sessionId}] Errore update sessione:`, updateError);
-      // Non è fatale, i risultati sono già salvati
     }
 
     console.log(`[${sessionId}] 🎉 Analisi completata con successo!`);
