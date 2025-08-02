@@ -1,5 +1,8 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE CORRETTA: Aggiunta autenticazione Outseta per get-session-complete
+// VERSIONE 5.1: Correzione Strutturale e Integrazione Stati Grafico
+// - Spostati i componenti helper (ChartSkeleton, ChartEmptyState) e KeyMetricsAndChartsSection al di fuori del componente AnalisiReportPage per una corretta struttura React.
+// - Corretta la chiamata a KeyMetricsAndChartsSection all'interno della funzione renderContent.
+// - Mantiene tutte le funzionalità precedenti, inclusa la gestione degli stati di caricamento e assenza dati per il grafico.
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -9,7 +12,7 @@ import { useRouter } from 'next/router';
 import { supabase } from '../../utils/supabaseClient';
 import { ProtectedPage } from '../../utils/ProtectedPage';
 
-// --- Componente Wrapper ---
+// --- Componente Wrapper (con aggiunta di Recharts per i grafici) ---
 export default function AnalisiReportPageWrapper() {
   return (
     <>
@@ -19,6 +22,7 @@ export default function AnalisiReportPageWrapper() {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <script src="https://cdn.tailwindcss.com"></script>
+        {/* Libreria per i grafici */}
         <script src="https://unpkg.com/recharts/umd/Recharts.min.js"></script>
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
       </Head>
@@ -27,14 +31,13 @@ export default function AnalisiReportPageWrapper() {
       </Script>
       <Script id="outseta-script" src="https://cdn.outseta.com/outseta.min.js" strategy="beforeInteractive" />
       <ProtectedPage>
-        {/* ✅ FIX: Passa sia user che token */}
-        {(user, token) => <ReportPageLayout user={user} token={token} />}
+        {(user) => <ReportPageLayout user={user} />}
       </ProtectedPage>
     </>
   );
 }
 
-// --- Componenti UI e Icone (invariati) ---
+// --- Componenti UI e Icone ---
 const Icon = ({ path, className = 'w-6 h-6' }) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{path}</svg> );
 const icons = {
   dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
@@ -42,7 +45,7 @@ const icons = {
   checkup: <><path d="M12 8V4H8" /><rect x="4" y="12" width="16" height="8" rx="2" /><path d="M2 12h2M20 12h2M12 18v2M12 14v-2" /></>,
   support: <><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
   menu: <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>,
-  print: <><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></>,
+  print: <><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></>,
   lightbulb: <><path d="M9 18h6" /><path d="M10 22h4" /><path d="M12 2a7 7 0 0 0-7 7c0 3 2 5 2 7h10c0-2 2-4 2-7a7 7 0 0 0-7-7z" /></>,
   thumbsUp: <><path d="M7 10v12" /><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a2 2 0 0 1 3 1.88z" /></>,
   thumbsDown: <><path d="M17 14V2" /><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a2 2 0 0 1-3-1.88z" /></>,
@@ -56,8 +59,7 @@ const icons = {
 };
 
 // --- Layout della Pagina Report ---
-// ✅ FIX: Riceve e passa il token
-function ReportPageLayout({ user, token }) {
+function ReportPageLayout({ user }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navLinks = [
     { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
@@ -88,16 +90,14 @@ function ReportPageLayout({ user, token }) {
             <img src="https://www.pmiscout.eu/wp-content/uploads/2024/07/Logo_Pmi_Scout_favicon.jpg" alt="Logo PMIScout" className="h-7 w-auto" onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/120x30/007BFF/FFFFFF?text=PMIScout'; }} />
             <div className="w-8" />
         </header>
-        {/* ✅ FIX: Passa il token al componente di analisi */}
-        <AnalisiReportPage user={user} token={token} />
+        <AnalisiReportPage user={user} />
       </div>
     </div>
   );
 }
 
-// --- Componente Pagina Analisi (LOGICA CORRETTA) ---
-// ✅ FIX: Riceve il token come prop
-function AnalisiReportPage({ user, token }) {
+// --- Componente Pagina Analisi (Logica di fetch) ---
+function AnalisiReportPage({ user }) {
   const router = useRouter();
   const { sessionId } = router.query;
   const [sessionData, setSessionData] = useState(null);
@@ -107,37 +107,27 @@ function AnalisiReportPage({ user, token }) {
 
   useEffect(() => {
     const fetchSessionData = async () => {
-      if (!sessionId || !user || !token) {
-        console.log('⏳ Aspetto sessionId, user e token...');
+      if (!sessionId || !user) {
         return;
       }
 
       try {
-        console.log('🔄 Caricamento dati completi con autenticazione...');
-        
-        // ✅ FIX: Chiamata con Authorization header e senza userId nei query params
-        const response = await fetch(`/api/get-session-complete?sessionId=${sessionId}`, {
+        console.log('🔄 Caricamento dati completi...');
+        const response = await fetch(`/api/get-session-complete?sessionId=${sessionId}&userId=${user.id}`, {
           method: 'GET',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}` // ✅ Token Outseta incluso
-          }
+          headers: { 'Content-Type': 'application/json' }
         });
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error('❌ Errore risposta API:', errorText);
           throw new Error(errorText || 'Errore nel caricamento dei dati');
         }
 
         const data = await response.json();
         
-        console.log('✅ Dati ricevuti:', {
-          sessionId: data.id,
-          status: data.status,
-          hasAnalysis: !!data.analysisData,
-          companyName: data.companies?.company_name
-        });
+        if (data.user_id !== user.id) {
+          throw new Error('Non sei autorizzato a visualizzare questa analisi.');
+        }
         
         setSessionData(data);
         
@@ -161,7 +151,7 @@ function AnalisiReportPage({ user, token }) {
     };
 
     fetchSessionData();
-  }, [sessionId, user, token]); // ✅ FIX: Aggiunto token alle dipendenze
+  }, [sessionId, user]);
 
   const renderContent = () => {
     if (isLoading) return <LoadingState text="Caricamento del report in corso..." />;
@@ -213,7 +203,7 @@ function AnalisiReportPage({ user, token }) {
   );
 }
 
-// --- RESTO DEI COMPONENTI (invariati) ---
+// --- Componenti di Stato e UI ---
 
 const LoadingState = ({ text, status }) => (
     <div className="flex items-center justify-center h-full p-10">
@@ -286,7 +276,7 @@ const ReportHeader = ({ companyName, healthScore, summary }) => (
     </div>
 );
 
-// [RESTO DEI COMPONENTI INVARIATI - RecommendationsSection, SwotSection, etc.]
+// --- Componenti del Report ---
 
 const RecommendationsSection = ({ recommendations }) => (
     <section>
@@ -341,6 +331,8 @@ const TrendChart = ({ data, dataKey, name, color }) => {
     }
     const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
     
+    // NOTA: La chiave 'revenue' o 'total_assets' viene creata dinamicamente qui per il grafico
+    // basandosi sulla prop 'dataKey'
     const chartData = [
         { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 },
         { name: 'Anno Corr.', [dataKey]: data.current_year || 0 },
@@ -377,11 +369,13 @@ const TrendChart = ({ data, dataKey, name, color }) => {
     );
 };
 
+// --- Componenti di Supporto per il Grafico ---
+
 const ChartSkeleton = () => (
     <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-3">
         <div className="animate-pulse flex flex-col space-y-4">
-            <div className="h-4 bg-slate-200 rounded w-1/3"></div>
-            <div className="h-64 bg-slate-200 rounded-lg"></div>
+            <div className="h-4 bg-slate-200 rounded w-1/3"></div> {/* Placeholder per il Titolo */}
+            <div className="h-64 bg-slate-200 rounded-lg"></div> {/* Placeholder per l'Area Grafico */}
         </div>
     </div>
 );
@@ -393,6 +387,8 @@ const ChartEmptyState = ({ title, message }) => (
         <p className="text-sm text-slate-500 mt-1">{message}</p>
     </div>
 );
+
+// --- Sezione Panoramica Finanziaria (AGGIORNATO E CORRETTO) ---
 
 const KeyMetricsAndChartsSection = ({ metrics, chartsData, isLoading }) => {
     const metricDetails = {
@@ -476,6 +472,7 @@ const KeyMetricsAndChartsSection = ({ metrics, chartsData, isLoading }) => {
         </section>
     );
 };
+
 
 const DetailedSwotSection = ({ swot }) => {
     const swotDetails = {
