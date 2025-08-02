@@ -1,13 +1,9 @@
 // /api/analyze-pdf.js
-// FIX WORKER: Versione compatibile con Vercel/serverless
+// SOLUZIONE DEFINITIVA: Usa pdf-parse invece di pdfjs-dist per compatibilità Vercel
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
-import * as pdfjsLib from 'pdfjs-dist/build/pdf.js';
-
-// ✅ FIX CRITICO: Disabilita worker per ambiente serverless
-// Invece di impostare un worker esterno, lo disabilitiamo completamente
-pdfjsLib.GlobalWorkerOptions.workerSrc = null;
+import pdf from 'pdf-parse'; // ✅ Libreria più semplice e compatibile con serverless
 
 // Inizializzazione client Supabase e OpenAI
 const supabase = createClient(
@@ -19,7 +15,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Prompt fallback se ai_prompts non esiste
+// Prompt fallback
 const FALLBACK_PROMPT = `Analizza i seguenti dati finanziari e fornisci un'analisi completa dell'azienda.
 
 Restituisci un JSON con questa struttura esatta:
@@ -88,14 +84,45 @@ function validateAndCleanOutput(data, expectedFields) {
     return cleaned;
 }
 
-async function extractFromRawText(rawText, expectedFields, promptTemplate, sessionId) {
-    console.log(`[${sessionId}] Esecuzione estrazione solo testo...`);
+// ✅ NUOVA FUNZIONE: Estrae dati da tutto il testo PDF
+async function extractDataFromFullText(fullText, expectedFields, promptTemplate, sessionId) {
+    console.log(`[${sessionId}] Estrazione dati da testo completo (${fullText.length} caratteri)...`);
+    
+    // Cerca le sezioni rilevanti nel testo
+    const lowerText = fullText.toLowerCase();
+    
+    // Estrai sezioni specifiche se possibile
+    let relevantText = fullText;
+    
+    if (lowerText.includes('stato patrimoniale') || lowerText.includes('conto economico')) {
+        console.log(`[${sessionId}] Trovate sezioni di bilancio nel testo`);
+        
+        // Estrai porzioni di testo più rilevanti per ridurre token
+        const sentences = fullText.split(/[.!?]+/);
+        const relevantSentences = sentences.filter(sentence => {
+            const s = sentence.toLowerCase();
+            return s.includes('attivo') || s.includes('passivo') || s.includes('patrimonio') || 
+                   s.includes('ricavi') || s.includes('vendite') || s.includes('debiti') ||
+                   s.includes('totale') || /\d{1,3}[\.,]?\d{3}/.test(sentence);
+        });
+        
+        if (relevantSentences.length > 0) {
+            relevantText = relevantSentences.join('. ');
+            console.log(`[${sessionId}] Filtrato testo da ${sentences.length} a ${relevantSentences.length} frasi rilevanti`);
+        }
+    }
+    
+    // Limita lunghezza per evitare problemi con OpenAI
+    if (relevantText.length > 10000) {
+        relevantText = relevantText.substring(0, 10000) + '...';
+        console.log(`[${sessionId}] Testo troncato a 10000 caratteri`);
+    }
     
     const prompt = `${promptTemplate}
 
 Testo del bilancio da cui estrarre i dati:
 """
-${rawText}
+${relevantText}
 """`;
     
     const completion = await openai.chat.completions.create({
@@ -147,7 +174,7 @@ export default async function handler(req, res) {
 
     console.log(`[${sessionId}] Inizio analisi PDF...`);
 
-    // 2. Download e Caricamento PDF
+    // 2. Download PDF
     console.log(`[${sessionId}] Download del PDF...`);
     const { data: files, error: listError } = await supabase.storage
       .from('checkup-documents')
@@ -170,86 +197,65 @@ export default async function handler(req, res) {
     
     console.log(`[${sessionId}] PDF scaricato, dimensione: ${pdfData.size} bytes`);
     
-    // ✅ FIX: Caricamento PDF senza worker
-    const pdfBuffer = await pdfData.arrayBuffer();
+    // ✅ 3. ESTRAZIONE TESTO CON PDF-PARSE (Compatibile serverless)
+    console.log(`[${sessionId}] Estrazione testo con pdf-parse...`);
     
-    console.log(`[${sessionId}] Caricamento PDF con PDF.js (no-worker mode)...`);
+    const pdfBuffer = Buffer.from(await pdfData.arrayBuffer());
+    const pdfParsed = await pdf(pdfBuffer);
     
-    // Configurazione per ambiente serverless
-    const pdfDocument = await pdfjsLib.getDocument({
-      data: new Uint8Array(pdfBuffer),
-      useWorkerFetch: false,
-      isEvalSupported: false,
-      useSystemFonts: true
-    }).promise;
+    console.log(`[${sessionId}] ✅ Testo estratto: ${pdfParsed.text.length} caratteri, ${pdfParsed.numpages} pagine`);
     
-    console.log(`[${sessionId}] PDF caricato con successo, ${pdfDocument.numPages} pagine`);
-    
-    // 3. Identificazione Pagine Chiave e Estrazione Testo
-    console.log(`[${sessionId}] Identificazione pagine...`);
-    let spPageNum = -1, cePageNum = -1;
-    let spRawText = '', ceRawText = '';
-
-    for (let i = 1; i <= pdfDocument.numPages; i++) {
-        console.log(`[${sessionId}] Analizzando pagina ${i}/${pdfDocument.numPages}...`);
-        
-        const page = await pdfDocument.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items
-          .map(item => item.str)
-          .join(' ')
-          .toLowerCase();
-          
-        if (spPageNum === -1 && pageText.includes('stato patrimoniale') && pageText.includes('totale attivo')) {
-          spPageNum = i;
-          spRawText = pageText;
-          console.log(`[${sessionId}] ✅ Trovato Stato Patrimoniale a pagina ${i}`);
-        }
-        
-        if (cePageNum === -1 && pageText.includes('conto economico') && (pageText.includes('valore della produzione') || pageText.includes('ricavi delle vendite'))) {
-          cePageNum = i;
-          ceRawText = pageText;
-          console.log(`[${sessionId}] ✅ Trovato Conto Economico a pagina ${i}`);
-        }
-        
-        if (spPageNum !== -1 && cePageNum !== -1) {
-          console.log(`[${sessionId}] ✅ Entrambe le pagine trovate, interrompo scansione`);
-          break;
-        }
-    }
-
-    if (spPageNum === -1 || cePageNum === -1) {
-      throw new Error(`Impossibile identificare le pagine necessarie. SP: ${spPageNum}, CE: ${cePageNum}`);
+    if (!pdfParsed.text || pdfParsed.text.length < 100) {
+      throw new Error(`PDF sembra vuoto o non leggibile. Testo estratto: ${pdfParsed.text.length} caratteri`);
     }
     
-    // 4. ESTRAZIONE DATI TESTUALE
-    console.log(`[${sessionId}] Avvio estrazione dati testuale...`);
+    // 4. ESTRAZIONE DATI DA TUTTO IL TESTO
+    console.log(`[${sessionId}] Avvio estrazione dati finanziari...`);
 
-    const spExpectedFields = ['total_assets_current', 'total_assets_previous', 'total_debt_current', 'total_debt_previous', 'net_equity_current', 'net_equity_previous'];
-    const spPrompt = `IMPORTANTE: Estrai ESATTAMENTE questi 6 valori numerici dal testo del bilancio fornito:
+    // Cerchiamo tutti i dati in un'unica passata
+    const allExpectedFields = [
+        'total_assets_current', 'total_assets_previous', 
+        'total_debt_current', 'total_debt_previous', 
+        'net_equity_current', 'net_equity_previous',
+        'revenue_current', 'revenue_previous'
+    ];
+    
+    const allDataPrompt = `IMPORTANTE: Estrai ESATTAMENTE questi 8 valori numerici dal testo del bilancio fornito:
+
+STATO PATRIMONIALE:
 1. total_assets_current: Totale Attivo anno corrente
 2. total_assets_previous: Totale Attivo anno precedente  
 3. total_debt_current: Totale Debiti (D) anno corrente
 4. total_debt_previous: Totale Debiti (D) anno precedente
 5. net_equity_current: Totale Patrimonio Netto (A) anno corrente
 6. net_equity_previous: Totale Patrimonio Netto (A) anno precedente
+
+CONTO ECONOMICO:
+7. revenue_current: Ricavi delle vendite e delle prestazioni anno corrente
+8. revenue_previous: Ricavi delle vendite e delle prestazioni anno precedente
+
 RISPONDI SOLO con questo formato JSON (numeri puri, senza virgole o punti come separatori delle migliaia):
-{ "total_assets_current": 1234567, "total_assets_previous": 1234567, "total_debt_current": 1234567, "total_debt_previous": 1234567, "net_equity_current": 1234567, "net_equity_previous": 1234567 }`;
-
-    const ceExpectedFields = ['revenue_current', 'revenue_previous'];
-    const cePrompt = `IMPORTANTE: Estrai ESATTAMENTE questi 2 valori numerici dal testo del conto economico:
-1. revenue_current: Ricavi delle vendite e delle prestazioni anno corrente
-2. revenue_previous: Ricavi delle vendite e delle prestazioni anno precedente
-RISPONDI SOLO con questo formato JSON:
-{ "revenue_current": 1234567, "revenue_previous": 1234567 }`;
+{
+  "total_assets_current": 1234567,
+  "total_assets_previous": 1234567,
+  "total_debt_current": 1234567,
+  "total_debt_previous": 1234567,
+  "net_equity_current": 1234567,
+  "net_equity_previous": 1234567,
+  "revenue_current": 1234567,
+  "revenue_previous": 1234567
+}`;
     
-    const spData = await extractFromRawText(spRawText, spExpectedFields, spPrompt, sessionId);
-    const ceData = await extractFromRawText(ceRawText, ceExpectedFields, cePrompt, sessionId);
-
-    const extractedData = { ...spData, ...ceData };
+    const extractedData = await extractDataFromFullText(
+        pdfParsed.text, 
+        allExpectedFields, 
+        allDataPrompt, 
+        sessionId
+    );
+    
     console.log(`[${sessionId}] Dati finali estratti:`, JSON.stringify(extractedData, null, 2));
 
-    // 5. ANALISI FINALE CON PROMPT FALLBACK
+    // 5. ANALISI FINALE
     console.log(`[${sessionId}] Recupero prompt per analisi finale...`);
     
     let finalPromptTemplate = FALLBACK_PROMPT;
