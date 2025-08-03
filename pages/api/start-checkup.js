@@ -1,9 +1,10 @@
 // /pages/api/start-checkup.js
-// VERSIONE CORRETTA - Fix di tutti gli errori identificati
+// VERSIONE FINALE - Usa il modulo centralizzato per l'analisi AI
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
 import fs from 'fs';
+import { launchAIAnalysis } from '../../lib/ai-analysis.js'; // <-- ✅ 1. IMPORTA LA NUOVA FUNZIONE
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -98,55 +99,26 @@ export default async function handler(req, res) {
       throw new Error(`Errore upload file: ${uploadError.message}`);
     }
     
-    // ✅ 5. FIX: COSTRUZIONE URL CORRETTA
-    console.log(`[${session.id}] Sessione creata. Avvio dell'analisi in background...`);
-    
-    // ✅ FIX: Costruisci l'URL dal request invece di VERCEL_URL
-    const host = req.headers.host;
-    const protocol = req.headers['x-forwarded-proto'] || (host?.includes('localhost') ? 'http' : 'https');
-    const analyzeApiUrl = `${protocol}://${host}/api/analyze-pdf`;
-    
-    console.log(`[${session.id}] URL analisi: ${analyzeApiUrl}`);
-    
-    // ✅ FIX: Verifica che le variabili ambiente esistano
-    if (!process.env.INTERNAL_SECRET) {
-      console.warn(`[${session.id}] INTERNAL_SECRET non impostato, procedo senza autenticazione`);
-    }
-
-    // ✅ FIX: Chiamata con gestione errori migliorata
+    // ✅ 5. SOSTITUZIONE: Avvio dell'analisi AI tramite il modulo centralizzato
     try {
-      const analyzeResponse = await fetch(analyzeApiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Solo se INTERNAL_SECRET è impostato
-          ...(process.env.INTERNAL_SECRET && {
-            'Authorization': `Bearer ${process.env.INTERNAL_SECRET}`
-          })
-        },
-        body: JSON.stringify({ session_id: session.id })
-      });
-
-      console.log(`[${session.id}] Risposta analisi: ${analyzeResponse.status} ${analyzeResponse.statusText}`);
-      
-      if (!analyzeResponse.ok) {
-        // Non è un errore fatale, ma logghiamo per debug
-        const errorText = await analyzeResponse.text().catch(() => 'Impossibile leggere errore');
-        console.error(`[${session.id}] Errore HTTP analisi: ${analyzeResponse.status} - ${errorText}`);
-      } else {
-        console.log(`✅ [${session.id}] Analisi avviata con successo`);
-      }
-      
-    } catch (fetchError) {
-      // Errore di rete o altro - non bloccare la risposta
-      console.error(`[${session.id}] Errore chiamata analisi:`, fetchError.message);
-      
-      // ✅ FIX: Segna la sessione come fallita solo per questo tipo di errore
+      console.log(`[${session.id}] Avvio analisi AI tramite il modulo dedicato...`);
+    
+      // Chiama la funzione robusta e centralizzata dal file /lib/ai-analysis.js
+      await launchAIAnalysis(session.id);
+    
+      console.log(`[${session.id}] Comando di avvio analisi inviato con successo.`);
+    
+    } catch (error) {
+      // Se launchAIAnalysis fallisce (es. per variabili d'ambiente mancanti),
+      // il modulo genererà un errore descrittivo che catturiamo qui.
+      console.error(`[${session.id}] Il modulo di analisi ha restituito un errore bloccante:`, error.message);
+    
+      // Aggiorniamo lo stato della sessione nel database per notificare il fallimento.
       await supabase
         .from('checkup_sessions')
-        .update({ 
-          status: 'failed', 
-          error_message: `Errore avvio analisi: ${fetchError.message}` 
+        .update({
+          status: 'failed',
+          error_message: `Errore avvio analisi: ${error.message}`
         })
         .eq('id', session.id);
     }
