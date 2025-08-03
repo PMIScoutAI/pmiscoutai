@@ -566,3 +566,4 @@ const ProTeaserSection = ({ teaser }) => (
             </a>
         </div>
     </section>
+);
