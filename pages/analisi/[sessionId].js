@@ -1,10 +1,9 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 5.1: Correzione Strutturale e Integrazione Stati Grafico
-// - Spostati i componenti helper (ChartSkeleton, ChartEmptyState) e KeyMetricsAndChartsSection al di fuori del componente AnalisiReportPage per una corretta struttura React.
-// - Corretta la chiamata a KeyMetricsAndChartsSection all'interno della funzione renderContent.
-// - Mantiene tutte le funzionalità precedenti, inclusa la gestione degli stati di caricamento e assenza dati per il grafico.
+// VERSIONE 6.0: Implementazione del Polling per l'aggiornamento automatico
+// - La pagina ora controlla lo stato dell'analisi ogni 3 secondi.
+// - L'utente viene reindirizzato automaticamente al report completato senza bisogno di ricaricare la pagina.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react'; // Aggiunto useRef
 import Head from 'next/head';
 import Link from 'next/link';
 import Script from 'next/script';
@@ -12,7 +11,7 @@ import { useRouter } from 'next/router';
 import { supabase } from '../../utils/supabaseClient';
 import { ProtectedPage } from '../../utils/ProtectedPage';
 
-// --- Componente Wrapper (con aggiunta di Recharts per i grafici) ---
+// --- Componente Wrapper (invariato) ---
 export default function AnalisiReportPageWrapper() {
   return (
     <>
@@ -37,7 +36,7 @@ export default function AnalisiReportPageWrapper() {
   );
 }
 
-// --- Componenti UI e Icone ---
+// --- Componenti UI e Icone (invariati) ---
 const Icon = ({ path, className = 'w-6 h-6' }) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{path}</svg> );
 const icons = {
   dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
@@ -58,7 +57,7 @@ const icons = {
   zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></>,
 };
 
-// --- Layout della Pagina Report ---
+// --- Layout della Pagina Report (invariato) ---
 function ReportPageLayout({ user }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navLinks = [
@@ -96,7 +95,7 @@ function ReportPageLayout({ user }) {
   );
 }
 
-// --- Componente Pagina Analisi (Logica di fetch) ---
+// --- Componente Pagina Analisi (Logica di fetch AGGIORNATA CON POLLING) ---
 function AnalisiReportPage({ user }) {
   const router = useRouter();
   const { sessionId } = router.query;
@@ -104,61 +103,83 @@ function AnalisiReportPage({ user }) {
   const [analysisData, setAnalysisData] = useState(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Usiamo useRef per tenere traccia dell'intervallo senza causare ri-render
+  const pollingIntervalRef = useRef(null);
 
   useEffect(() => {
-    const fetchSessionData = async () => {
+    // Funzione per recuperare i dati e controllare lo stato
+    const fetchAndCheckStatus = async () => {
       if (!sessionId || !user) {
         return;
       }
 
       try {
-        console.log('🔄 Caricamento dati completi...');
-        const response = await fetch(`/api/get-session-complete?sessionId=${sessionId}&userId=${user.id}`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' }
-        });
+        console.log('🔄 Polling: controllo stato sessione...');
+        const response = await fetch(`/api/get-session-complete?sessionId=${sessionId}&userId=${user.id}`);
 
         if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || 'Errore nel caricamento dei dati');
+          // Se il server risponde con un errore, fermiamo il polling
+          throw new Error('Errore nel recupero dello stato dell\'analisi.');
         }
 
         const data = await response.json();
-        
-        if (data.user_id !== user.id) {
-          throw new Error('Non sei autorizzato a visualizzare questa analisi.');
-        }
-        
-        setSessionData(data);
-        
-        if (data.analysisData) {
-          setAnalysisData(data.analysisData);
-          console.log('✅ Dati completi caricati (sessione + analisi)');
-        } else if (data.status === 'completed') {
-          console.log('⚠️ Sessione completata ma nessun risultato di analisi trovato');
-        } else if (data.status === 'failed') {
-          setError(data.error_message || 'Errore durante l\'analisi.');
-        } else {
-          console.log('⏳ Analisi in corso, status:', data.status);
-        }
+        setSessionData(data); // Aggiorna i dati della sessione
 
+        // Controlla se lo stato è finale (completato o fallito)
+        if (data.status === 'completed' || data.status === 'failed') {
+          console.log(`✅ Polling terminato. Stato finale: ${data.status}`);
+          // Ferma il polling
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+          }
+          
+          if (data.status === 'completed' && data.analysisData) {
+            setAnalysisData(data.analysisData);
+          } else if (data.status === 'failed') {
+            setError(data.error_message || 'Si è verificato un errore durante l\'analisi.');
+          }
+          setIsLoading(false); // Abbiamo un risultato finale, smettiamo di caricare
+        }
+        
       } catch (err) {
-        console.error('❌ Data fetching error:', err);
+        console.error('❌ Errore durante il polling:', err);
         setError(err.message);
-      } finally {
         setIsLoading(false);
+        // Ferma il polling anche in caso di errore di rete
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+        }
       }
     };
 
-    fetchSessionData();
-  }, [sessionId, user]);
+    // Avvia il polling solo se abbiamo sessionId e user
+    if (sessionId && user) {
+        // Esegui subito la prima chiamata
+        fetchAndCheckStatus();
+        // Imposta l'intervallo per le chiamate successive ogni 3 secondi
+        pollingIntervalRef.current = setInterval(fetchAndCheckStatus, 3000);
+    }
+
+    // Funzione di pulizia: viene eseguita quando il componente viene smontato
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, [sessionId, user]); // Questo effetto si attiva solo quando sessionId o user cambiano
 
   const renderContent = () => {
     if (isLoading) return <LoadingState text="Caricamento del report in corso..." />;
     if (error) return <ErrorState message={error} />;
     if (!sessionData) return <ErrorState message="Nessun dato trovato per questa sessione." />;
-    if (sessionData.status !== 'completed') return <LoadingState text="L'analisi è in coda di elaborazione..." status={sessionData.status} />;
-    if (!analysisData) return <LoadingState text="Recupero dei risultati finali..." />;
+    
+    // Se l'analisi non è ancora completata, mostra lo stato di attesa
+    if (sessionData.status !== 'completed') {
+        return <LoadingState text="L'analisi è in coda di elaborazione..." status={sessionData.status} />;
+    }
+    
+    if (!analysisData) return <ErrorState message="Analisi completata, ma non è stato possibile recuperare i risultati." />;
 
     const companyName = analysisData.raw_ai_response?.company_name || sessionData.companies?.company_name;
     const healthScore = analysisData.health_score || 0;
@@ -170,7 +191,7 @@ function AnalisiReportPage({ user }) {
         <KeyMetricsAndChartsSection 
             metrics={analysisData.key_metrics} 
             chartsData={analysisData.charts_data}
-            isLoading={isLoading} 
+            isLoading={false} // Ora passiamo false perché abbiamo già gestito il caricamento
         />
 
         {analysisData.detailed_swot ? 
@@ -203,7 +224,7 @@ function AnalisiReportPage({ user }) {
   );
 }
 
-// --- Componenti di Stato e UI ---
+// --- Componenti di Stato e UI (invariati) ---
 
 const LoadingState = ({ text, status }) => (
     <div className="flex items-center justify-center h-full p-10">
@@ -276,7 +297,7 @@ const ReportHeader = ({ companyName, healthScore, summary }) => (
     </div>
 );
 
-// --- Componenti del Report ---
+// --- Componenti del Report (invariati) ---
 
 const RecommendationsSection = ({ recommendations }) => (
     <section>
@@ -331,8 +352,6 @@ const TrendChart = ({ data, dataKey, name, color }) => {
     }
     const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
     
-    // NOTA: La chiave 'revenue' o 'total_assets' viene creata dinamicamente qui per il grafico
-    // basandosi sulla prop 'dataKey'
     const chartData = [
         { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 },
         { name: 'Anno Corr.', [dataKey]: data.current_year || 0 },
@@ -369,13 +388,11 @@ const TrendChart = ({ data, dataKey, name, color }) => {
     );
 };
 
-// --- Componenti di Supporto per il Grafico ---
-
 const ChartSkeleton = () => (
     <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-3">
         <div className="animate-pulse flex flex-col space-y-4">
-            <div className="h-4 bg-slate-200 rounded w-1/3"></div> {/* Placeholder per il Titolo */}
-            <div className="h-64 bg-slate-200 rounded-lg"></div> {/* Placeholder per l'Area Grafico */}
+            <div className="h-4 bg-slate-200 rounded w-1/3"></div>
+            <div className="h-64 bg-slate-200 rounded-lg"></div>
         </div>
     </div>
 );
@@ -387,8 +404,6 @@ const ChartEmptyState = ({ title, message }) => (
         <p className="text-sm text-slate-500 mt-1">{message}</p>
     </div>
 );
-
-// --- Sezione Panoramica Finanziaria (AGGIORNATO E CORRETTO) ---
 
 const KeyMetricsAndChartsSection = ({ metrics, chartsData, isLoading }) => {
     const metricDetails = {
@@ -463,10 +478,10 @@ const KeyMetricsAndChartsSection = ({ metrics, chartsData, isLoading }) => {
                 )}
 
                 {!isLoading && !chartConfig && (
-                     <ChartEmptyState
-                        title="Dati per il grafico non disponibili"
-                        message="Non è stato possibile recuperare i dati storici per generare un'analisi visuale dell'andamento."
-                    />
+                       <ChartEmptyState
+                            title="Dati per il grafico non disponibili"
+                            message="Non è stato possibile recuperare i dati storici per generare un'analisi visuale dell'andamento."
+                       />
                 )}
             </div>
         </section>
@@ -551,4 +566,3 @@ const ProTeaserSection = ({ teaser }) => (
             </a>
         </div>
     </section>
-);
