@@ -1,7 +1,7 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 6.1: Correzione errore di sintassi (parentesi mancante)
-// - Risolve il "Build failed" su Vercel.
-// - Mantiene l'implementazione del Polling per l'aggiornamento automatico.
+// VERSIONE 7.0: Implementazione del Polling per l'aggiornamento automatico
+// - La pagina ora controlla lo stato dell'analisi ogni 3 secondi.
+// - L'utente vede il report finale automaticamente senza bisogno di ricaricare la pagina.
 
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -95,7 +95,7 @@ function ReportPageLayout({ user }) {
   );
 }
 
-// --- Componente Pagina Analisi (Logica di fetch con Polling) ---
+// --- Componente Pagina Analisi (Logica di fetch AGGIORNATA CON POLLING) ---
 function AnalisiReportPage({ user }) {
   const router = useRouter();
   const { sessionId } = router.query;
@@ -104,9 +104,11 @@ function AnalisiReportPage({ user }) {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   
+  // Usiamo useRef per tenere traccia dell'intervallo senza causare ri-render
   const pollingIntervalRef = useRef(null);
 
   useEffect(() => {
+    // Funzione per recuperare i dati e controllare lo stato
     const fetchAndCheckStatus = async () => {
       if (!sessionId || !user) {
         return;
@@ -117,14 +119,17 @@ function AnalisiReportPage({ user }) {
         const response = await fetch(`/api/get-session-complete?sessionId=${sessionId}&userId=${user.id}`);
 
         if (!response.ok) {
+          // Se il server risponde con un errore, fermiamo il polling
           throw new Error('Errore nel recupero dello stato dell\'analisi.');
         }
 
         const data = await response.json();
-        setSessionData(data); 
+        setSessionData(data); // Aggiorna i dati della sessione
 
+        // Controlla se lo stato è finale (completato o fallito)
         if (data.status === 'completed' || data.status === 'failed') {
           console.log(`✅ Polling terminato. Stato finale: ${data.status}`);
+          // Ferma il polling
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
           }
@@ -134,24 +139,29 @@ function AnalisiReportPage({ user }) {
           } else if (data.status === 'failed') {
             setError(data.error_message || 'Si è verificato un errore durante l\'analisi.');
           }
-          setIsLoading(false); 
+          setIsLoading(false); // Abbiamo un risultato finale, smettiamo di caricare
         }
         
       } catch (err) {
         console.error('❌ Errore durante il polling:', err);
         setError(err.message);
         setIsLoading(false);
+        // Ferma il polling anche in caso di errore di rete
         if (pollingIntervalRef.current) {
           clearInterval(pollingIntervalRef.current);
         }
       }
     };
 
+    // Avvia il polling solo se abbiamo sessionId e user
     if (sessionId && user) {
+        // Esegui subito la prima chiamata
         fetchAndCheckStatus();
+        // Imposta l'intervallo per le chiamate successive ogni 3 secondi
         pollingIntervalRef.current = setInterval(fetchAndCheckStatus, 3000);
     }
 
+    // Funzione di pulizia: viene eseguita quando il componente viene smontato
     return () => {
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
@@ -164,7 +174,8 @@ function AnalisiReportPage({ user }) {
     if (error) return <ErrorState message={error} />;
     if (!sessionData) return <ErrorState message="Nessun dato trovato per questa sessione." />;
     
-    if (sessionData.status !== 'completed') {
+    // Se l'analisi non è ancora completata, mostra lo stato di attesa
+    if (sessionData.status !== 'completed' && sessionData.status !== 'failed') {
         return <LoadingState text="L'analisi è in coda di elaborazione..." status={sessionData.status} />;
     }
     
@@ -555,4 +566,3 @@ const ProTeaserSection = ({ teaser }) => (
             </a>
         </div>
     </section>
-);
