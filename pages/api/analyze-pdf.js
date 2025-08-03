@@ -1,9 +1,9 @@
-// /api/analyze-pdf.js
-// SOLUZIONE DEFINITIVA: Usa pdf-parse invece di pdfjs-dist per compatibilità Vercel
+// /pages/api/analyze-pdf.js
+// VERSIONE FINALE CORRETTA - Rimuove l'auth interna e legge sessionId dall'URL
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
-import pdf from 'pdf-parse'; // ✅ Libreria più semplice e compatibile con serverless
+import pdf from 'pdf-parse';
 
 // Inizializzazione client Supabase e OpenAI
 const supabase = createClient(
@@ -15,7 +15,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Prompt fallback
+// Prompt fallback (invariato)
 const FALLBACK_PROMPT = `Analizza i seguenti dati finanziari e fornisci un'analisi completa dell'azienda.
 
 Restituisci un JSON con questa struttura esatta:
@@ -51,9 +51,10 @@ Restituisci un JSON con questa struttura esatta:
   }
 }`;
 
-// --- FUNZIONI DI ESTRAZIONE E VALIDAZIONE ---
+// --- FUNZIONI DI ESTRAZIONE E VALIDAZIONE (invariate) ---
 
 function validateAndCleanOutput(data, expectedFields) {
+    // ... (questa funzione rimane identica)
     console.log('Validating Raw AI Output:', JSON.stringify(data, null, 2));
     const cleaned = {};
     let hasValidData = false;
@@ -84,20 +85,17 @@ function validateAndCleanOutput(data, expectedFields) {
     return cleaned;
 }
 
-// ✅ NUOVA FUNZIONE: Estrae dati da tutto il testo PDF
 async function extractDataFromFullText(fullText, expectedFields, promptTemplate, sessionId) {
+    // ... (questa funzione rimane identica)
     console.log(`[${sessionId}] Estrazione dati da testo completo (${fullText.length} caratteri)...`);
     
-    // Cerca le sezioni rilevanti nel testo
     const lowerText = fullText.toLowerCase();
     
-    // Estrai sezioni specifiche se possibile
     let relevantText = fullText;
     
     if (lowerText.includes('stato patrimoniale') || lowerText.includes('conto economico')) {
         console.log(`[${sessionId}] Trovate sezioni di bilancio nel testo`);
         
-        // Estrai porzioni di testo più rilevanti per ridurre token
         const sentences = fullText.split(/[.!?]+/);
         const relevantSentences = sentences.filter(sentence => {
             const s = sentence.toLowerCase();
@@ -112,7 +110,6 @@ async function extractDataFromFullText(fullText, expectedFields, promptTemplate,
         }
     }
     
-    // Limita lunghezza per evitare problemi con OpenAI
     if (relevantText.length > 10000) {
         relevantText = relevantText.substring(0, 10000) + '...';
         console.log(`[${sessionId}] Testo troncato a 10000 caratteri`);
@@ -149,8 +146,18 @@ export default async function handler(req, res) {
   let sessionId = '';
   
   try {
+    // ✅ 1. MODIFICA: Legge il sessionId dall'URL (query parameter)
+    const { sessionId: session_id } = req.query;
+    sessionId = session_id;
+    
+    if (!sessionId) {
+      // Questo errore ora indica che l'URL non era corretto
+      return res.status(400).json({ error: 'sessionId è richiesto nell\'URL' });
+    }
 
-    // 2. Download PDF
+    console.log(`[${sessionId}] Inizio analisi PDF...`);
+
+    // 2. Download PDF (invariato)
     console.log(`[${sessionId}] Download del PDF...`);
     const { data: files, error: listError } = await supabase.storage
       .from('checkup-documents')
@@ -173,7 +180,7 @@ export default async function handler(req, res) {
     
     console.log(`[${sessionId}] PDF scaricato, dimensione: ${pdfData.size} bytes`);
     
-    // ✅ 3. ESTRAZIONE TESTO CON PDF-PARSE (Compatibile serverless)
+    // 3. ESTRAZIONE TESTO CON PDF-PARSE (invariato)
     console.log(`[${sessionId}] Estrazione testo con pdf-parse...`);
     
     const pdfBuffer = Buffer.from(await pdfData.arrayBuffer());
@@ -185,10 +192,9 @@ export default async function handler(req, res) {
       throw new Error(`PDF sembra vuoto o non leggibile. Testo estratto: ${pdfParsed.text.length} caratteri`);
     }
     
-    // 4. ESTRAZIONE DATI DA TUTTO IL TESTO
+    // 4. ESTRAZIONE DATI DA TUTTO IL TESTO (invariato)
     console.log(`[${sessionId}] Avvio estrazione dati finanziari...`);
 
-    // Cerchiamo tutti i dati in un'unica passata
     const allExpectedFields = [
         'total_assets_current', 'total_assets_previous', 
         'total_debt_current', 'total_debt_previous', 
@@ -231,7 +237,7 @@ RISPONDI SOLO con questo formato JSON (numeri puri, senza virgole o punti come s
     
     console.log(`[${sessionId}] Dati finali estratti:`, JSON.stringify(extractedData, null, 2));
 
-    // 5. ANALISI FINALE
+    // 5. ANALISI FINALE (invariato)
     console.log(`[${sessionId}] Recupero prompt per analisi finale...`);
     
     let finalPromptTemplate = FALLBACK_PROMPT;
@@ -270,7 +276,7 @@ RISPONDI SOLO con questo formato JSON (numeri puri, senza virgole o punti come s
     const analysisResult = JSON.parse(completion.choices[0].message.content);
     console.log(`[${sessionId}] Analisi OpenAI completata`);
     
-    // 6. SALVATAGGIO
+    // 6. SALVATAGGIO (invariato)
     console.log(`[${sessionId}] Salvataggio risultati su analysis_results...`);
     
     const insertData = {
@@ -304,7 +310,7 @@ RISPONDI SOLO con questo formato JSON (numeri puri, senza virgole o punti come s
 
     console.log(`[${sessionId}] ✅ Dati salvati correttamente:`, savedData?.[0]?.id);
     
-    // Update status sessione
+    // Update status sessione (invariato)
     const { error: updateError } = await supabase
       .from('checkup_sessions')
       .update({ 
