@@ -98,23 +98,21 @@ export default async function handler(req, res) {
       throw new Error(`Errore upload file: ${uploadError.message}`);
     }
     
-    // 5. Avvio dell'analisi in background (versione semplificata)
+    // 5. Avvio dell'analisi in background (versione semplificata e più robusta)
     console.log(`[${session.id}] Sessione creata. Avvio dell'analisi in background...`);
 
     const host = req.headers.host;
     const protocol = req.headers['x-forwarded-proto'] || (host?.includes('localhost') ? 'http' : 'https');
-    const analyzeApiUrl = `${protocol}://${host}/api/analyze-pdf`;
+    
+    // ✅ FIX: Aggiunge il sessionId direttamente all'URL come query parameter
+    const analyzeApiUrl = `${protocol}://${host}/api/analyze-pdf?sessionId=${session.id}`;
 
     console.log(`[${session.id}] Chiamata a: ${analyzeApiUrl}`);
 
     // Avvia la chiamata senza attenderne la fine (fire-and-forget)
-    // e senza l'header di autorizzazione interna che causava il blocco.
+    // Non è più necessario un body perché l'ID è nell'URL.
     fetch(analyzeApiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ session_id: session.id })
     }).catch(fetchError => {
       // Logga l'errore se la chiamata non parte, ma non bloccare la risposta all'utente.
       console.error(`[${session.id}] Errore avvio chiamata analisi (fire-and-forget):`, fetchError.message);
