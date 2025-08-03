@@ -149,30 +149,6 @@ export default async function handler(req, res) {
   let sessionId = '';
   
   try {
-    // Authorization flessibile
-    console.log('🔍 Controllo autenticazione...');
-    const authHeader = req.headers.authorization;
-    const expectedAuth = process.env.INTERNAL_SECRET ? `Bearer ${process.env.INTERNAL_SECRET}` : null;
-    
-    if (expectedAuth && authHeader !== expectedAuth) {
-      console.log('❌ Authorization fallita:', { received: authHeader, expected: expectedAuth });
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    
-    if (!expectedAuth) {
-      console.log('⚠️ INTERNAL_SECRET non impostato, procedo senza autenticazione');
-    } else {
-      console.log('✅ Authorization OK');
-    }
-
-    const { session_id } = req.body;
-    sessionId = session_id;
-    
-    if (!sessionId) {
-      return res.status(400).json({ error: 'session_id è richiesto' });
-    }
-
-    console.log(`[${sessionId}] Inizio analisi PDF...`);
 
     // 2. Download PDF
     console.log(`[${sessionId}] Download del PDF...`);
