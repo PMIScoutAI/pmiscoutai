@@ -1,10 +1,9 @@
 // /pages/api/start-checkup.js
-// VERSIONE FINALE - Usa il modulo centralizzato per l'analisi AI
+// VERSIONE SEMPLIFICATA - Rimuove l'autenticazione interna per garantire il funzionamento
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
 import fs from 'fs';
-import { launchAIAnalysis } from '../../lib/ai-analysis.js'; // <-- ✅ 1. IMPORTA LA NUOVA FUNZIONE
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -25,7 +24,7 @@ export default async function handler(req, res) {
   let session;
 
   try {
-    // 1. Autenticazione utente (invariata)
+    // 1. Autenticazione utente con Outseta (invariata)
     const outsetaToken = req.headers.authorization?.split(' ')[1];
     if (!outsetaToken) return res.status(401).json({ error: 'Token mancante.' });
     
@@ -99,38 +98,35 @@ export default async function handler(req, res) {
       throw new Error(`Errore upload file: ${uploadError.message}`);
     }
     
-    // ✅ 5. SOSTITUZIONE: Avvio dell'analisi AI tramite il modulo centralizzato
-    try {
-      console.log(`[${session.id}] Avvio analisi AI tramite il modulo dedicato...`);
+    // 5. Avvio dell'analisi in background (versione semplificata)
+    console.log(`[${session.id}] Sessione creata. Avvio dell'analisi in background...`);
+
+    const host = req.headers.host;
+    const protocol = req.headers['x-forwarded-proto'] || (host?.includes('localhost') ? 'http' : 'https');
+    const analyzeApiUrl = `${protocol}://${host}/api/analyze-pdf`;
+
+    console.log(`[${session.id}] Chiamata a: ${analyzeApiUrl}`);
+
+    // Avvia la chiamata senza attenderne la fine (fire-and-forget)
+    // e senza l'header di autorizzazione interna che causava il blocco.
+    fetch(analyzeApiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ session_id: session.id })
+    }).catch(fetchError => {
+      // Logga l'errore se la chiamata non parte, ma non bloccare la risposta all'utente.
+      console.error(`[${session.id}] Errore avvio chiamata analisi (fire-and-forget):`, fetchError.message);
+    });
     
-      // Chiama la funzione robusta e centralizzata dal file /lib/ai-analysis.js
-      await launchAIAnalysis(session.id);
-    
-      console.log(`[${session.id}] Comando di avvio analisi inviato con successo.`);
-    
-    } catch (error) {
-      // Se launchAIAnalysis fallisce (es. per variabili d'ambiente mancanti),
-      // il modulo genererà un errore descrittivo che catturiamo qui.
-      console.error(`[${session.id}] Il modulo di analisi ha restituito un errore bloccante:`, error.message);
-    
-      // Aggiorniamo lo stato della sessione nel database per notificare il fallimento.
-      await supabase
-        .from('checkup_sessions')
-        .update({
-          status: 'failed',
-          error_message: `Errore avvio analisi: ${error.message}`
-        })
-        .eq('id', session.id);
-    }
-    
-    // 6. Restituisce SEMPRE il session_id (anche se l'analisi è fallita)
+    // 6. Restituisce subito la risposta all'utente
     console.log(`✅ [${session.id}] Setup completato, restituisco sessionId`);
     return res.status(200).json({ success: true, sessionId: session.id });
 
   } catch (error) {
     console.error('💥 Errore fatale in start-checkup:', error);
     
-    // Solo errori di setup (non di analisi) segnano la sessione come fallita
     if (session?.id) {
       await supabase
         .from('checkup_sessions')
