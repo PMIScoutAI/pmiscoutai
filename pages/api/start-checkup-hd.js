@@ -1,5 +1,5 @@
 // /api/start-checkup-hd.js
-// VERSIONE FINALE: Usa un ID fittizio in formato UUID valido.
+// VERSIONE FINALE: Aggiunge un outseta_user_id fittizio per risolvere l'errore not-null.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -25,13 +25,19 @@ export default async function handler(req, res) {
   let session;
 
   try {
-    // ✅ FIX: Usiamo un UUID valido per l'ID fittizio
     const userId = '11111111-1111-1111-1111-111111111111';
     console.log(`[HD] Procedo con utente fittizio: ${userId}`);
 
+    // ✅ FIX DEFINITIVO: Aggiungiamo un outseta_user_id fittizio per soddisfare
+    // il vincolo NOT NULL del database.
     const { error: userError } = await supabase
       .from('users')
-      .upsert({ id: userId, email: 'beta@pmiscout.eu' }, { onConflict: 'id' });
+      .upsert({ 
+        id: userId, 
+        email: 'beta@pmiscout.eu',
+        outseta_user_id: 'dummy-outseta-id-for-beta' // Aggiunto campo richiesto
+      }, { onConflict: 'id' });
+      
     if (userError) throw new Error(`Errore DB users: ${userError.message}`);
     console.log(`[HD] Utente fittizio ${userId} verificato/creato.`);
 
