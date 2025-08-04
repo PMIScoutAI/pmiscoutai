@@ -1,5 +1,5 @@
-// /pages/api/start-checkup-hd.js
-// Usa la nuova tabella 'checkup_sessions_hd'.
+// /api/start-checkup-hd.js
+// VERSIONE PIÙ ROBUSTA: Aggiunto un controllo di sicurezza dopo la creazione dell'azienda.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -37,16 +37,20 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Nome azienda o file PDF mancante.' });
     }
 
-    const { data: company } = await supabase
+    const { data: company, error: companyError } = await supabase
       .from('companies')
       .upsert({ user_id: userId, company_name: companyName }, { onConflict: 'user_id, company_name' })
       .select().single();
+    
+    // ✅ CONTROLLO DI SICUREZZA: Verifichiamo che l'azienda sia stata creata correttamente.
+    if (companyError) throw new Error(`Errore DB companies: ${companyError.message}`);
+    if (!company) throw new Error('Impossibile creare o trovare l\'azienda nel database. Controlla i permessi (RLS) della tabella "companies".');
     
     const { data: sessionData, error: sessionError } = await supabase
       .from('checkup_sessions_hd')
       .insert({ 
         user_id: userId, 
-        company_id: company.id, 
+        company_id: company.id, // Ora questa riga è sicura
         status: 'indexing',
         session_name: `Check-UP HD ${companyName} - ${new Date().toLocaleDateString('it-IT')}`
       })
