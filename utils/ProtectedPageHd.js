@@ -1,6 +1,6 @@
 // /utils/ProtectedPageHd.js
-// Un nuovo componente di protezione, SOLO per il flusso Check-UP HD.
-// Usa la Edge Function per un'autenticazione sicura e a prova di errore.
+// VERSIONE FINALE E STABILE: Risolve il blocco in "verifica autorizzazione"
+// usando un'attesa più robusta per lo script di Outseta.
 
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
@@ -21,26 +21,33 @@ function useHdUser() {
 
     async function initUser() {
       try {
-        // 1. Attesa robusta per Outseta
+        // ✅ FIX: Torniamo a un'attesa più simile a quella originale e funzionante.
+        // Aspettiamo che la funzione `getUser` sia disponibile, non `getAuthToken`.
         let attempts = 0;
-        while (typeof window.Outseta?.getAuthToken !== 'function' && attempts < 50) {
+        while (typeof window.Outseta?.getUser !== 'function' && attempts < 50) {
           await new Promise(resolve => setTimeout(resolve, 100));
           attempts++;
         }
-        if (typeof window.Outseta?.getAuthToken !== 'function') {
+        if (typeof window.Outseta?.getUser !== 'function') {
           throw new Error('Outseta non è stato caricato correttamente. Ricarica la pagina.');
         }
 
-        // 2. Ottieni token da Outseta
-        const token = window.Outseta.getAuthToken();
-        if (!token) {
+        // Ora che sappiamo che Outseta è pronto, procediamo.
+        const outsetaUser = await window.Outseta.getUser();
+        if (!outsetaUser?.Email) {
           const returnUrl = encodeURIComponent(window.location.href);
           window.location.replace(`${OUTSETA_LOGIN_URL}&returnUrl=${returnUrl}`);
           return;
         }
+
+        // E ORA possiamo chiamare getAuthToken con sicurezza
+        const token = window.Outseta.getAuthToken();
+        if (!token) {
+            throw new Error("Impossibile recuperare il token di autenticazione da Outseta.");
+        }
         if (isMounted) setOutsetaToken(token);
 
-        // 3. Chiama la Edge Function per ottenere il JWT di Supabase
+        // Chiama la Edge Function per ottenere il JWT di Supabase
         const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/get-supabase-jwt`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
@@ -49,14 +56,13 @@ function useHdUser() {
         const data = await response.json();
         if (data.error) throw new Error(`Errore dalla Edge Function: ${data.error}`);
 
-        // 4. Usa il JWT per fare il login in Supabase
+        // Usa il JWT per fare il login in Supabase
         const { error: signInError } = await supabase.auth.signInWithJwt(data.custom_jwt);
         if (signInError) throw signInError;
 
-        // 5. Recupera la sessione utente
+        // Recupera la sessione utente
         const { data: { session } } = await supabase.auth.getSession();
         if (session && isMounted) {
-          const outsetaUser = await window.Outseta.getUser();
           setUser({
             ...session.user,
             name: outsetaUser.FirstName || outsetaUser.Email.split('@')[0],
@@ -90,7 +96,7 @@ export function ProtectedPageHd({ children, loadingComponent }) {
     return loadingComponent || (
       <div className="flex items-center justify-center min-h-screen bg-slate-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mb-4"></div>
           <p className="text-slate-600">Verifica autenticazione HD...</p>
         </div>
       </div>
