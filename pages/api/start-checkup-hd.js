@@ -1,5 +1,5 @@
 // /api/start-checkup-hd.js
-// VERSIONE PIÙ ROBUSTA: Aggiunto un controllo di sicurezza dopo la creazione dell'azienda.
+// VERSIONE FINALE: Usa un ID fittizio in formato UUID valido.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -25,8 +25,15 @@ export default async function handler(req, res) {
   let session;
 
   try {
-    const userId = 'user-fittizio-supabase-id';
+    // ✅ FIX: Usiamo un UUID valido per l'ID fittizio
+    const userId = '11111111-1111-1111-1111-111111111111';
     console.log(`[HD] Procedo con utente fittizio: ${userId}`);
+
+    const { error: userError } = await supabase
+      .from('users')
+      .upsert({ id: userId, email: 'beta@pmiscout.eu' }, { onConflict: 'id' });
+    if (userError) throw new Error(`Errore DB users: ${userError.message}`);
+    console.log(`[HD] Utente fittizio ${userId} verificato/creato.`);
 
     const form = formidable({ maxFileSize: 10 * 1024 * 1024, keepExtensions: true });
     const [fields, files] = await form.parse(req);
@@ -42,15 +49,14 @@ export default async function handler(req, res) {
       .upsert({ user_id: userId, company_name: companyName }, { onConflict: 'user_id, company_name' })
       .select().single();
     
-    // ✅ CONTROLLO DI SICUREZZA: Verifichiamo che l'azienda sia stata creata correttamente.
     if (companyError) throw new Error(`Errore DB companies: ${companyError.message}`);
-    if (!company) throw new Error('Impossibile creare o trovare l\'azienda nel database. Controlla i permessi (RLS) della tabella "companies".');
+    if (!company) throw new Error('Impossibile creare l\'azienda nel database. Controlla i permessi.');
     
     const { data: sessionData, error: sessionError } = await supabase
       .from('checkup_sessions_hd')
       .insert({ 
         user_id: userId, 
-        company_id: company.id, // Ora questa riga è sicura
+        company_id: company.id,
         status: 'indexing',
         session_name: `Check-UP HD ${companyName} - ${new Date().toLocaleDateString('it-IT')}`
       })
