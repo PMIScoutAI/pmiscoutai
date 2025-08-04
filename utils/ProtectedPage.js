@@ -1,5 +1,5 @@
 // /utils/ProtectedPage.js
-// RIPRISTINATO ALLA VERSIONE FUNZIONANTE FORNITA DALL'UTENTE
+// CORRETTO: Usa get_or_create_user come start-checkup.js per coerenza
 
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
@@ -13,8 +13,6 @@ export function useUser() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  // ✅ Manteniamo il token per passarlo alle API
-  const [outsetaToken, setOutsetaToken] = useState(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -39,14 +37,8 @@ export function useUser() {
           window.location.replace(`${OUTSETA_LOGIN_URL}&returnUrl=${returnUrl}`);
           return;
         }
-        
-        // ✅ Salva il token di Outseta
-        const token = window.Outseta.getAuthToken();
-        if (isMounted) {
-            setOutsetaToken(token);
-        }
 
-        // 3. Usa get_or_create_user per la sincronizzazione
+        // 3. CORRETTO: Usa get_or_create_user come in start-checkup.js
         console.log('🔄 Sincronizzazione con Supabase...');
         const { data: supabaseUserId, error: supabaseError } = await supabase.rpc('get_or_create_user', {
           p_outseta_id: outsetaUser.Uid,
@@ -65,7 +57,7 @@ export function useUser() {
         // 4. Crea oggetto user completo con entrambi gli ID
         if (isMounted) {
           setUser({
-            id: supabaseUserId,           // UUID Supabase (per query DB)
+            id: supabaseUserId,               // UUID Supabase (per query DB)
             uid: outsetaUser.Uid,             // ID Outseta (per auth)
             email: outsetaUser.Email,
             name: outsetaUser.FirstName || outsetaUser.Email.split('@')[0],
@@ -88,14 +80,14 @@ export function useUser() {
     return () => { isMounted = false; };
   }, []);
 
-  return { user, outsetaToken, loading, error };
+  return { user, loading, error };
 }
 
 /**
  * Componente wrapper per proteggere le pagine.
  */
 export function ProtectedPage({ children, loadingComponent }) {
-  const { user, outsetaToken, loading, error } = useUser();
+  const { user, loading, error } = useUser();
 
   if (loading) {
     return loadingComponent || (
@@ -123,6 +115,5 @@ export function ProtectedPage({ children, loadingComponent }) {
 
   if (!user) return null;
 
-  // Passa l'utente e il token Outseta ai componenti figli
-  return typeof children === 'function' ? children(user, outsetaToken) : children;
+  return typeof children === 'function' ? children(user) : children;
 }
