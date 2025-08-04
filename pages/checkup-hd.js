@@ -1,14 +1,16 @@
 // /pages/checkup-hd.js
-// Pagina per il nuovo flusso di analisi "High Definition" con LangChain/RAG
+// Pagina per il nuovo flusso di analisi "High Definition"
+// Utilizza il nuovo componente di protezione dedicato ProtectedPageHd.
 
 import { useState, useRef } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import Script from 'next/script';
 import { useRouter } from 'next/router';
-import { ProtectedPage } from '../utils/ProtectedPage'; // Assicurati che il percorso sia corretto
+// ✅ FIX: Importa il nuovo componente di protezione dedicato
+import { ProtectedPageHd } from '../utils/ProtectedPageHd';
 
-// --- Componente Wrapper (simile alla pagina di checkup standard) ---
+// --- Componente Wrapper ---
 export default function CheckupHdPageWrapper() {
   return (
     <>
@@ -33,9 +35,10 @@ export default function CheckupHdPageWrapper() {
         strategy="beforeInteractive"
       />
 
-      <ProtectedPage>
+      {/* ✅ FIX: Usa il nuovo componente di protezione */}
+      <ProtectedPageHd>
         {(user, token) => <CheckupHdPageLayout user={user} token={token} />}
-      </ProtectedPage>
+      </ProtectedPageHd>
     </>
   );
 }
@@ -119,7 +122,7 @@ function CheckupHdPageLayout({ user, token }) {
                 Check-UP AI HD (Beta)
               </h1>
               <p className="mt-2 text-base text-slate-600">
-                Carica il bilancio per avviare la nuova analisi ad alta definizione. Questo processo indicizzerà il documento per garantire la massima precisione.
+                Ciao, <span className="font-semibold">{user.name || user.email}</span>. Carica il bilancio per avviare la nuova analisi ad alta definizione.
               </p>
             </div>
             
@@ -152,7 +155,7 @@ function CheckupHdForm({ token }) {
       setPdfFile(null);
       return;
     }
-    if (selectedFile.size > 10 * 1024 * 1024) { // Aumentato a 10MB per file più complessi
+    if (selectedFile.size > 10 * 1024 * 1024) { // 10MB
       setError('Il file PDF non deve superare i 10MB.');
       setPdfFile(null);
       return;
@@ -194,6 +197,7 @@ function CheckupHdForm({ token }) {
       const response = await fetch('/api/start-checkup-hd', {
         method: 'POST',
         headers: {
+          // ✅ FIX: Usa il token passato da ProtectedPageHd
           'Authorization': `Bearer ${token}`
         },
         body: formData,
