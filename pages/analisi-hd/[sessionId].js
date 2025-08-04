@@ -6,7 +6,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import Script from 'next/script';
 import { useRouter } from 'next/router';
-import { ProtectedPage } from '../../utils/ProtectedPage'; // Assicurati che il percorso sia corretto
+import { ProtectedPageHd } from '../../utils/ProtectedPageHd';
 
 // --- Componente Wrapper ---
 export default function AnalisiHdReportPageWrapper() {
@@ -20,13 +20,11 @@ export default function AnalisiHdReportPageWrapper() {
         <script src="https://cdn.tailwindcss.com"></script>
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
       </Head>
-      <Script id="outseta-options" strategy="beforeInteractive">
-        {`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}
-      </Script>
+      <Script id="outseta-options" strategy="beforeInteractive">{`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}</Script>
       <Script id="outseta-script" src="https://cdn.outseta.com/outseta.min.js" strategy="beforeInteractive" />
-      <ProtectedPage>
+      <ProtectedPageHd>
         {(user, token) => <ReportHdPageLayout user={user} token={token} />}
-      </ProtectedPage>
+      </ProtectedPageHd>
     </>
   );
 }
@@ -38,54 +36,53 @@ const icons = {
   profile: <><path d="M5.52 19c.64-2.2 1.84-3 3.22-3h6.52c1.38 0 2.58.8 3.22 3" /><circle cx="12" cy="10" r="3" /><circle cx="12" cy="12" r="10" /></>,
   checkup: <><path d="M12 8V4H8" /><rect x="4" y="12" width="16" height="8" rx="2" /><path d="M2 12h2M20 12h2M12 18v2M12 14v-2" /></>,
   support: <><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
-  menu: <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>,
-  print: <><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></>,
   alertTriangle: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
   zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></>,
+  thumbsUp: <><path d="M7 10v12" /><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a2 2 0 0 1 3 1.88z" /></>,
+  thumbsDown: <><path d="M17 14V2" /><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a2 2 0 0 1-3-1.88z" /></>,
+  target: <><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></>,
+  lightbulb: <><path d="M9 18h6" /><path d="M10 22h4" /><path d="M12 2a7 7 0 0 0-7 7c0 3 2 5 2 7h10c0-2 2-4 2-7a7 7 0 0 0-7-7z" /></>,
 };
 
 // --- Layout della Pagina ---
 function ReportHdPageLayout({ user, token }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const navLinks = [
-    { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
-    { href: '/checkup-hd', text: 'Check-UP AI HD', icon: icons.zap, active: true },
-    { href: '/checkup', text: 'Check-UP AI', icon: icons.checkup, active: false },
-    { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
-  ];
-  return (
-    <div className="relative flex min-h-screen bg-slate-100 text-slate-800">
-      <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
-        <div className="flex flex-col h-full">
-            <div className="flex items-center justify-center h-16 border-b">
-                <img src="https://www.pmiscout.eu/wp-content/uploads/2024/07/Logo_Pmi_Scout_favicon.jpg" alt="Logo PMIScout" className="h-8 w-auto" onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/150x40/007BFF/FFFFFF?text=PMIScout'; }} />
-            </div>
-            <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
-                <nav className="flex-1 px-2 pb-4 space-y-1">
-                {navLinks.map((link) => (
-                    <Link key={link.text} href={link.href}><a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${ link.active ? 'bg-purple-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}><Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />{link.text}</a></Link>
-                ))}
-                </nav>
-                <div className="px-2 py-4 border-t"><a href="mailto:antonio@pmiscout.eu" className="flex items-center px-2 py-2 text-sm font-medium text-slate-600 rounded-md hover:bg-slate-100 hover:text-slate-900 group transition-colors"><Icon path={icons.support} className="w-6 h-6 mr-3 text-slate-500" />Supporto</a></div>
-            </div>
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const navLinks = [
+      { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
+      { href: '/checkup-hd', text: 'Check-UP AI HD', icon: icons.zap, active: true },
+      { href: '/checkup', text: 'Check-UP AI', icon: icons.checkup, active: false },
+      { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
+    ];
+    return (
+      <div className="relative flex min-h-screen bg-slate-100 text-slate-800">
+        <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
+          <div className="flex flex-col h-full">
+              <div className="flex items-center justify-center h-16 border-b">
+                  <img src="https://www.pmiscout.eu/wp-content/uploads/2024/07/Logo_Pmi_Scout_favicon.jpg" alt="Logo PMIScout" className="h-8 w-auto" onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/150x40/007BFF/FFFFFF?text=PMIScout'; }} />
+              </div>
+              <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
+                  <nav className="flex-1 px-2 pb-4 space-y-1">
+                  {navLinks.map((link) => (
+                      <Link key={link.text} href={link.href}><a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${ link.active ? 'bg-purple-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}><Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />{link.text}</a></Link>
+                  ))}
+                  </nav>
+                  <div className="px-2 py-4 border-t"><a href="mailto:antonio@pmiscout.eu" className="flex items-center px-2 py-2 text-sm font-medium text-slate-600 rounded-md hover:bg-slate-100 hover:text-slate-900 group transition-colors"><Icon path={icons.support} className="w-6 h-6 mr-3 text-slate-500" />Supporto</a></div>
+              </div>
+          </div>
+        </aside>
+        <div className="flex flex-col flex-1 w-0 overflow-hidden">
+          <AnalisiHdReportPage user={user} token={token} />
         </div>
-      </aside>
-      <div className="flex flex-col flex-1 w-0 overflow-hidden">
-        <AnalisiHdReportPage user={user} token={token} />
       </div>
-    </div>
-  );
+    );
 }
 
-// --- Componente Pagina Analisi HD (Logica di Polling) ---
+// --- Componente Principale della Pagina ---
 function AnalisiHdReportPage({ user, token }) {
   const router = useRouter();
   const { sessionId } = router.query;
   const [sessionData, setSessionData] = useState(null);
-  const [analysisData, setAnalysisData] = useState(null);
   const [error, setError] = useState('');
-  const [statusMessage, setStatusMessage] = useState('Avvio del processo di analisi HD...');
-  
   const pollingIntervalRef = useRef(null);
 
   const statusMessages = {
@@ -97,73 +94,48 @@ function AnalisiHdReportPage({ user, token }) {
 
   useEffect(() => {
     const fetchSessionStatus = async () => {
-      if (!sessionId || !token) return;
+      if (!sessionId) return;
 
       try {
-        const response = await fetch(`/api/get-session-hd?sessionId=${sessionId}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Errore nel recupero dello stato della sessione.');
-        }
-
+        const response = await fetch(`/api/get-session-hd?sessionId=${sessionId}`);
+        if (!response.ok) throw new Error('Errore nel recupero dello stato della sessione.');
+        
         const data = await response.json();
         setSessionData(data);
-        setStatusMessage(statusMessages[data.status] || `Stato sconosciuto: ${data.status}`);
 
         if (data.status === 'completed' || data.status === 'failed') {
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-          }
-          if (data.status === 'completed') {
-            // TODO: Chiamare l'API finale per ottenere i dati dell'analisi
-            // Per ora, mostriamo un placeholder
-            setAnalysisData({ summary: "Analisi HD completata. I dati dettagliati verranno mostrati qui." });
-          } else {
-            setError(data.error_message || 'L\'analisi non è andata a buon fine.');
-          }
+          if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+          if (data.status === 'failed') setError(data.error_message || 'L\'analisi non è andata a buon fine.');
         }
       } catch (err) {
-        console.error('Errore durante il polling:', err);
         setError(err.message);
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-        }
+        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
       }
     };
 
-    if (sessionId && token) {
-        fetchSessionStatus(); // Prima chiamata immediata
-        pollingIntervalRef.current = setInterval(fetchSessionStatus, 5000); // Polling ogni 5 secondi
+    if (sessionId) {
+      fetchSessionStatus();
+      pollingIntervalRef.current = setInterval(fetchSessionStatus, 5000);
     }
 
-    return () => { // Funzione di pulizia
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-      }
-    };
-  }, [sessionId, token]); 
+    return () => { if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current); };
+  }, [sessionId]); 
 
   const renderContent = () => {
     if (error) return <ErrorState message={error} />;
     if (!sessionData) return <LoadingState text="Caricamento sessione in corso..." />;
     
-    if (sessionData.status !== 'completed' && sessionData.status !== 'failed') {
-        return <LoadingState text={statusMessage} status={sessionData.status} />;
+    const { status, analysis_results, companies } = sessionData;
+
+    if (status !== 'completed' && status !== 'failed') {
+      return <LoadingState text={statusMessages[status] || `Stato: ${status}`} status={status} />;
     }
     
-    if (sessionData.status === 'completed' && analysisData) {
-        // TODO: Rendere il componente del report finale
-        return <div className="p-8 bg-white rounded-xl shadow-md">
-            <h1 className="text-2xl font-bold text-purple-700">Report Analisi HD</h1>
-            <p className="mt-4 text-slate-600">{analysisData.summary}</p>
-            <p className="mt-4 text-sm text-slate-500">Azienda: {sessionData.companies?.company_name}</p>
-        </div>;
+    if (status === 'completed' && analysis_results) {
+      return <ReportView result={analysis_results} companyName={companies?.company_name} />;
     }
 
-    return <ErrorState message="Non è stato possibile caricare i risultati dell'analisi." />;
+    return <ErrorState message={sessionData.error_message || "Non è stato possibile caricare i risultati dell'analisi."} />;
   };
 
   return (
@@ -175,7 +147,7 @@ function AnalisiHdReportPage({ user, token }) {
   );
 }
 
-// --- Componenti di Stato ---
+// --- Componenti di Visualizzazione ---
 const LoadingState = ({ text, status }) => (
     <div className="flex items-center justify-center h-full p-10">
         <div className="text-center">
@@ -187,11 +159,73 @@ const LoadingState = ({ text, status }) => (
 );
 
 const ErrorState = ({ message }) => (
-    <div className="flex items-center justify-center h-full p-10">
-        <div className="text-center p-10 bg-white rounded-xl shadow-lg border-l-4 border-red-500">
-            <Icon path={icons.alertTriangle} className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-red-700">Si è verificato un errore</h2>
-            <p className="text-slate-600 mt-2">{message}</p>
-        </div>
+    <div className="text-center p-10 bg-white rounded-xl shadow-lg border-l-4 border-red-500">
+        <Icon path={icons.alertTriangle} className="w-12 h-12 text-red-500 mx-auto mb-4" />
+        <h2 className="text-2xl font-bold text-red-700">Si è verificato un errore</h2>
+        <p className="text-slate-600 mt-2">{message}</p>
     </div>
+);
+
+const ReportView = ({ result, companyName }) => {
+    const { health_score, summary, recommendations, detailed_swot } = result;
+
+    return (
+        <div className="space-y-8">
+            <div className="p-8 bg-white rounded-xl shadow-md border border-slate-200">
+                <p className="text-sm font-medium text-purple-600">Report di Analisi AI HD</p>
+                <h1 className="text-3xl font-bold text-slate-900 mt-1">{companyName || 'Azienda'}</h1>
+                <p className="mt-4 text-slate-600 leading-relaxed">{summary || 'Nessun sommario disponibile.'}</p>
+                <div className="mt-6">
+                    <span className="text-lg font-bold">Health Score: </span>
+                    <span className="text-2xl font-bold text-purple-700">{health_score || 'N/A'} / 100</span>
+                </div>
+            </div>
+
+            {detailed_swot && <SwotSection swot={detailed_swot} />}
+            {recommendations && <RecommendationsSection recommendations={recommendations} />}
+        </div>
+    );
+};
+
+const SwotSection = ({ swot }) => {
+    const swotDetails = {
+        strengths: { label: 'Punti di Forza', icon: icons.thumbsUp, color: 'green' },
+        weaknesses: { label: 'Punti di Debolezza', icon: icons.thumbsDown, color: 'red' },
+        opportunities: { label: 'Opportunità', icon: icons.target, color: 'blue' },
+        threats: { label: 'Minacce', icon: icons.alertTriangle, color: 'orange' },
+    };
+    return (
+        <section>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi SWOT Dettagliata</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {Object.entries(swotDetails).map(([key, detail]) => (
+                    <div key={key} className={`p-6 bg-white rounded-xl shadow-sm border-l-4 border-${detail.color}-500`}>
+                        <div className={`flex items-center text-lg font-bold text-${detail.color}-600`}>
+                            <Icon path={detail.icon} className="w-6 h-6 mr-3" />
+                            {detail.label}
+                        </div>
+                        <ul className="mt-4 space-y-2 list-disc list-inside text-slate-600 text-sm">
+                            {swot[key]?.length > 0 ? swot[key].map((item, idx) => <li key={idx}>{item}</li>) : <li>Nessun dato disponibile.</li>}
+                        </ul>
+                    </div>
+                ))}
+            </div>
+        </section>
+    );
+};
+
+const RecommendationsSection = ({ recommendations }) => (
+    <section>
+        <h2 className="text-xl font-bold text-slate-800 mb-4">Raccomandazioni Strategiche</h2>
+        <div className="space-y-4">
+            {recommendations.map((rec, i) => (
+                <div key={i} className="flex items-start p-4 bg-white rounded-xl shadow-sm border border-slate-200">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center mr-4">
+                        <Icon path={icons.lightbulb} className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <p className="text-slate-700 text-sm">{rec}</p>
+                </div>
+            ))}
+        </div>
+    </section>
 );
