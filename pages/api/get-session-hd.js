@@ -1,5 +1,5 @@
 // /pages/api/get-session-hd.js
-// API per recuperare lo stato di una sessione di analisi HD e i risultati finali.
+// Recupera i dati dalle nuove tabelle 'checkup_sessions_hd' e 'analysis_results_hd'.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -19,14 +19,12 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'SessionId è richiesto' });
     }
 
-    // Per lo sviluppo del beta, non controlliamo l'utente.
-    // In produzione, aggiungeremmo .eq('user_id', userId)
     const { data: session, error: sessionError } = await supabase
-      .from('checkup_sessions')
+      .from('checkup_sessions_hd')
       .select(`
         *,
         companies(company_name),
-        analysis_results(*)
+        analysis_results_hd(*)
       `)
       .eq('id', sessionId)
       .single();
@@ -36,10 +34,9 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'Sessione non trovata.' });
     }
     
-    // La query di Supabase con il join (*) mette i risultati in un array.
-    // Li spostiamo al primo livello per comodità.
-    if (session.analysis_results && session.analysis_results.length > 0) {
-        session.analysis_results = session.analysis_results[0];
+    if (session.analysis_results_hd && session.analysis_results_hd.length > 0) {
+        session.analysis_results = session.analysis_results_hd[0];
+        delete session.analysis_results_hd;
     } else {
         session.analysis_results = null;
     }
