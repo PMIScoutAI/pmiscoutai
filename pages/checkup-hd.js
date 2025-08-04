@@ -1,5 +1,5 @@
 // /api/start-checkup-hd.js
-// VERSIONE FINALE: Avvia l'analisi in background dopo l'indicizzazione.
+// VERSIONE CORRETTA: Contiene tutta la logica server-side per l'upload e l'indicizzazione.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -25,8 +25,6 @@ export default async function handler(req, res) {
   let session;
 
   try {
-    // In questa versione semplificata, non controlliamo l'utente reale.
-    // Usiamo un ID fittizio per procedere con lo sviluppo.
     const userId = 'user-fittizio-supabase-id';
     console.log(`[HD] Procedo con utente fittizio: ${userId}`);
 
@@ -39,7 +37,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Nome azienda o file PDF mancante.' });
     }
 
-    // Creazione sessione e azienda
     const { data: company } = await supabase
       .from('companies')
       .upsert({ user_id: userId, company_name: companyName }, { onConflict: 'user_id, company_name' })
@@ -60,7 +57,6 @@ export default async function handler(req, res) {
     session = sessionData;
     console.log(`[HD/${session.id}] Sessione creata, avvio indicizzazione...`);
 
-    // Indicizzazione con LangChain
     const loader = new PDFLoader(pdfFile.filepath);
     const docs = await loader.load();
     const splitter = new RecursiveCharacterTextSplitter({ chunkSize: 1000, chunkOverlap: 200 });
@@ -78,11 +74,9 @@ export default async function handler(req, res) {
     });
     console.log(`[HD/${session.id}] ✅ Indicizzazione completata.`);
 
-    // Aggiorna stato e avvia analisi in background
     await supabase.from('checkup_sessions').update({ status: 'processing' }).eq('id', session.id);
     console.log(`[HD/${session.id}] Stato aggiornato a 'processing'. Avvio analisi in background...`);
 
-    // ✅ NUOVA LOGICA: Avvia l'analisi vera e propria in modo asincrono (fire-and-forget)
     const host = req.headers.host;
     const protocol = req.headers['x-forwarded-proto'] || (host?.includes('localhost') ? 'http' : 'https');
     const analyzeApiUrl = `${protocol}://${host}/api/analyze-hd`;
@@ -95,7 +89,6 @@ export default async function handler(req, res) {
       console.error(`[HD/${session.id}] Errore avvio chiamata analisi (fire-and-forget):`, fetchError.message);
     });
     
-    // Risposta immediata al client
     return res.status(200).json({ success: true, sessionId: session.id });
 
   } catch (error) {
