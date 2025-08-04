@@ -1,5 +1,5 @@
 // /pages/api/get-session-hd.js
-// API per recuperare lo stato di una sessione di analisi HD
+// API per recuperare lo stato di una sessione di analisi HD e i risultati finali.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -14,51 +14,36 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Autentica l'utente tramite il token Outseta
-    const outsetaToken = req.headers.authorization?.split(' ')[1];
-    if (!outsetaToken) {
-      return res.status(401).json({ error: 'Token di autorizzazione mancante.' });
-    }
-    
-    const outsetaResponse = await fetch(`https://pmiscout.outseta.com/api/v1/profile`, { 
-      headers: { Authorization: `Bearer ${outsetaToken}` } 
-    });
-    
-    if (!outsetaResponse.ok) {
-      return res.status(401).json({ error: 'Token Outseta non valido.' });
-    }
-    
-    const outsetaUser = await outsetaResponse.json();
-    const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', { 
-      p_outseta_id: outsetaUser.Uid, 
-      p_email: outsetaUser.Email,
-      p_first_name: outsetaUser.FirstName,
-      p_last_name: outsetaUser.LastName
-    });
-
-    if (userError) {
-        throw new Error(`Errore DB utente: ${userError.message}`);
-    }
-
-    // 2. Recupera la sessione dal database
     const { sessionId } = req.query;
     if (!sessionId) {
       return res.status(400).json({ error: 'SessionId è richiesto' });
     }
 
+    // Per lo sviluppo del beta, non controlliamo l'utente.
+    // In produzione, aggiungeremmo .eq('user_id', userId)
     const { data: session, error: sessionError } = await supabase
       .from('checkup_sessions')
-      .select('*, companies(company_name)') // Recupera anche il nome dell'azienda
+      .select(`
+        *,
+        companies(company_name),
+        analysis_results(*)
+      `)
       .eq('id', sessionId)
-      .eq('user_id', userId) // Assicura che l'utente possa vedere solo le proprie sessioni
       .single();
 
     if (sessionError) {
       console.error('Errore recupero sessione HD:', sessionError);
-      return res.status(404).json({ error: 'Sessione non trovata o accesso non autorizzato.' });
+      return res.status(404).json({ error: 'Sessione non trovata.' });
+    }
+    
+    // La query di Supabase con il join (*) mette i risultati in un array.
+    // Li spostiamo al primo livello per comodità.
+    if (session.analysis_results && session.analysis_results.length > 0) {
+        session.analysis_results = session.analysis_results[0];
+    } else {
+        session.analysis_results = null;
     }
 
-    // 3. Restituisci i dati della sessione
     return res.status(200).json(session);
 
   } catch (error) {
