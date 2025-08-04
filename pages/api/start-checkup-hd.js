@@ -1,10 +1,11 @@
 // /pages/api/start-checkup-hd.js
-// API per il nuovo flusso di analisi con LangChain (RAG)
+// API per il nuovo flusso di analisi con LangChain (RAG) - VERSIONE CORRETTA
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
 import fs from 'fs';
-import { PDFLoader } from "langchain/document_loaders/fs/pdf";
+// ✅ FIX: Importazione aggiornata come richiesto dal warning di LangChain
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
@@ -112,12 +113,16 @@ export default async function handler(req, res) {
     console.log(`[HD/${session.id}] Documento diviso in ${splitDocs.length} chunks.`);
 
     // 4.3 Crea e salva i vettori su Supabase
-    await SupabaseVectorStore.fromDocuments(splitDocs, embeddings, {
+    // Aggiungiamo i metadati a ogni chunk prima di salvarlo
+    const docsWithMetadata = splitDocs.map(doc => {
+        doc.metadata = { ...doc.metadata, session_id: session.id, user_id: userId, file_name: pdfFile.originalFilename };
+        return doc;
+    });
+
+    await SupabaseVectorStore.fromDocuments(docsWithMetadata, embeddings, {
       client: supabase,
-      tableName: 'documents', // Assicurati che questa tabella esista e abbia pgvector abilitato
-      queryName: 'match_documents', // Assicurati che questa funzione esista
-      // Aggiungiamo un metadata per filtrare per sessione
-      metadata: { session_id: session.id }
+      tableName: 'documents', 
+      queryName: 'match_documents',
     });
     
     console.log(`[HD/${session.id}] ✅ Indicizzazione completata e vettori salvati.`);
