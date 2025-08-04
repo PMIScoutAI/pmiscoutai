@@ -1,16 +1,14 @@
 // /pages/api/analyze-hd.js
-// Il "cervello" del Check-UP HD. Usa LangChain RAG per un'analisi precisa.
+// Salva i risultati nelle nuove tabelle 'analysis_results_hd' e 'checkup_sessions_hd'.
 
 import { createClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 import { ChatOpenAI } from "@langchain/openai";
 import { PromptTemplate } from "@langchain/core/prompts";
-import { RunnableSequence } from "@langchain/core/runnables";
 import { StringOutputParser, JsonOutputParser } from "@langchain/core/output_parsers";
 import { formatDocumentsAsString } from "langchain/util/document";
 
-// --- Inizializzazione dei Client ---
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -18,11 +16,10 @@ const supabase = createClient(
 const embeddings = new OpenAIEmbeddings({ openAIApiKey: process.env.OPENAI_API_KEY });
 const llm = new ChatOpenAI({ 
     openAIApiKey: process.env.OPENAI_API_KEY, 
-    modelName: "gpt-4o", // Usiamo il modello più recente e potente
+    modelName: "gpt-4o",
     temperature: 0 
 });
 
-// --- Funzione Principale dell'Handler ---
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Metodo non permesso' });
@@ -36,8 +33,6 @@ export default async function handler(req, res) {
   try {
     console.log(`[Analyze-HD/${sessionId}] Inizio analisi RAG.`);
 
-    // 1. Inizializza il Vector Store come "Retriever"
-    // Il retriever è lo strumento che cerca i pezzi di testo pertinenti nel DB.
     const vectorStore = new SupabaseVectorStore(embeddings, {
       client: supabase,
       tableName: 'documents',
@@ -48,8 +43,6 @@ export default async function handler(req, res) {
     });
     console.log(`[Analyze-HD/${sessionId}] Retriever inizializzato.`);
 
-    // 2. Estrazione Dati Chiave con RAG
-    // Per ogni dato che ci serve, facciamo una ricerca mirata.
     const questions = {
         total_assets_current: "Qual è il totale attivo dell'anno corrente?",
         revenue_current: "Quali sono i ricavi delle vendite e delle prestazioni dell'anno corrente?",
@@ -72,7 +65,6 @@ export default async function handler(req, res) {
     }
     console.log(`[Analyze-HD/${sessionId}] Dati estratti con RAG:`, extractedData);
 
-    // 3. Generazione dell'Analisi Finale
     const finalAnalysisPrompt = PromptTemplate.fromTemplate(
       `Sei un analista finanziario esperto per PMI italiane. Basandoti ESCLUSIVAMENTE sui seguenti dati pre-estratti, fornisci un'analisi completa.
       
@@ -105,32 +97,30 @@ export default async function handler(req, res) {
     const analysisResult = await finalChain.invoke({ data: JSON.stringify(extractedData) });
     console.log(`[Analyze-HD/${sessionId}] Analisi finale generata.`);
 
-    // 4. Salvataggio dei risultati nel database
     const { error: saveError } = await supabase
-      .from('analysis_results')
+      .from('analysis_results_hd')
       .insert({
         session_id: sessionId,
         health_score: analysisResult.health_score || 0,
         summary: analysisResult.summary || '',
         key_metrics: analysisResult.key_metrics || {},
         recommendations: analysisResult.recommendations || [],
-        raw_ai_response: analysisResult, // Salviamo l'intero output dell'AI
+        raw_ai_response: analysisResult,
         detailed_swot: analysisResult.detailed_swot || {},
-        raw_parsed_data: extractedData, // Salviamo i dati estratti con RAG
+        raw_parsed_data: extractedData,
       });
 
     if (saveError) throw new Error(`Errore salvataggio risultati: ${saveError.message}`);
     console.log(`[Analyze-HD/${sessionId}] Risultati salvati su DB.`);
 
-    // 5. Aggiornamento dello stato finale della sessione
-    await supabase.from('checkup_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
+    await supabase.from('checkup_sessions_hd').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
     console.log(`[Analyze-HD/${sessionId}] 🎉 Analisi HD completata con successo!`);
 
     res.status(200).json({ success: true, sessionId });
 
   } catch (error) {
     console.error(`💥 [Analyze-HD/${sessionId}] Errore fatale:`, error);
-    await supabase.from('checkup_sessions').update({ status: 'failed', error_message: error.message }).eq('id', sessionId);
+    await supabase.from('checkup_sessions_hd').update({ status: 'failed', error_message: error.message }).eq('id', sessionId);
     res.status(500).json({ error: error.message });
   }
 }
