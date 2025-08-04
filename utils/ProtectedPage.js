@@ -1,6 +1,5 @@
 // /utils/ProtectedPage.js
-// VERSIONE POTENZIATA: Usa la Edge Function per un'autenticazione sicura e robusta,
-// mantenendo la struttura esistente per la massima compatibilità.
+// VERSIONE FINALE E CORRETTA: Usa l'evento 'outseta.ready' per un'autenticazione a prova di errore.
 
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
@@ -15,32 +14,26 @@ export function useUser() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [outsetaToken, setOutsetaToken] = useState(null); // Lo manteniamo per passarlo alle API se necessario
+  const [outsetaToken, setOutsetaToken] = useState(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    async function initUser() {
-      try {
-        // 1. Aspetta che Outseta sia caricato
-        let attempts = 0;
-        while (!window.Outseta && attempts < 50) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-          attempts++;
-        }
-        if (!window.Outseta) throw new Error('Outseta non è stato caricato in tempo.');
+    // Definiamo la nostra logica di autenticazione in una funzione separata.
+    const handleAuth = async () => {
+      if (!isMounted) return;
 
-        // 2. Ottieni il token di login da Outseta
+      try {
+        // Ora che l'evento 'outseta.ready' è scattato, possiamo usare le sue funzioni con sicurezza.
         const token = window.Outseta.getAuthToken();
         if (!token) {
-          // Se non c'è token, l'utente non è loggato. Reindirizza.
           const returnUrl = encodeURIComponent(window.location.href);
           window.location.replace(`${OUTSETA_LOGIN_URL}&returnUrl=${returnUrl}`);
           return;
         }
         if (isMounted) setOutsetaToken(token);
 
-        // 3. ✅ NUOVA LOGICA: Chiama la Edge Function per scambiare il token Outseta con un JWT Supabase
+        // Chiama la Edge Function per scambiare il token Outseta con un JWT Supabase
         console.log('🔄 Chiamata alla Edge Function per il token Supabase...');
         const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/get-supabase-jwt`, {
           method: 'POST',
@@ -54,20 +47,18 @@ export function useUser() {
         if (data.error) throw new Error(`Errore dalla Edge Function: ${data.error}`);
         console.log('✅ Token Supabase ricevuto.');
 
-        // 4. ✅ NUOVA LOGICA: Usa il JWT per fare il login sicuro in Supabase
+        // Usa il JWT per fare il login sicuro in Supabase
         const { error: signInError } = await supabase.auth.signInWithJwt(data.custom_jwt);
         if (signInError) throw signInError;
 
-        // 5. Recupera la sessione utente completa da Supabase
+        // Recupera la sessione utente completa da Supabase
         const { data: { session } } = await supabase.auth.getSession();
         if (session && isMounted) {
-          // L'oggetto 'user' di Supabase contiene già 'id' e 'email'.
-          // Per coerenza con il tuo codice precedente, aggiungiamo 'name' e 'uid'.
-          const outsetaUser = await window.Outseta.getUser(); // Lo richiamiamo per avere i dati completi
+          const outsetaUser = await window.Outseta.getUser();
           setUser({
-            ...session.user, // Mantiene tutti i dati di Supabase (id, email, etc.)
+            ...session.user,
             name: outsetaUser.FirstName || outsetaUser.Email.split('@')[0],
-            uid: outsetaUser.Uid, // ID Outseta
+            uid: outsetaUser.Uid,
           });
           console.log('✅ Utente autenticato con Supabase:', session.user.id);
         } else if (isMounted) {
@@ -80,10 +71,18 @@ export function useUser() {
       } finally {
         if (isMounted) setLoading(false);
       }
-    }
+    };
+    
+    // ✅ FIX: Invece di un ciclo di attesa, ci mettiamo in ascolto dell'evento 'outseta.ready'.
+    // Questo è il modo corretto e robusto per interagire con lo script di Outseta.
+    // La funzione 'handleAuth' verrà eseguita solo quando Outseta sarà completamente caricato.
+    window.addEventListener('outseta.ready', handleAuth);
 
-    initUser();
-    return () => { isMounted = false; };
+    // Funzione di pulizia per rimuovere l'event listener quando il componente viene smontato
+    return () => {
+      isMounted = false;
+      window.removeEventListener('outseta.ready', handleAuth);
+    };
   }, []);
 
   // Restituisce l'utente e il token Outseta originale
@@ -92,7 +91,7 @@ export function useUser() {
 
 /**
  * Componente wrapper per proteggere le pagine.
- * Questa parte è rimasta quasi identica per non rompere nulla.
+ * Questa parte non necessita di modifiche.
  */
 export function ProtectedPage({ children, loadingComponent }) {
   const { user, outsetaToken, loading, error } = useUser();
@@ -121,8 +120,7 @@ export function ProtectedPage({ children, loadingComponent }) {
     );
   }
 
-  if (!user) return null; // L'utente non è autenticato, verrà reindirizzato dal hook
+  if (!user) return null;
 
-  // Passa sia l'utente (ora potenziato) che il token Outseta ai componenti figli
   return typeof children === 'function' ? children(user, outsetaToken) : children;
 }
