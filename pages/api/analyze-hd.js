@@ -1,5 +1,5 @@
 // /api/analyze-hd.js
-// VERSIONE OTTIMIZZATA PER L'ITALIANO: Utilizza terminologia contabile italiana per un'estrazione dati più precisa.
+// VERSIONE ADDESTRATA SULLO SCHEMA ITALIANO: Estrae un set di dati molto più ricco e preciso.
 
 import { createClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from "@langchain/openai";
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
   if (!sessionId) return res.status(400).json({ error: 'SessionId mancante' });
 
   try {
-    console.log(`[Analyze-HD/${sessionId}] Inizio analisi RAG potenziata per l'italiano.`);
+    console.log(`[Analyze-HD/${sessionId}] Inizio analisi RAG con schema italiano.`);
 
     const { data: promptData, error: promptError } = await supabase
       .from('ai_prompts').select('prompt_template').eq('name', 'ANALISI_FINALE_HD_V1').single();
@@ -41,12 +41,23 @@ export default async function handler(req, res) {
     });
     const retriever = vectorStore.asRetriever({ searchKwargs: { filter: { session_id: sessionId } } });
 
-    // ✅ OTTIMIZZAZIONE: Le domande ora usano la terminologia specifica dei bilanci italiani.
+    // ✅ NUOVO SET DI DOMANDE: Basato sullo schema di bilancio italiano fornito.
     const questions = {
-        revenue_current: "Qual è il valore della voce 'A.1) Ricavi delle vendite e delle prestazioni' o 'Valore della Produzione' per l'anno corrente?",
-        revenue_previous: "Qual è il valore della voce 'A.1) Ricavi delle vendite e delle prestazioni' o 'Valore della Produzione' per l'anno precedente?",
-        net_equity_current: "Qual è il 'Totale Patrimonio Netto (A)' dell'anno corrente?",
-        net_income_current: "Qual è l' 'Utile (perdita) dell'esercizio' per l'anno corrente?",
+        // Conto Economico
+        revenue_current: "Qual è il valore di 'A) Valore della produzione' per l'anno corrente?",
+        revenue_previous: "Qual è il valore di 'A) Valore della produzione' per l'anno precedente?",
+        ebitda_current: "Qual è la 'Differenza tra valore e costi della produzione (A-B)' per l'anno corrente?",
+        ebitda_previous: "Qual è la 'Differenza tra valore e costi della produzione (A-B)' per l'anno precedente?",
+        net_income_current: "Qual è il valore di 'Utile (perdita) dell'esercizio' per l'anno corrente?",
+        net_income_previous: "Qual è il valore di 'Utile (perdita) dell'esercizio' per l'anno precedente?",
+        financial_charges_current: "Qual è il valore di '17) interessi e altri oneri finanziari' per l'anno corrente?",
+
+        // Stato Patrimoniale
+        net_equity_current: "Qual è il 'Totale patrimonio netto (A)' per l'anno corrente?",
+        total_assets_current: "Qual è il 'Totale attivo' per l'anno corrente?",
+        cash_and_equivalents_current: "Qual è il valore di 'IV - Disponibilità liquide' per l'anno corrente?",
+        short_term_debt_current: "Qual è il valore dei 'debiti verso banche' esigibili 'entro l'esercizio successivo' per l'anno corrente?",
+        long_term_debt_current: "Qual è il valore dei 'debiti verso banche' esigibili 'oltre l'esercizio successivo' per l'anno corrente?",
     };
 
     const extractedData = {};
@@ -54,35 +65,39 @@ export default async function handler(req, res) {
         const relevantDocs = await retriever.getRelevantDocuments(question);
         const context = formatDocumentsAsString(relevantDocs);
         
-        // ✅ OTTIMIZZAZIONE: Il prompt ora istruisce l'AI a gestire i formati numerici italiani.
-        const prompt = PromptTemplate.fromTemplate(
-            `Contesto:\n{context}\n\nDomanda: {question}\n\nBasandoti ESCLUSIVAMENTE sul contesto fornito, estrai il valore numerico richiesto. I numeri potrebbero essere in formato italiano (es. "1.234.567,89"). Pulisci il numero da qualsiasi simbolo (es. €) o testo. Rispondi SOLO con il numero pulito (es. "1234567.89"). Se il valore non è presente, rispondi con "0".`
+        const extractionPrompt = PromptTemplate.fromTemplate(
+            `Sei un esperto contabile. Analizza il seguente contesto da un bilancio italiano e trova il valore numerico esatto per la domanda. Ignora altri numeri non pertinenti sulla stessa riga.\n\nContesto:\n{context}\n\nDomanda: {question}\n\nIstruzioni: I numeri sono in formato italiano (es. "1.234.567,89"). Pulisci il numero da qualsiasi simbolo (es. €) o testo e restituiscilo in formato standard (es. "1234567.89"). Rispondi SOLO con il numero. Se il valore non è presente, rispondi con "0".`
         );
-        const chain = prompt.pipe(llm).pipe(new StringOutputParser());
+
+        const chain = extractionPrompt.pipe(llm).pipe(new StringOutputParser());
         const answer = await chain.invoke({ question, context });
         
-        // Logica di pulizia migliorata per i formati italiani
         const cleanedAnswer = answer.replace(/\./g, '').replace(',', '.');
         extractedData[key] = parseFloat(cleanedAnswer) || 0;
     }
     console.log(`[Analyze-HD/${sessionId}] Dati estratti con RAG:`, extractedData);
 
-    // ESEGUIAMO I CALCOLI QUI, NEL CODICE, PER LA MASSIMA PRECISIONE
-    const { revenue_current, revenue_previous, net_equity_current, net_income_current } = extractedData;
+    // ✅ CALCOLI POTENZIATI: Calcoliamo nuovi indici finanziari.
+    const { 
+        revenue_current, revenue_previous, net_equity_current, net_income_current,
+        ebitda_current, total_assets_current, cash_and_equivalents_current,
+        short_term_debt_current, long_term_debt_current, financial_charges_current
+    } = extractedData;
     
-    const crescita_fatturato_perc = (revenue_previous && revenue_current && revenue_previous !== 0) 
-      ? ((revenue_current - revenue_previous) / Math.abs(revenue_previous)) * 100 
-      : null;
-      
-    const roe = (net_equity_current && net_income_current && net_equity_current !== 0)
-      ? (net_income_current / net_equity_current) * 100
-      : null;
+    const total_debt = short_term_debt_current + long_term_debt_current;
+    const net_financial_position = total_debt - cash_and_equivalents_current;
+
+    const crescita_fatturato_perc = (revenue_previous !== 0) ? ((revenue_current - revenue_previous) / Math.abs(revenue_previous)) * 100 : null;
+    const roe = (net_equity_current !== 0) ? (net_income_current / net_equity_current) * 100 : null;
+    const roi = (total_assets_current !== 0) ? (ebitda_current / total_assets_current) * 100 : null;
 
     const dataForFinalPrompt = {
       ...extractedData,
       key_metrics: {
         crescita_fatturato_perc: { value: crescita_fatturato_perc, label: "Crescita Fatturato (%)" },
-        roe: { value: roe, label: "ROE (%)" }
+        roe: { value: roe, label: "ROE (%)" },
+        roi: { value: roi, label: "ROI (%)" },
+        net_financial_position: { value: net_financial_position, label: "Posizione Finanziaria Netta (€)" }
       },
       charts_data: {
         revenue_trend: { current_year: revenue_current, previous_year: revenue_previous }
