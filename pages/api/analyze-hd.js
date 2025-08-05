@@ -1,12 +1,12 @@
 // /api/analyze-hd.js
-// VERSIONE SEMPLIFICATA E ROBUSTA: Torna all'estrazione mirata per ogni dato.
+// VERSIONE FINALE CON ESTRAZIONE STRUTTURATA: Implementa la strategia a 2 fasi con il prompt dell'utente.
 
 import { createClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 import { ChatOpenAI } from "@langchain/openai";
 import { PromptTemplate } from "@langchain/core/prompts";
-import { StringOutputParser } from "@langchain/core/output_parsers";
+import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { formatDocumentsAsString } from "langchain/util/document";
 
 const supabase = createClient(
@@ -14,10 +14,12 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 const embeddings = new OpenAIEmbeddings({ openAIApiKey: process.env.OPENAI_API_KEY });
-const llm = new ChatOpenAI({ 
+// Abilitiamo la modalità JSON per un output strutturato e affidabile
+const llmJson = new ChatOpenAI({ 
     openAIApiKey: process.env.OPENAI_API_KEY, 
     modelName: "gpt-4o",
-    temperature: 0 
+    temperature: 0,
+    modelKwargs: { response_format: { type: "json_object" } },
 });
 
 export default async function handler(req, res) {
@@ -29,46 +31,60 @@ export default async function handler(req, res) {
   if (!sessionId) return res.status(400).json({ error: 'SessionId mancante' });
 
   try {
-    console.log(`[Analyze-HD/${sessionId}] Inizio estrazione dati principali con metodo mirato.`);
+    console.log(`[Analyze-HD/${sessionId}] Inizio estrazione con JSON strutturato.`);
 
     const vectorStore = new SupabaseVectorStore(embeddings, {
       client: supabase, tableName: 'documents', queryName: 'match_documents',
     });
-    const retriever = vectorStore.asRetriever({ k: 10, searchKwargs: { filter: { session_id: sessionId } } });
+    // Recuperiamo un contesto ampio per l'estrazione
+    const retriever = vectorStore.asRetriever({ k: 15, searchKwargs: { filter: { session_id: sessionId } } });
+    const contextDocs = await retriever.getRelevantDocuments("Stato Patrimoniale e Conto Economico completo");
+    const context = formatDocumentsAsString(contextDocs);
 
-    const questions = {
-        revenue_current: "Dal Conto Economico, qual è il valore di 'A) Valore della produzione' per l'anno corrente?",
-        revenue_previous: "Dal Conto Economico, qual è il valore di 'A) Valore della produzione' per l'anno precedente?",
-        ebitda_current: "Dal Conto Economico, qual è il valore della 'Differenza tra valore e costi della produzione (A-B)' per l'anno corrente?",
-        net_income_current: "Dal Conto Economico, qual è il valore finale di '21) Utile (perdita) dell'esercizio' per l'anno corrente?",
-        net_equity_current: "Dallo Stato Patrimoniale Passivo, qual è il 'Totale patrimonio netto' (voce A del Passivo) per l'anno corrente?",
-        total_assets_current: "Dallo Stato Patrimoniale Attivo, qual è il 'Totale attivo' finale per l'anno corrente?",
-        cash_and_equivalents_current: "Dallo Stato Patrimoniale Attivo, qual è il 'Totale disponibilità liquide' (voce C.IV) per l'anno corrente?",
-        total_debt_current: "Dallo Stato Patrimoniale Passivo, qual è il 'Totale debiti' (voce D) per l'anno corrente?",
-    };
+    // ✅ PROMPT DELL'UTENTE: Utilizziamo il prompt fornito, che è molto più robusto.
+    const extractionPrompt = PromptTemplate.fromTemplate(
+        `Sei un esperto analista contabile. Il tuo unico compito è estrarre dati numerici precisi dallo **Stato Patrimoniale** e dal **Conto Economico** riportati nel contesto seguente, e restituirli in un formato JSON standardizzato.
 
-    const extractedData = {};
-    for (const [key, question] of Object.entries(questions)) {
-        const relevantDocs = await retriever.getRelevantDocuments(question);
-        const context = formatDocumentsAsString(relevantDocs);
+        Contesto:
+        {context}
         
-        const extractionPrompt = PromptTemplate.fromTemplate(
-            `Sei un esperto contabile. Analizza il seguente contesto da un bilancio italiano. Trova il valore numerico esatto che risponde alla domanda. Ignora altri numeri non pertinenti.\n\nContesto:\n{context}\n\nDomanda: {question}\n\nIstruzioni: I numeri sono in formato italiano (es. "1.234.567,89"). Pulisci il numero e restituiscilo in formato standard (es. "1234567.89"). Rispondi SOLO con il numero. Se il valore non è presente, rispondi "0".`
-        );
-
-        const chain = extractionPrompt.pipe(llm).pipe(new StringOutputParser());
-        const answer = await chain.invoke({ question, context });
+        ### ISTRUZIONI:
+        1. Analizza attentamente ogni tabella del bilancio.
+        2. Per ogni riga che contiene un’etichetta (label) e valori numerici per uno o entrambi gli anni:
+           - Copia fedelmente l’etichetta
+           - Estrai i valori **per l'anno corrente** e **per l'anno precedente**
+           - Se manca un valore, inserisci 0
+        3. I numeri sono nel formato italiano (es. "1.234.567,89") → converti in numero standard (es. 1234567.89)
+        4. Se un’etichetta è presente due volte, includila una sola volta (la più completa)
+        5. Ignora intestazioni, sottototali intermedi o voci testuali
+        6. Inserisci solo i dati numerici, **non fare alcun commento o calcolo**
+        7. Il risultato finale deve essere un oggetto JSON con questa struttura precisa:
         
-        const cleanedAnswer = answer.replace(/\./g, '').replace(',', '.');
-        extractedData[key] = parseFloat(cleanedAnswer) || 0;
+        {{
+         "items": [
+           {{ "label": "Valore della produzione", "current_year": 32938542, "previous_year": 21088915 }},
+           {{ "label": "Utile (perdita) dell'esercizio", "current_year": 4079843, "previous_year": 1480683 }},
+           {{ "label": "Totale patrimonio netto", "current_year": 5187514, "previous_year": 3238355 }}
+         ]
+        }}`
+    );
+
+    const extractionChain = extractionPrompt.pipe(llmJson).pipe(new JsonOutputParser());
+    console.log(`[Analyze-HD/${sessionId}] Avvio estrazione strutturata...`);
+    const extractedResult = await extractionChain.invoke({ context });
+    
+    const extractedItems = extractedResult.items || [];
+
+    if (extractedItems.length < 5) { // Controllo di sicurezza
+        throw new Error(`Estrazione fallita: Estratti solo ${extractedItems.length} dati. Il documento potrebbe essere illeggibile o il prompt non ha funzionato.`);
     }
-    console.log(`[Analyze-HD/${sessionId}] Dati estratti con RAG:`, extractedData);
+    console.log(`[Analyze-HD/${sessionId}] Dati estratti con JSON mode: ${extractedItems.length} voci.`);
 
-    // ✅ SEMPLIFICAZIONE: Salviamo solo i dati estratti, senza fare analisi complesse.
+    // Per ora, salviamo l'intera tabella estratta per la verifica.
     await supabase.from('analysis_results_hd').insert({
         session_id: sessionId,
-        raw_parsed_data: extractedData, // Salviamo i dati puliti per la visualizzazione
-        summary: `Estrazione dati completata per ${Object.keys(extractedData).length} voci di bilancio.`
+        raw_parsed_data: extractedItems, // Salviamo l'array completo di voci di bilancio
+        summary: `Estrazione completata. ${extractedItems.length} voci di bilancio estratte per la verifica.`
     });
 
     await supabase.from('checkup_sessions_hd').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
