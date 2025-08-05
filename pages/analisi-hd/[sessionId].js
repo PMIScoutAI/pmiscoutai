@@ -46,6 +46,7 @@ const icons = {
   lightbulb: <><path d="M9 18h6" /><path d="M10 22h4" /><path d="M12 2a7 7 0 0 0-7 7c0 3 2 5 2 7h10c0-2 2-4 2-7a7 7 0 0 0-7-7z" /></>,
   trendingUp: <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></>,
   award: <><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 22 12 17 17 22 15.79 13.88"></polyline></>,
+  dollarSign: <><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></>,
 };
 
 // --- Layout della Pagina ---
@@ -154,20 +155,30 @@ const KeyMetricsSection = ({ metrics }) => {
     const metricIcons = {
         crescita_fatturato_perc: { icon: icons.trendingUp, color: 'green' },
         roe: { icon: icons.award, color: 'blue' },
+        roi: { icon: icons.target, color: 'indigo' },
+        net_financial_position: { icon: icons.dollarSign, color: 'yellow' },
     };
     return (
         <section>
             <h2 className="text-xl font-bold text-slate-800 mb-4">Indicatori Chiave</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {Object.entries(metrics).map(([key, metric]) => {
+                    if (!metric) return null;
                     const iconInfo = metricIcons[key] || { icon: icons.zap, color: 'gray' };
+                    const isCurrency = key === 'net_financial_position';
+                    const value = metric.value !== null 
+                        ? (isCurrency 
+                            ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(metric.value) 
+                            : `${metric.value.toFixed(2)}%`)
+                        : 'N/A';
+
                     return (
                         <div key={key} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
                             <div className={`w-10 h-10 rounded-lg flex items-center justify-center bg-${iconInfo.color}-100`}>
                                 <Icon path={iconInfo.icon} className={`w-6 h-6 text-${iconInfo.color}-600`} />
                             </div>
                             <p className="text-sm text-slate-500 mt-4">{metric.label}</p>
-                            <p className="text-3xl font-bold text-slate-900">{metric.value !== null ? `${metric.value.toFixed(2)}%` : 'N/A'}</p>
+                            <p className="text-3xl font-bold text-slate-900">{value}</p>
                         </div>
                     );
                 })}
