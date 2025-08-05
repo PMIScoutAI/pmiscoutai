@@ -39,7 +39,8 @@ export default async function handler(req, res) {
     const vectorStore = new SupabaseVectorStore(embeddings, {
       client: supabase, tableName: 'documents', queryName: 'match_documents',
     });
-    const retriever = vectorStore.asRetriever({ searchKwargs: { filter: { session_id: sessionId } } });
+    // ✅ PIÙ CONTESTO: Aumentiamo il numero di documenti recuperati per dare all'AI una visione migliore.
+    const retriever = vectorStore.asRetriever({ k: 8, searchKwargs: { filter: { session_id: sessionId } } });
 
     // ✅ SET DI DOMANDE IPER-SPECIFICHE: Basato sulla struttura esatta del bilancio fornito.
     const questions = {
@@ -48,8 +49,8 @@ export default async function handler(req, res) {
         revenue_previous: "Nel Conto Economico, qual è il valore di 'A) Valore della produzione' per l'anno precedente?",
         ebitda_current: "Nel Conto Economico, qual è il valore della 'Differenza tra valore e costi della produzione (A-B)' per l'anno corrente?",
         ebitda_previous: "Nel Conto Economico, qual è la 'Differenza tra valore e costi della produzione (A-B)' per l'anno precedente?",
-        net_income_current: "Nel Conto Economico, qual è il valore finale di 'Utile (perdita) dell'esercizio' per l'anno corrente?",
-        net_income_previous: "Nel Conto Economico, qual è il valore finale di 'Utile (perdita) dell'esercizio' per l'anno precedente?",
+        net_income_current: "Nel Conto Economico, qual è il valore finale di '21) Utile (perdita) dell'esercizio' per l'anno corrente?",
+        net_income_previous: "Nel Conto Economico, qual è il valore finale di '21) Utile (perdita) dell'esercizio' per l'anno precedente?",
         
         // Stato Patrimoniale
         net_equity_current: "Nello Stato Patrimoniale, qual è il 'Totale patrimonio netto' (voce A del Passivo) per l'anno corrente?",
@@ -63,8 +64,9 @@ export default async function handler(req, res) {
         const relevantDocs = await retriever.getRelevantDocuments(question);
         const context = formatDocumentsAsString(relevantDocs);
         
+        // ✅ PROMPT PIÙ INTELLIGENTE: Ora è "consapevole" della struttura a colonne dei bilanci.
         const extractionPrompt = PromptTemplate.fromTemplate(
-            `Sei un esperto contabile. Analizza il seguente contesto da un bilancio italiano e trova il valore numerico esatto per la domanda. Ignora altri numeri non pertinenti sulla stessa riga.\n\nContesto:\n{context}\n\nDomanda: {question}\n\nIstruzioni: I numeri sono in formato italiano (es. "1.234.567,89"). Pulisci il numero da qualsiasi simbolo (es. €) o testo e restituiscilo in formato standard (es. "1234567.89"). Rispondi SOLO con il numero. Se il valore non è presente, rispondi con "0".`
+            `Sei un esperto contabile. Analizza il seguente contesto da un bilancio italiano. Il bilancio ha tipicamente due colonne di valori: una per l'anno corrente e una per l'anno precedente. Trova il valore numerico esatto che risponde alla domanda, assicurandoti di prenderlo dalla colonna corretta (anno corrente o precedente, come specificato). Ignora altri numeri non pertinenti sulla stessa riga.\n\nContesto:\n{context}\n\nDomanda: {question}\n\nIstruzioni: I numeri sono in formato italiano (es. "1.234.567,89"). Pulisci il numero da qualsiasi simbolo (es. €) o testo e restituiscilo in formato standard (es. "1234567.89"). Rispondi SOLO con il numero. Se il valore non è presente, rispondi con "0".`
         );
 
         const chain = extractionPrompt.pipe(llm).pipe(new StringOutputParser());
@@ -75,7 +77,7 @@ export default async function handler(req, res) {
     }
     console.log(`[Analyze-HD/${sessionId}] Dati estratti con RAG:`, extractedData);
 
-    // ✅ CALCOLI POTENZIATI: Calcoliamo nuovi indici finanziari.
+    // CALCOLI POTENZIATI: Calcoliamo nuovi indici finanziari.
     const { 
         revenue_current, revenue_previous, net_equity_current, net_income_current,
         ebitda_current, total_assets_current, cash_and_equivalents_current,
