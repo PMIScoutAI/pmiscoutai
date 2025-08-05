@@ -1,5 +1,5 @@
 // /api/analyze-hd.js
-// VERSIONE POTENZIATA: Legge il prompt dal DB, estrae più dati e genera un report più ricco.
+// VERSIONE POTENZIATA: Esegue i calcoli in locale per la massima precisione.
 
 import { createClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from "@langchain/openai";
@@ -9,7 +9,6 @@ import { PromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser, JsonOutputParser } from "@langchain/core/output_parsers";
 import { formatDocumentsAsString } from "langchain/util/document";
 
-// --- Inizializzazione dei Client ---
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -21,45 +20,27 @@ const llm = new ChatOpenAI({
     temperature: 0 
 });
 
-// --- Funzione Principale dell'Handler ---
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Metodo non permesso' });
   }
 
   const { sessionId } = req.body;
-  if (!sessionId) {
-    return res.status(400).json({ error: 'SessionId mancante' });
-  }
+  if (!sessionId) return res.status(400).json({ error: 'SessionId mancante' });
 
   try {
     console.log(`[Analyze-HD/${sessionId}] Inizio analisi RAG potenziata.`);
 
-    // 1. ✅ NUOVO: Recupera il prompt dal database
     const { data: promptData, error: promptError } = await supabase
-      .from('ai_prompts')
-      .select('prompt_template')
-      .eq('name', 'ANALISI_FINALE_HD_V1')
-      .single();
-    
-    if (promptError || !promptData) {
-      throw new Error("Impossibile recuperare il prompt 'ANALISI_FINALE_HD_V1' dal database.");
-    }
+      .from('ai_prompts').select('prompt_template').eq('name', 'ANALISI_FINALE_HD_V1').single();
+    if (promptError) throw new Error("Impossibile recuperare il prompt 'ANALISI_FINALE_HD_V1'.");
     const finalAnalysisPromptTemplate = promptData.prompt_template;
-    console.log(`[Analyze-HD/${sessionId}] Prompt 'ANALISI_FINALE_HD_V1' caricato.`);
 
-    // 2. Inizializza il Retriever
     const vectorStore = new SupabaseVectorStore(embeddings, {
-      client: supabase,
-      tableName: 'documents',
-      queryName: 'match_documents',
+      client: supabase, tableName: 'documents', queryName: 'match_documents',
     });
-    const retriever = vectorStore.asRetriever({
-        searchKwargs: { filter: { session_id: sessionId } }
-    });
-    console.log(`[Analyze-HD/${sessionId}] Retriever inizializzato.`);
+    const retriever = vectorStore.asRetriever({ searchKwargs: { filter: { session_id: sessionId } } });
 
-    // 3. ✅ POTENZIATO: Estrazione di più dati, inclusi quelli dell'anno precedente
     const questions = {
         revenue_current: "Quali sono i ricavi delle vendite e delle prestazioni dell'anno corrente?",
         revenue_previous: "Quali sono i ricavi delle vendite e delle prestazioni dell'anno precedente?",
@@ -69,31 +50,51 @@ export default async function handler(req, res) {
 
     const extractedData = {};
     for (const [key, question] of Object.entries(questions)) {
-        console.log(`[Analyze-HD/${sessionId}] Estraggo: ${key}`);
         const relevantDocs = await retriever.getRelevantDocuments(question);
         const context = formatDocumentsAsString(relevantDocs);
-        
         const prompt = PromptTemplate.fromTemplate(
-            `Basandoti solo sul seguente contesto, rispondi alla domanda. Rispondi solo con il valore numerico, senza testo aggiuntivo. Se non trovi la risposta, rispondi "0".\n\nContesto:\n{context}\n\nDomanda: {question}`
+            `Contesto: {context}\n\nDomanda: {question}\n\nBasandoti ESCLUSIVAMENTE sul contesto fornito, estrai il valore numerico richiesto. Pulisci il numero da qualsiasi simbolo (es. €) o testo. Rispondi SOLO con il numero. Se il valore non è presente, rispondi con "0".`
         );
         const chain = prompt.pipe(llm).pipe(new StringOutputParser());
         const answer = await chain.invoke({ question, context });
-        // Pulizia del numero da eventuali simboli di valuta o testo residuo
-        const cleanedAnswer = answer.replace(/[^0-9.,-]+/g, '').replace(/\./g, '').replace(',', '.');
+        const cleanedAnswer = answer.replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.');
         extractedData[key] = parseFloat(cleanedAnswer) || 0;
     }
     console.log(`[Analyze-HD/${sessionId}] Dati estratti con RAG:`, extractedData);
 
-    // 4. Generazione dell'Analisi Finale usando il prompt dal DB
+    // ✅ ESEGUIAMO I CALCOLI QUI, NEL CODICE, PER LA MASSIMA PRECISIONE
+    const { revenue_current, revenue_previous, net_equity_current, net_income_current } = extractedData;
+    
+    const crescita_fatturato_perc = (revenue_previous && revenue_current) 
+      ? ((revenue_current - revenue_previous) / revenue_previous) * 100 
+      : null;
+      
+    const roe = (net_equity_current && net_income_current)
+      ? (net_income_current / net_equity_current) * 100
+      : null;
+
+    const dataForFinalPrompt = {
+      ...extractedData,
+      key_metrics: {
+        crescita_fatturato_perc: { value: crescita_fatturato_perc, label: "Crescita Fatturato (%)" },
+        roe: { value: roe, label: "ROE (%)" }
+      },
+      charts_data: {
+        revenue_trend: { current_year: revenue_current, previous_year: revenue_previous }
+      }
+    };
+    
     const finalAnalysisPrompt = PromptTemplate.fromTemplate(finalAnalysisPromptTemplate);
     const finalChain = finalAnalysisPrompt.pipe(llm).pipe(new JsonOutputParser());
-    const analysisResult = await finalChain.invoke({ data: JSON.stringify(extractedData) });
+    const analysisResult = await finalChain.invoke({ data: JSON.stringify(dataForFinalPrompt, null, 2) });
+    
+    // Controlla se l'AI ha restituito un errore controllato
+    if (analysisResult.error) {
+        throw new Error(analysisResult.error);
+    }
     console.log(`[Analyze-HD/${sessionId}] Analisi finale generata.`);
 
-    // 5. Salvataggio dei risultati nel database
-    const { error: saveError } = await supabase
-      .from('analysis_results_hd')
-      .insert({
+    await supabase.from('analysis_results_hd').insert({
         session_id: sessionId,
         health_score: analysisResult.health_score,
         summary: analysisResult.summary,
@@ -103,12 +104,8 @@ export default async function handler(req, res) {
         charts_data: analysisResult.charts_data,
         detailed_swot: analysisResult.detailed_swot,
         raw_parsed_data: extractedData,
-      });
+    });
 
-    if (saveError) throw new Error(`Errore salvataggio risultati: ${saveError.message}`);
-    console.log(`[Analyze-HD/${sessionId}] Risultati salvati su DB.`);
-
-    // 6. Aggiornamento dello stato finale della sessione
     await supabase.from('checkup_sessions_hd').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
     console.log(`[Analyze-HD/${sessionId}] 🎉 Analisi HD completata con successo!`);
 
