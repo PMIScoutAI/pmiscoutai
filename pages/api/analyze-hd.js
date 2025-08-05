@@ -1,12 +1,12 @@
 // /api/analyze-hd.js
-// VERSIONE SEMPLIFICATA E ROBUSTA: Torna all'estrazione mirata per ogni dato.
+// VERSIONE SEMPLIFICATA: Si concentra solo sull'estrazione affidabile dei dati.
 
 import { createClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 import { ChatOpenAI } from "@langchain/openai";
 import { PromptTemplate } from "@langchain/core/prompts";
-import { StringOutputParser, JsonOutputParser } from "@langchain/core/output_parsers";
+import { StringOutputParser } from "@langchain/core/output_parsers";
 import { formatDocumentsAsString } from "langchain/util/document";
 
 const supabase = createClient(
@@ -19,13 +19,6 @@ const llm = new ChatOpenAI({
     modelName: "gpt-4o",
     temperature: 0 
 });
-const llmJson = new ChatOpenAI({ 
-    openAIApiKey: process.env.OPENAI_API_KEY, 
-    modelName: "gpt-4o",
-    temperature: 0,
-    modelKwargs: { response_format: { type: "json_object" } },
-});
-
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -36,12 +29,7 @@ export default async function handler(req, res) {
   if (!sessionId) return res.status(400).json({ error: 'SessionId mancante' });
 
   try {
-    console.log(`[Analyze-HD/${sessionId}] Inizio analisi con estrazione mirata.`);
-
-    const { data: promptData, error: promptError } = await supabase
-      .from('ai_prompts').select('prompt_template').eq('name', 'ANALISI_FINALE_HD_V1').single();
-    if (promptError) throw new Error("Impossibile recuperare il prompt 'ANALISI_FINALE_HD_V1'.");
-    const finalAnalysisPromptTemplate = promptData.prompt_template;
+    console.log(`[Analyze-HD/${sessionId}] Inizio estrazione dati principali.`);
 
     const vectorStore = new SupabaseVectorStore(embeddings, {
       client: supabase, tableName: 'documents', queryName: 'match_documents',
@@ -76,40 +64,15 @@ export default async function handler(req, res) {
     }
     console.log(`[Analyze-HD/${sessionId}] Dati estratti con RAG:`, extractedData);
 
-    // Semplifichiamo i calcoli per il debug
-    const { revenue_current, revenue_previous, net_income_current } = extractedData;
-    const crescita_fatturato_perc = (revenue_previous !== 0) ? ((revenue_current - revenue_previous) / Math.abs(revenue_previous)) * 100 : null;
-
-    const dataForFinalPrompt = {
-      ...extractedData,
-      key_metrics: {
-        crescita_fatturato_perc: { value: crescita_fatturato_perc, label: "Crescita Fatturato (%)" },
-      },
-    };
-    
-    const finalAnalysisPrompt = PromptTemplate.fromTemplate(finalAnalysisPromptTemplate);
-    const finalChain = finalAnalysisPrompt.pipe(llmJson).pipe(new JsonOutputParser());
-    const analysisResult = await finalChain.invoke({ data: JSON.stringify(dataForFinalPrompt, null, 2) });
-    
-    if (analysisResult.error) {
-        throw new Error(analysisResult.error);
-    }
-    console.log(`[Analyze-HD/${sessionId}] Analisi finale generata.`);
-
+    // ✅ SEMPLIFICAZIONE: Salviamo solo i dati estratti, senza fare analisi.
     await supabase.from('analysis_results_hd').insert({
         session_id: sessionId,
-        health_score: analysisResult.health_score,
-        summary: analysisResult.summary,
-        key_metrics: analysisResult.key_metrics,
-        recommendations: analysisResult.recommendations,
-        raw_ai_response: analysisResult,
-        charts_data: analysisResult.charts_data,
-        detailed_swot: analysisResult.detailed_swot,
         raw_parsed_data: extractedData, // Salviamo i dati puliti per la visualizzazione
+        summary: `Estrazione dati completata per ${Object.keys(extractedData).length} voci di bilancio.`
     });
 
     await supabase.from('checkup_sessions_hd').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
-    console.log(`[Analyze-HD/${sessionId}] 🎉 Analisi completata con successo!`);
+    console.log(`[Analyze-HD/${sessionId}] 🎉 Estrazione completata con successo!`);
 
     res.status(200).json({ success: true, sessionId });
 
