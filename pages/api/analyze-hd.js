@@ -1,5 +1,5 @@
 // /api/analyze-hd.js
-// VERSIONE POTENZIATA: Esegue i calcoli in locale per la massima precisione.
+// VERSIONE OTTIMIZZATA PER L'ITALIANO: Utilizza terminologia contabile italiana per un'estrazione dati più precisa.
 
 import { createClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from "@langchain/openai";
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
   if (!sessionId) return res.status(400).json({ error: 'SessionId mancante' });
 
   try {
-    console.log(`[Analyze-HD/${sessionId}] Inizio analisi RAG potenziata.`);
+    console.log(`[Analyze-HD/${sessionId}] Inizio analisi RAG potenziata per l'italiano.`);
 
     const { data: promptData, error: promptError } = await supabase
       .from('ai_prompts').select('prompt_template').eq('name', 'ANALISI_FINALE_HD_V1').single();
@@ -41,35 +41,40 @@ export default async function handler(req, res) {
     });
     const retriever = vectorStore.asRetriever({ searchKwargs: { filter: { session_id: sessionId } } });
 
+    // ✅ OTTIMIZZAZIONE: Le domande ora usano la terminologia specifica dei bilanci italiani.
     const questions = {
-        revenue_current: "Quali sono i ricavi delle vendite e delle prestazioni dell'anno corrente?",
-        revenue_previous: "Quali sono i ricavi delle vendite e delle prestazioni dell'anno precedente?",
-        net_equity_current: "Qual è il patrimonio netto dell'anno corrente?",
-        net_income_current: "Qual è l'utile (o la perdita) dell'esercizio corrente?",
+        revenue_current: "Qual è il valore della voce 'A.1) Ricavi delle vendite e delle prestazioni' o 'Valore della Produzione' per l'anno corrente?",
+        revenue_previous: "Qual è il valore della voce 'A.1) Ricavi delle vendite e delle prestazioni' o 'Valore della Produzione' per l'anno precedente?",
+        net_equity_current: "Qual è il 'Totale Patrimonio Netto (A)' dell'anno corrente?",
+        net_income_current: "Qual è l' 'Utile (perdita) dell'esercizio' per l'anno corrente?",
     };
 
     const extractedData = {};
     for (const [key, question] of Object.entries(questions)) {
         const relevantDocs = await retriever.getRelevantDocuments(question);
         const context = formatDocumentsAsString(relevantDocs);
+        
+        // ✅ OTTIMIZZAZIONE: Il prompt ora istruisce l'AI a gestire i formati numerici italiani.
         const prompt = PromptTemplate.fromTemplate(
-            `Contesto: {context}\n\nDomanda: {question}\n\nBasandoti ESCLUSIVAMENTE sul contesto fornito, estrai il valore numerico richiesto. Pulisci il numero da qualsiasi simbolo (es. €) o testo. Rispondi SOLO con il numero. Se il valore non è presente, rispondi con "0".`
+            `Contesto:\n{context}\n\nDomanda: {question}\n\nBasandoti ESCLUSIVAMENTE sul contesto fornito, estrai il valore numerico richiesto. I numeri potrebbero essere in formato italiano (es. "1.234.567,89"). Pulisci il numero da qualsiasi simbolo (es. €) o testo. Rispondi SOLO con il numero pulito (es. "1234567.89"). Se il valore non è presente, rispondi con "0".`
         );
         const chain = prompt.pipe(llm).pipe(new StringOutputParser());
         const answer = await chain.invoke({ question, context });
-        const cleanedAnswer = answer.replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.');
+        
+        // Logica di pulizia migliorata per i formati italiani
+        const cleanedAnswer = answer.replace(/\./g, '').replace(',', '.');
         extractedData[key] = parseFloat(cleanedAnswer) || 0;
     }
     console.log(`[Analyze-HD/${sessionId}] Dati estratti con RAG:`, extractedData);
 
-    // ✅ ESEGUIAMO I CALCOLI QUI, NEL CODICE, PER LA MASSIMA PRECISIONE
+    // ESEGUIAMO I CALCOLI QUI, NEL CODICE, PER LA MASSIMA PRECISIONE
     const { revenue_current, revenue_previous, net_equity_current, net_income_current } = extractedData;
     
-    const crescita_fatturato_perc = (revenue_previous && revenue_current) 
-      ? ((revenue_current - revenue_previous) / revenue_previous) * 100 
+    const crescita_fatturato_perc = (revenue_previous && revenue_current && revenue_previous !== 0) 
+      ? ((revenue_current - revenue_previous) / Math.abs(revenue_previous)) * 100 
       : null;
       
-    const roe = (net_equity_current && net_income_current)
+    const roe = (net_equity_current && net_income_current && net_equity_current !== 0)
       ? (net_income_current / net_equity_current) * 100
       : null;
 
@@ -88,7 +93,6 @@ export default async function handler(req, res) {
     const finalChain = finalAnalysisPrompt.pipe(llm).pipe(new JsonOutputParser());
     const analysisResult = await finalChain.invoke({ data: JSON.stringify(dataForFinalPrompt, null, 2) });
     
-    // Controlla se l'AI ha restituito un errore controllato
     if (analysisResult.error) {
         throw new Error(analysisResult.error);
     }
