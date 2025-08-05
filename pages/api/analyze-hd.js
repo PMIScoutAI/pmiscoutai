@@ -1,12 +1,12 @@
 // /api/analyze-hd.js
-// VERSIONE FINALE CON LOGICA A 2 FASI: 1) Estrazione Pura, 2) Analisi su Dati Puliti.
+// VERSIONE SEMPLIFICATA E ROBUSTA: Torna all'estrazione mirata per ogni dato.
 
 import { createClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 import { ChatOpenAI } from "@langchain/openai";
 import { PromptTemplate } from "@langchain/core/prompts";
-import { JsonOutputParser } from "@langchain/core/output_parsers";
+import { StringOutputParser, JsonOutputParser } from "@langchain/core/output_parsers";
 import { formatDocumentsAsString } from "langchain/util/document";
 
 const supabase = createClient(
@@ -14,6 +14,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 const embeddings = new OpenAIEmbeddings({ openAIApiKey: process.env.OPENAI_API_KEY });
+const llm = new ChatOpenAI({ 
+    openAIApiKey: process.env.OPENAI_API_KEY, 
+    modelName: "gpt-4o",
+    temperature: 0 
+});
 const llmJson = new ChatOpenAI({ 
     openAIApiKey: process.env.OPENAI_API_KEY, 
     modelName: "gpt-4o",
@@ -21,11 +26,6 @@ const llmJson = new ChatOpenAI({
     modelKwargs: { response_format: { type: "json_object" } },
 });
 
-// Funzione helper per trovare un valore nel JSON estratto
-const findValue = (items, labelPart) => {
-    const item = items.find(d => d.label.toLowerCase().includes(labelPart.toLowerCase()));
-    return item || { current_year: 0, previous_year: 0 };
-};
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -36,108 +36,66 @@ export default async function handler(req, res) {
   if (!sessionId) return res.status(400).json({ error: 'SessionId mancante' });
 
   try {
-    console.log(`[Analyze-HD/${sessionId}] Avvio analisi a 2 fasi.`);
+    console.log(`[Analyze-HD/${sessionId}] Inizio analisi con estrazione mirata.`);
 
-    // --- FASE 1: ESTRAZIONE PURA DEI DATI IN UN JSON STRUTTURATO ---
+    const { data: promptData, error: promptError } = await supabase
+      .from('ai_prompts').select('prompt_template').eq('name', 'ANALISI_FINALE_HD_V1').single();
+    if (promptError) throw new Error("Impossibile recuperare il prompt 'ANALISI_FINALE_HD_V1'.");
+    const finalAnalysisPromptTemplate = promptData.prompt_template;
 
     const vectorStore = new SupabaseVectorStore(embeddings, {
       client: supabase, tableName: 'documents', queryName: 'match_documents',
     });
-    const retriever = vectorStore.asRetriever({ k: 15, searchKwargs: { filter: { session_id: sessionId } } });
-    const contextDocs = await retriever.getRelevantDocuments("Stato Patrimoniale e Conto Economico completo");
-    const context = formatDocumentsAsString(contextDocs);
+    const retriever = vectorStore.asRetriever({ k: 10, searchKwargs: { filter: { session_id: sessionId } } });
 
-    const extractionPrompt = PromptTemplate.fromTemplate(
-        `Sei un ragioniere esperto. Il tuo unico compito è trascrivere i dati dallo Stato Patrimoniale e dal Conto Economico forniti nel contesto in un formato JSON strutturato.
-        
-        Contesto del bilancio:
-        {context}
-
-        Istruzioni Dettagliate:
-        1.  Scorri il Conto Economico e lo Stato Patrimoniale.
-        2.  Per ogni riga che contiene un valore numerico, estrai la descrizione (label) e i valori per l'anno corrente e l'anno precedente.
-        3.  Converti i numeri dal formato italiano (es. "1.234.567,89") a un formato numerico standard (es. 1234567.89).
-        4.  Se per una riga manca un valore, usa 0.
-        5.  Restituisci ESCLUSIVAMENTE un oggetto JSON con una singola chiave "items", che contiene un array di oggetti. Ogni oggetto deve avere questa struttura: {{"label": "Descrizione Voce", "current_year": <numero>, "previous_year": <numero>}}
-
-        Esempio di output:
-        {{
-            "items": [
-                {{"label": "A) Valore della produzione", "current_year": 32938542, "previous_year": 21088915}},
-                {{"label": "1) ricavi delle vendite e delle prestazioni", "current_year": 32234507, "previous_year": 20970465}},
-                {{"label": "Utile (perdita) dell'esercizio", "current_year": 4079843, "previous_year": 1480683}},
-                {{"label": "Totale patrimonio netto", "current_year": 5187514, "previous_year": 3238355}}
-            ]
-        }}`
-    );
-
-    const extractionChain = extractionPrompt.pipe(llmJson).pipe(new JsonOutputParser());
-    console.log(`[Analyze-HD/${sessionId}] Fase 1: Avvio estrazione pura...`);
-    const rawExtractionResult = await extractionChain.invoke({ context });
-    const extractedItems = rawExtractionResult.items || [];
-    
-    if (extractedItems.length === 0) {
-        throw new Error("Fase 1 fallita: Nessun dato estratto dal documento.");
-    }
-    console.log(`[Analyze-HD/${sessionId}] Fase 1 completata: Estratte ${extractedItems.length} voci di bilancio.`);
-
-    // --- FASE 2: ANALISI SUI DATI PULITI ESTRATTI ---
-
-    // Ora cerchiamo i valori specifici nel nostro JSON pulito
-    const revenue = findValue(extractedItems, 'Valore della produzione');
-    const ebitda = findValue(extractedItems, 'Differenza tra valore e costi della produzione');
-    const netIncome = findValue(extractedItems, 'Utile (perdita) dell\'esercizio');
-    const netEquity = findValue(extractedItems, 'Totale patrimonio netto');
-    const totalAssets = findValue(extractedItems, 'Totale attivo');
-    const cash = findValue(extractedItems, 'disponibilità liquide');
-    const totalDebt = findValue(extractedItems, 'Totale debiti');
-
-    const extractedData = {
-        revenue_current: revenue.current_year,
-        revenue_previous: revenue.previous_year,
-        ebitda_current: ebitda.current_year,
-        ebitda_previous: ebitda.previous_year,
-        net_income_current: netIncome.current_year,
-        net_income_previous: netIncome.previous_year,
-        net_equity_current: netEquity.current_year,
-        total_assets_current: totalAssets.current_year,
-        cash_and_equivalents_current: cash.current_year,
-        total_debt_current: totalDebt.current_year,
+    const questions = {
+        revenue_current: "Dal Conto Economico, qual è il valore di 'A) Valore della produzione' per l'anno corrente?",
+        revenue_previous: "Dal Conto Economico, qual è il valore di 'A) Valore della produzione' per l'anno precedente?",
+        ebitda_current: "Dal Conto Economico, qual è il valore della 'Differenza tra valore e costi della produzione (A-B)' per l'anno corrente?",
+        net_income_current: "Dal Conto Economico, qual è il valore finale di '21) Utile (perdita) dell'esercizio' per l'anno corrente?",
+        net_equity_current: "Dallo Stato Patrimoniale Passivo, qual è il 'Totale patrimonio netto' (voce A del Passivo) per l'anno corrente?",
+        total_assets_current: "Dallo Stato Patrimoniale Attivo, qual è il 'Totale attivo' finale per l'anno corrente?",
+        cash_and_equivalents_current: "Dallo Stato Patrimoniale Attivo, qual è il 'Totale disponibilità liquide' (voce C.IV) per l'anno corrente?",
+        total_debt_current: "Dallo Stato Patrimoniale Passivo, qual è il 'Totale debiti' (voce D) per l'anno corrente?",
     };
-    console.log(`[Analyze-HD/${sessionId}] Dati chiave puliti pronti per l'analisi:`, extractedData);
 
-    // Calcoli matematici
-    const { revenue_current, revenue_previous, net_equity_current, net_income_current, ebitda_current, total_assets_current, cash_and_equivalents_current, total_debt_current } = extractedData;
-    const net_financial_position = total_debt_current - cash_and_equivalents_current;
+    const extractedData = {};
+    for (const [key, question] of Object.entries(questions)) {
+        const relevantDocs = await retriever.getRelevantDocuments(question);
+        const context = formatDocumentsAsString(relevantDocs);
+        
+        const extractionPrompt = PromptTemplate.fromTemplate(
+            `Sei un esperto contabile. Analizza il seguente contesto da un bilancio italiano. Trova il valore numerico esatto che risponde alla domanda. Ignora altri numeri non pertinenti.\n\nContesto:\n{context}\n\nDomanda: {question}\n\nIstruzioni: I numeri sono in formato italiano (es. "1.234.567,89"). Pulisci il numero e restituiscilo in formato standard (es. "1234567.89"). Rispondi SOLO con il numero. Se il valore non è presente, rispondi "0".`
+        );
+
+        const chain = extractionPrompt.pipe(llm).pipe(new StringOutputParser());
+        const answer = await chain.invoke({ question, context });
+        
+        const cleanedAnswer = answer.replace(/\./g, '').replace(',', '.');
+        extractedData[key] = parseFloat(cleanedAnswer) || 0;
+    }
+    console.log(`[Analyze-HD/${sessionId}] Dati estratti con RAG:`, extractedData);
+
+    // Semplifichiamo i calcoli per il debug
+    const { revenue_current, revenue_previous, net_income_current } = extractedData;
     const crescita_fatturato_perc = (revenue_previous !== 0) ? ((revenue_current - revenue_previous) / Math.abs(revenue_previous)) * 100 : null;
-    const roe = (net_equity_current !== 0) ? (net_income_current / net_equity_current) * 100 : null;
-    const roi = (total_assets_current !== 0) ? (ebitda_current / total_assets_current) * 100 : null;
 
     const dataForFinalPrompt = {
       ...extractedData,
       key_metrics: {
         crescita_fatturato_perc: { value: crescita_fatturato_perc, label: "Crescita Fatturato (%)" },
-        roe: { value: roe, label: "ROE (%)" },
-        roi: { value: roi, label: "ROI (%)" },
-        net_financial_position: { value: net_financial_position, label: "Posizione Finanziaria Netta (€)" }
       },
-      charts_data: {
-        revenue_trend: { current_year: revenue_current, previous_year: revenue_previous }
-      }
     };
     
-    // Invochiamo il prompt di analisi finale che hai scritto tu
-    const { data: promptData } = await supabase.from('ai_prompts').select('prompt_template').eq('name', 'ANALISI_FINALE_HD_V1').single();
-    const finalAnalysisPrompt = PromptTemplate.fromTemplate(promptData.prompt_template);
+    const finalAnalysisPrompt = PromptTemplate.fromTemplate(finalAnalysisPromptTemplate);
     const finalChain = finalAnalysisPrompt.pipe(llmJson).pipe(new JsonOutputParser());
-    
-    console.log(`[Analyze-HD/${sessionId}] Fase 2: Avvio analisi finale...`);
     const analysisResult = await finalChain.invoke({ data: JSON.stringify(dataForFinalPrompt, null, 2) });
     
-    if (analysisResult.error) throw new Error(analysisResult.error);
-    console.log(`[Analyze-HD/${sessionId}] Fase 2 completata: Analisi generata.`);
+    if (analysisResult.error) {
+        throw new Error(analysisResult.error);
+    }
+    console.log(`[Analyze-HD/${sessionId}] Analisi finale generata.`);
 
-    // Salvataggio
     await supabase.from('analysis_results_hd').insert({
         session_id: sessionId,
         health_score: analysisResult.health_score,
@@ -147,11 +105,11 @@ export default async function handler(req, res) {
         raw_ai_response: analysisResult,
         charts_data: analysisResult.charts_data,
         detailed_swot: analysisResult.detailed_swot,
-        raw_parsed_data: extractedData,
+        raw_parsed_data: extractedData, // Salviamo i dati puliti per la visualizzazione
     });
 
     await supabase.from('checkup_sessions_hd').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
-    console.log(`[Analyze-HD/${sessionId}] 🎉 Flusso a 2 fasi completato con successo!`);
+    console.log(`[Analyze-HD/${sessionId}] 🎉 Analisi completata con successo!`);
 
     res.status(200).json({ success: true, sessionId });
 
