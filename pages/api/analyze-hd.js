@@ -1,5 +1,5 @@
 // /api/analyze-hd.js
-// VERSIONE ADDESTRATA SULLO SCHEMA ITALIANO: Estrae un set di dati molto più ricco e preciso.
+// VERSIONE CON ESTRAZIONE DI PRECISIONE CHIRURGICA: Addestrata sullo schema di bilancio italiano.
 
 import { createClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from "@langchain/openai";
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
   if (!sessionId) return res.status(400).json({ error: 'SessionId mancante' });
 
   try {
-    console.log(`[Analyze-HD/${sessionId}] Inizio analisi RAG con schema italiano.`);
+    console.log(`[Analyze-HD/${sessionId}] Inizio analisi RAG con schema italiano di precisione.`);
 
     const { data: promptData, error: promptError } = await supabase
       .from('ai_prompts').select('prompt_template').eq('name', 'ANALISI_FINALE_HD_V1').single();
@@ -41,23 +41,21 @@ export default async function handler(req, res) {
     });
     const retriever = vectorStore.asRetriever({ searchKwargs: { filter: { session_id: sessionId } } });
 
-    // ✅ NUOVO SET DI DOMANDE: Basato sullo schema di bilancio italiano fornito.
+    // ✅ SET DI DOMANDE IPER-SPECIFICHE: Basato sulla struttura esatta del bilancio fornito.
     const questions = {
         // Conto Economico
-        revenue_current: "Qual è il valore di 'A) Valore della produzione' per l'anno corrente?",
-        revenue_previous: "Qual è il valore di 'A) Valore della produzione' per l'anno precedente?",
-        ebitda_current: "Qual è la 'Differenza tra valore e costi della produzione (A-B)' per l'anno corrente?",
-        ebitda_previous: "Qual è la 'Differenza tra valore e costi della produzione (A-B)' per l'anno precedente?",
-        net_income_current: "Qual è il valore di 'Utile (perdita) dell'esercizio' per l'anno corrente?",
-        net_income_previous: "Qual è il valore di 'Utile (perdita) dell'esercizio' per l'anno precedente?",
-        financial_charges_current: "Qual è il valore di '17) interessi e altri oneri finanziari' per l'anno corrente?",
-
+        revenue_current: "Nel Conto Economico, qual è il valore di 'A) Valore della produzione' per l'anno corrente?",
+        revenue_previous: "Nel Conto Economico, qual è il valore di 'A) Valore della produzione' per l'anno precedente?",
+        ebitda_current: "Nel Conto Economico, qual è il valore della 'Differenza tra valore e costi della produzione (A-B)' per l'anno corrente?",
+        ebitda_previous: "Nel Conto Economico, qual è la 'Differenza tra valore e costi della produzione (A-B)' per l'anno precedente?",
+        net_income_current: "Nel Conto Economico, qual è il valore finale di 'Utile (perdita) dell'esercizio' per l'anno corrente?",
+        net_income_previous: "Nel Conto Economico, qual è il valore finale di 'Utile (perdita) dell'esercizio' per l'anno precedente?",
+        
         // Stato Patrimoniale
-        net_equity_current: "Qual è il 'Totale patrimonio netto (A)' per l'anno corrente?",
-        total_assets_current: "Qual è il 'Totale attivo' per l'anno corrente?",
-        cash_and_equivalents_current: "Qual è il valore di 'IV - Disponibilità liquide' per l'anno corrente?",
-        short_term_debt_current: "Qual è il valore dei 'debiti verso banche' esigibili 'entro l'esercizio successivo' per l'anno corrente?",
-        long_term_debt_current: "Qual è il valore dei 'debiti verso banche' esigibili 'oltre l'esercizio successivo' per l'anno corrente?",
+        net_equity_current: "Nello Stato Patrimoniale, qual è il 'Totale patrimonio netto' (voce A del Passivo) per l'anno corrente?",
+        total_assets_current: "Nello Stato Patrimoniale, qual è il 'Totale attivo' finale, dopo i 'Ratei e risconti' attivi, per l'anno corrente?",
+        cash_and_equivalents_current: "Nello Stato Patrimoniale, qual è il 'Totale disponibilità liquide' (voce C.IV dell'Attivo) per l'anno corrente?",
+        total_debt_current: "Nello Stato Patrimoniale, qual è il 'Totale debiti' (voce D del Passivo) per l'anno corrente?",
     };
 
     const extractedData = {};
@@ -81,11 +79,10 @@ export default async function handler(req, res) {
     const { 
         revenue_current, revenue_previous, net_equity_current, net_income_current,
         ebitda_current, total_assets_current, cash_and_equivalents_current,
-        short_term_debt_current, long_term_debt_current, financial_charges_current
+        total_debt_current
     } = extractedData;
     
-    const total_debt = short_term_debt_current + long_term_debt_current;
-    const net_financial_position = total_debt - cash_and_equivalents_current;
+    const net_financial_position = total_debt_current - cash_and_equivalents_current;
 
     const crescita_fatturato_perc = (revenue_previous !== 0) ? ((revenue_current - revenue_previous) / Math.abs(revenue_previous)) * 100 : null;
     const roe = (net_equity_current !== 0) ? (net_income_current / net_equity_current) * 100 : null;
