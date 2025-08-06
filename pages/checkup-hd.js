@@ -1,6 +1,6 @@
 // /pages/checkup-hd.js
 // Pagina per il nuovo flusso di analisi "High Definition".
-// Versione con logica di estrazione robusta basata sulla ricostruzione delle righe.
+// Versione con logica di estrazione robusta e logging di debug aggiunto.
 
 import ValidationModal from '../components/ValidationModal';
 import { useState, useRef } from 'react';
@@ -89,7 +89,7 @@ function CheckupHdPageLayout({ user, token }) {
     );
 }
 
-// --- NUOVA VERSIONE DELLA LOGICA DI ESTRAZIONE (ROBUSTA) ---
+// --- LOGICA DI ESTRAZIONE CON DEBUG LOGGING ---
 
 function normalizeValue(value) {
     if (!value) return '';
@@ -101,23 +101,24 @@ function normalizeValue(value) {
 }
 
 async function extractFinancialData(pdfFile) {
+    console.log("DEBUG: Avvio di extractFinancialData...");
     const arrayBuffer = await pdfFile.arrayBuffer();
+    console.log("DEBUG: ArrayBuffer creato con successo.");
+    
     const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+    console.log(`DEBUG: Documento PDF caricato. Numero di pagine: ${pdf.numPages}`);
+    
     let allItems = [];
-
-    // 1. Raccogliamo tutti i pezzi di testo da tutte le pagine
     for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         allItems.push(...textContent.items);
     }
+    console.log(`DEBUG: Raccolti ${allItems.length} elementi di testo dal PDF.`);
 
-    // 2. Ricostruiamo le righe basandoci sulla posizione verticale (Y)
     const lines = allItems.reduce((acc, item) => {
-        const y = Math.round(item.transform[5]); // Posizione Y
-        if (!acc[y]) {
-            acc[y] = [];
-        }
+        const y = Math.round(item.transform[5]);
+        if (!acc[y]) acc[y] = [];
         acc[y].push({ text: item.str, x: Math.round(item.transform[4]) });
         return acc;
     }, {});
@@ -126,9 +127,10 @@ async function extractFinancialData(pdfFile) {
         .map(lineItems => lineItems.sort((a, b) => a.x - b.x).map(item => item.text).join(' '))
         .filter(line => line.trim().length > 1);
 
-    console.log("Linee ricostruite dal PDF:", reconstructedLines);
+    console.log(`DEBUG: Ricostruite ${reconstructedLines.length} righe di testo.`);
+    // Per non inondare la console, mostriamo solo le prime 20 righe
+    console.log("DEBUG: Prime 20 righe ricostruite:", reconstructedLines.slice(0, 20));
 
-    // 3. Il nostro dizionario di ricerca (invariato)
     const searchTerms = [
         { key: 'valore_produzione', labels: ['valore della produzione', 'a) valore della produzione'] },
         { key: 'ricavi_vendite', labels: ['ricavi delle vendite e delle prestazioni', '1) ricavi delle vendite'] },
@@ -151,21 +153,18 @@ async function extractFinancialData(pdfFile) {
     ];
 
     const extracted = {};
-
-    // 4. Cerchiamo i termini nelle righe ricostruite
+    console.log("DEBUG: Inizio ricerca termini...");
     for (const line of reconstructedLines) {
         for (const term of searchTerms) {
             if (extracted[term.key]) continue;
-
             for (const label of term.labels) {
                 const cleanLine = line.toLowerCase().replace(/\s+/g, ' ');
                 const cleanLabel = label.toLowerCase().replace(/\s+/g, ' ');
-
                 if (cleanLine.startsWith(cleanLabel)) {
-                    // Trovata l'etichetta! Cerchiamo il valore numerico alla fine della riga.
                     const valueMatch = line.match(/(-?\(?[\d.,]+\)?)\s*$/);
                     if (valueMatch && valueMatch[1]) {
                         extracted[term.key] = normalizeValue(valueMatch[1]);
+                        console.log(`DEBUG: Trovato! Chiave: ${term.key}, Valore: ${extracted[term.key]}`);
                         break;
                     }
                 }
@@ -174,12 +173,12 @@ async function extractFinancialData(pdfFile) {
         }
     }
     
-    console.log('Dati estratti (puliti):', extracted);
+    console.log('DEBUG: Estrazione completata. Dati finali:', extracted);
     return extracted;
 }
 
 
-// --- Componente del Form di Upload (CON LOGICA FINALE) ---
+// --- Componente del Form di Upload (CON LOGICA FINALE E DEBUG) ---
 function CheckupHdForm({ token }) {
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
@@ -203,7 +202,10 @@ function CheckupHdForm({ token }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log("DEBUG: handleSubmit premuto.");
+
     if (!companyName.trim() || !pdfFile) {
+      console.log("DEBUG: Validazione fallita: nome azienda o file PDF mancante.");
       setError('Nome azienda e file PDF sono obbligatori.');
       return;
     }
@@ -213,14 +215,17 @@ function CheckupHdForm({ token }) {
     setError('');
 
     try {
+      console.log("DEBUG: Chiamata a extractFinancialData in corso...");
       const data = await extractFinancialData(pdfFile);
+      console.log("DEBUG: Ritorno da extractFinancialData. Dati ricevuti:", data);
       setExtractedData(data);
       setIsModalOpen(true);
     } catch (err) {
-      console.error("Errore durante l'estrazione del PDF:", err);
-      setError("Non è stato possibile leggere il file PDF. Assicurati che non sia protetto o corrotto.");
+      console.error("ERRORE CRITICO in handleSubmit:", err);
+      setError("Non è stato possibile leggere il file PDF. Assicurati che non sia protetto o corrotto. Controlla la console per dettagli.");
     } finally {
       setLoading(false);
+      console.log("DEBUG: handleSubmit completato.");
     }
   };
 
