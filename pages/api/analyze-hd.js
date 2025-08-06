@@ -1,5 +1,5 @@
 // /api/analyze-hd.js
-// VERSIONE CORRETTA: Rimuove la ricerca 'mmr' per risolvere il crash di LangChain.
+// VERSIONE DETERMINISTICA (SENZA LLM): Implementa il codice fornito dall'utente per la massima affidabilità.
 
 import { createClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from "@langchain/openai";
@@ -85,14 +85,13 @@ export default async function handler(req, res) {
   try {
     console.log(`[Analyze-HD/${sessionId}] Start deterministic extraction (2 fields).`);
 
+    // Usiamo ancora LangChain solo per recuperare il testo dal DB vettoriale
     const vectorStore = new SupabaseVectorStore(
       new OpenAIEmbeddings({ openAIApiKey: process.env.OPENAI_API_KEY }),
       { client: supabase, tableName: 'documents', queryName: 'match_documents' }
     );
-    
-    // ✅ FIX: Rimosso 'searchType: "mmr"' per usare la ricerca standard più stabile.
     const retriever = vectorStore.asRetriever({
-      k: 60,
+      k: 60, // Recuperiamo molti dati per avere un contesto completo
       searchKwargs: { filter: { session_id: sessionId } },
     });
 
