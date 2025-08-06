@@ -1,8 +1,5 @@
 // /api/analyze-hd.js
-// ULTRA-MINIMAL (deterministico, senza LLM): estrae 2 voci (anno più recente)
-// - revenue_current  = Totale valore della produzione
-// - net_income_current = Utile (perdita) dell’esercizio
-// *_previous = null
+// VERSIONE CORRETTA: Rimuove la ricerca 'mmr' per risolvere il crash di LangChain.
 
 import { createClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from "@langchain/openai";
@@ -14,7 +11,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// ---------- Helpers ----------
+// ---------- Funzioni Helper Fornite dall'Utente ----------
 const numberPattern = /-?\d{1,3}(?:\.\d{3})*(?:,\d+)?/g;
 
 const parseIt = (s) => {
@@ -53,8 +50,8 @@ const extractAfterLabel = (ctx, labelRegex, lookahead = 600) => {
 const extractRevenueCurrent = (ctx) => {
   const patterns = [
     /Totale\s+(del\s+)?valore\s+della\s+produzione/,
-    /A\)\s*Valore\s+della\s+produzione/,      // alcune stampe riportano la riga senza "Totale"
-    /Valore\s+della\s+produzione/            // fallback generico
+    /A\)\s*Valore\s+della\s+produzione/,     // alcune stampe riportano la riga senza "Totale"
+    /Valore\s+della\s+produzione/           // fallback generico
   ];
   for (const p of patterns) {
     const v = extractAfterLabel(ctx, p);
@@ -78,7 +75,7 @@ const extractNetIncomeCurrent = (ctx) => {
   return 0;
 };
 
-// ---------- Handler ----------
+// ---------- Handler Principale ----------
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
 
@@ -88,15 +85,15 @@ export default async function handler(req, res) {
   try {
     console.log(`[Analyze-HD/${sessionId}] Start deterministic extraction (2 fields).`);
 
-    // Retrieval unico, ampio e diversificato
     const vectorStore = new SupabaseVectorStore(
       new OpenAIEmbeddings({ openAIApiKey: process.env.OPENAI_API_KEY }),
       { client: supabase, tableName: 'documents', queryName: 'match_documents' }
     );
+    
+    // ✅ FIX: Rimosso 'searchType: "mmr"' per usare la ricerca standard più stabile.
     const retriever = vectorStore.asRetriever({
       k: 60,
-      searchType: 'mmr',
-      searchKwargs: { filter: { session_id: sessionId }, lambda: 0.5 },
+      searchKwargs: { filter: { session_id: sessionId } },
     });
 
     const query = "Conto economico | Valore della produzione | Totale valore della produzione | Utile (perdita) dell'esercizio | 31/12 | A) Valore della produzione | 21) Utile";
@@ -110,9 +107,7 @@ export default async function handler(req, res) {
 
     const output = {
       revenue_current,
-      revenue_previous: null,
       net_income_current,
-      net_income_previous: null
     };
 
     console.log(`[Analyze-HD/${sessionId}] OUTPUT →`, output);
