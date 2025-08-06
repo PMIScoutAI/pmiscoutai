@@ -1,6 +1,6 @@
 // /pages/checkup-hd.js
 // Pagina per il nuovo flusso di analisi "High Definition".
-// Versione con logica di estrazione avanzata per schema scalare.
+// Versione con logica di estrazione robusta basata sulla ricostruzione delle righe.
 
 import ValidationModal from '../components/ValidationModal';
 import { useState, useRef } from 'react';
@@ -12,6 +12,7 @@ import { ProtectedPageHd } from '../utils/ProtectedPageHd';
 
 import * as pdfjsLib from 'pdfjs-dist/build/pdf';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
 
 // --- Componente Wrapper (invariato) ---
 export default function CheckupHdPageWrapper() {
@@ -88,39 +89,47 @@ function CheckupHdPageLayout({ user, token }) {
     );
 }
 
-// --- NUOVA VERSIONE DELLA LOGICA DI ESTRAZIONE ---
+// --- NUOVA VERSIONE DELLA LOGICA DI ESTRAZIONE (ROBUSTA) ---
 
-// Funzione di aiuto per "pulire" i numeri estratti
 function normalizeValue(value) {
     if (!value) return '';
     let cleanValue = value.trim();
-    // Se il numero è tra parentesi, è negativo
     if (cleanValue.startsWith('(') && cleanValue.endsWith(')')) {
         cleanValue = '-' + cleanValue.substring(1, cleanValue.length - 1);
     }
-    // Rimuove i punti delle migliaia e sostituisce la virgola decimale con un punto
     return cleanValue.replace(/\./g, '').replace(',', '.');
 }
 
-// Funzione di estrazione potenziata per lo schema scalare
 async function extractFinancialData(pdfFile) {
     const arrayBuffer = await pdfFile.arrayBuffer();
     const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-    let textByLine = [];
+    let allItems = [];
 
-    // Estraiamo il testo pagina per pagina, mantenendo la struttura a righe
+    // 1. Raccogliamo tutti i pezzi di testo da tutte le pagine
     for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        // Un semplice split per newline è un buon punto di partenza
-        textByLine.push(...textContent.items.map(item => item.str).join('').split('\n').map(line => line.trim()));
+        allItems.push(...textContent.items);
     }
-    // Filtriamo le righe vuote
-    const cleanedLines = textByLine.filter(line => line.length > 2);
 
-    // Il nostro "dizionario" potenziato. Aggiungi qui tutte le etichette che trovi.
+    // 2. Ricostruiamo le righe basandoci sulla posizione verticale (Y)
+    const lines = allItems.reduce((acc, item) => {
+        const y = Math.round(item.transform[5]); // Posizione Y
+        if (!acc[y]) {
+            acc[y] = [];
+        }
+        acc[y].push({ text: item.str, x: Math.round(item.transform[4]) });
+        return acc;
+    }, {});
+
+    const reconstructedLines = Object.values(lines)
+        .map(lineItems => lineItems.sort((a, b) => a.x - b.x).map(item => item.text).join(' '))
+        .filter(line => line.trim().length > 1);
+
+    console.log("Linee ricostruite dal PDF:", reconstructedLines);
+
+    // 3. Il nostro dizionario di ricerca (invariato)
     const searchTerms = [
-        // Conto Economico
         { key: 'valore_produzione', labels: ['valore della produzione', 'a) valore della produzione'] },
         { key: 'ricavi_vendite', labels: ['ricavi delle vendite e delle prestazioni', '1) ricavi delle vendite'] },
         { key: 'costi_produzione', labels: ['costi della produzione', 'b) costi della produzione'] },
@@ -131,7 +140,6 @@ async function extractFinancialData(pdfFile) {
         { key: 'risultato_ante_imposte', labels: ['risultato prima delle imposte', 'e) risultato prima delle imposte'] },
         { key: 'imposte_esercizio', labels: ['imposte sul reddito dell\'esercizio', '20) imposte sul reddito'] },
         { key: 'utile_esercizio', labels: ['utile (perdita) dell\'esercizio', '21) utile (perdita) dell\'esercizio'] },
-        // Stato Patrimoniale
         { key: 'totale_attivo', labels: ['totale attivo', 'totale stato patrimoniale attivo'] },
         { key: 'patrimonio_netto', labels: ['patrimonio netto', 'a) patrimonio netto'] },
         { key: 'totale_immobilizzazioni', labels: ['totale immobilizzazioni', 'b) immobilizzazioni'] },
@@ -144,22 +152,21 @@ async function extractFinancialData(pdfFile) {
 
     const extracted = {};
 
-    // Scansioniamo il documento riga per riga
-    for (const line of cleanedLines) {
+    // 4. Cerchiamo i termini nelle righe ricostruite
+    for (const line of reconstructedLines) {
         for (const term of searchTerms) {
-            // Se abbiamo già trovato questa voce, non la cerchiamo più
             if (extracted[term.key]) continue;
 
             for (const label of term.labels) {
-                // Creiamo una regex per trovare una riga che INIZIA con la nostra etichetta
-                // e finisce con un numero, anche su più righe o con spazi.
-                const regex = new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
-                if (regex.test(line)) {
-                    // Trovata l'etichetta! Ora cerchiamo il valore numerico alla fine della riga.
-                    const valueMatch = line.match(/([\d.,()]+)\s*$/);
+                const cleanLine = line.toLowerCase().replace(/\s+/g, ' ');
+                const cleanLabel = label.toLowerCase().replace(/\s+/g, ' ');
+
+                if (cleanLine.startsWith(cleanLabel)) {
+                    // Trovata l'etichetta! Cerchiamo il valore numerico alla fine della riga.
+                    const valueMatch = line.match(/(-?\(?[\d.,]+\)?)\s*$/);
                     if (valueMatch && valueMatch[1]) {
                         extracted[term.key] = normalizeValue(valueMatch[1]);
-                        break; // Passiamo al prossimo termine
+                        break;
                     }
                 }
             }
@@ -202,7 +209,7 @@ function CheckupHdForm({ token }) {
     }
     
     setLoading(true);
-    setLoadingMessage('Elaborazione PDF...');
+    setLoadingMessage('Analisi del documento in corso...');
     setError('');
 
     try {
