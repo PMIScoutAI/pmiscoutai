@@ -1,5 +1,5 @@
 // /api/analyze-hd.js
-// VERSIONE CON DOMANDE E PROMPT SUGGERITI DALL'UTENTE: Massima precisione e pulizia del codice.
+// VERSIONE ULTRA-SEMPLIFICATA: Estrae solo 2 dati chiave per massima affidabilità.
 
 import { createClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from "@langchain/openai";
@@ -23,7 +23,6 @@ const llm = new ChatOpenAI({
 // Funzione di pulizia robusta per i formati numerici italiani
 const parseItalianNumber = (text) => {
     if (typeof text !== 'string') return 0;
-    // Rimuove spazi, simboli €, poi i punti delle migliaia, e infine sostituisce la virgola
     const cleanedText = text.trim().replace(/€/g, '').replace(/\./g, '').replace(',', '.');
     return parseFloat(cleanedText) || 0;
 };
@@ -39,52 +38,27 @@ export default async function handler(req, res) {
   let contextForDebug = "";
 
   try {
-    console.log(`[Analyze-HD/${sessionId}] Inizio estrazione con domande e prompt migliorati.`);
+    console.log(`[Analyze-HD/${sessionId}] Inizio estrazione semplificata (2 voci).`);
 
     const vectorStore = new SupabaseVectorStore(embeddings, {
       client: supabase, tableName: 'documents', queryName: 'match_documents',
     });
     const retriever = vectorStore.asRetriever({ k: 15, searchKwargs: { filter: { session_id: sessionId } } });
 
-    // ✅ IMPLEMENTAZIONE: Utilizziamo l'array di domande fornito dall'utente.
+    // ✅ OBIETTIVO SEMPLICE: Estraiamo solo 2 dati chiave.
     const domandeBilancio = [
       {
         key: "revenue_current",
-        domanda: `Qual è il valore esatto della voce "Valore della produzione" riferita all'anno più recente disponibile nel bilancio?`
-      },
-      {
-        key: "revenue_previous",
-        domanda: `Qual è il valore esatto della voce "Valore della produzione" riferita all'anno precedente a quello più recente disponibile nel bilancio?`
-      },
-      {
-        key: "ebitda_current",
-        domanda: `Qual è il valore esatto della voce "Differenza tra valore e costi della produzione (A - B)" per l'anno più recente?`
+        domanda: `Dal Conto Economico, qual è il valore esatto della voce "A) Valore della produzione" per l'anno più recente?`
       },
       {
         key: "net_income_current",
-        domanda: `Qual è il valore dell’utile o perdita d’esercizio (voce 21 del Conto Economico) per l’anno più recente?`
-      },
-      {
-        key: "net_equity_current",
-        domanda: `Qual è il totale del patrimonio netto (voce A del Passivo) alla data di chiusura dell’ultimo esercizio disponibile?`
-      },
-      {
-        key: "total_assets_current",
-        domanda: `Qual è il valore del totale dell'attivo alla data di chiusura dell’ultimo esercizio?`
-      },
-      {
-        key: "cash_and_equivalents_current",
-        domanda: `Qual è il valore totale delle disponibilità liquide (voce C.IV dell’Attivo) alla chiusura dell’ultimo esercizio?`
-      },
-      {
-        key: "total_debt_current",
-        domanda: `Qual è il valore del totale dei debiti (voce D del Passivo) alla chiusura dell’ultimo esercizio?`
+        domanda: `Dal Conto Economico, qual è il valore finale di "Utile (perdita) dell'esercizio" per l'anno più recente?`
       }
     ];
 
-    // ✅ IMPLEMENTAZIONE: Utilizziamo il nuovo template di prompt fornito dall'utente.
     const domandaPrompt = PromptTemplate.fromTemplate(
-      `Hai ricevuto un bilancio italiano in formato testuale, contenente Stato Patrimoniale e Conto Economico.\n\nDomanda: {domanda}\n\nContesto:\n{context}\n\n⚠️ Rispondi con **solo un numero** (formato standard: 1234567.89). Nessun simbolo €, nessun commento.`
+      `Analizza il Contesto da un bilancio italiano e rispondi alla Domanda. Rispondi con **solo il numero** in formato standard (es. 1234567.89), senza simboli o commenti.\n\nDomanda: {domanda}\n\nContesto:\n{context}`
     );
 
     const extractedData = {};
@@ -96,27 +70,26 @@ export default async function handler(req, res) {
         const chain = domandaPrompt.pipe(llm).pipe(new StringOutputParser());
         const answer = await chain.invoke({ domanda, context });
         
-        // Usiamo la nostra funzione di parsing robusta, anche se l'AI dovrebbe già restituire un numero pulito.
         extractedData[key] = parseItalianNumber(answer);
     }
-    console.log(`[Analyze-HD/${sessionId}] Dati estratti con metodo chirurgico:`, extractedData);
+    console.log(`[Analyze-HD/${sessionId}] Dati estratti:`, extractedData);
 
-    // Salviamo solo i dati estratti per la verifica.
+    // Salviamo solo i 2 dati estratti per la verifica.
     await supabase.from('analysis_results_hd').insert({
         session_id: sessionId,
         raw_parsed_data: extractedData,
-        summary: `Estrazione dati completata per ${Object.keys(extractedData).length} voci di bilancio.`
+        summary: `Estrazione semplificata completata.`
     });
 
     await supabase.from('checkup_sessions_hd').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
-    console.log(`[Analyze-HD/${sessionId}] 🎉 Estrazione completata con successo!`);
+    console.log(`[Analyze-HD/${sessionId}] 🎉 Estrazione semplificata completata con successo!`);
 
     res.status(200).json({ success: true, sessionId });
 
   } catch (error) {
     console.error(`💥 [Analyze-HD/${sessionId}] Errore fatale:`, error);
     if (contextForDebug) {
-        console.error(`[Analyze-HD/${sessionId}] Contesto usato per l'estrazione fallita (primi 3000 caratteri):\n`, contextForDebug.slice(0, 3000));
+        console.error(`[Analyze-HD/${sessionId}] Contesto usato (primi 3000 caratteri):\n`, contextForDebug.slice(0, 3000));
     }
     await supabase.from('checkup_sessions_hd').update({ status: 'failed', error_message: error.message }).eq('id', sessionId);
     res.status(500).json({ error: error.message });
