@@ -1,6 +1,6 @@
 // /pages/checkup-hd.js
 // Pagina per il nuovo flusso di analisi "High Definition".
-// Versione con logica di estrazione robusta e logging di debug aggiunto.
+// Versione con logica di estrazione potenziata (v7) e debug.
 
 import ValidationModal from '../components/ValidationModal';
 import { useState, useRef } from 'react';
@@ -89,7 +89,7 @@ function CheckupHdPageLayout({ user, token }) {
     );
 }
 
-// --- LOGICA DI ESTRAZIONE CON DEBUG LOGGING ---
+// --- LOGICA DI ESTRAZIONE POTENZIATA (V7) ---
 
 function normalizeValue(value) {
     if (!value) return '';
@@ -97,16 +97,15 @@ function normalizeValue(value) {
     if (cleanValue.startsWith('(') && cleanValue.endsWith(')')) {
         cleanValue = '-' + cleanValue.substring(1, cleanValue.length - 1);
     }
-    return cleanValue.replace(/\./g, '').replace(',', '.');
+    // Rimuove spazi e punti delle migliaia, e sostituisce la virgola decimale
+    return cleanValue.replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
 }
 
 async function extractFinancialData(pdfFile) {
-    console.log("DEBUG: Avvio di extractFinancialData...");
+    console.log("DEBUG (v7): Avvio di extractFinancialData...");
     const arrayBuffer = await pdfFile.arrayBuffer();
-    console.log("DEBUG: ArrayBuffer creato con successo.");
-    
     const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-    console.log(`DEBUG: Documento PDF caricato. Numero di pagine: ${pdf.numPages}`);
+    console.log(`DEBUG: Documento PDF caricato. Pagine: ${pdf.numPages}`);
     
     let allItems = [];
     for (let i = 1; i <= pdf.numPages; i++) {
@@ -114,7 +113,7 @@ async function extractFinancialData(pdfFile) {
         const textContent = await page.getTextContent();
         allItems.push(...textContent.items);
     }
-    console.log(`DEBUG: Raccolti ${allItems.length} elementi di testo dal PDF.`);
+    console.log(`DEBUG: Raccolti ${allItems.length} elementi di testo.`);
 
     const lines = allItems.reduce((acc, item) => {
         const y = Math.round(item.transform[5]);
@@ -126,11 +125,9 @@ async function extractFinancialData(pdfFile) {
     const reconstructedLines = Object.values(lines)
         .map(lineItems => lineItems.sort((a, b) => a.x - b.x).map(item => item.text).join(' '))
         .filter(line => line.trim().length > 1);
-
-    console.log(`DEBUG: Ricostruite ${reconstructedLines.length} righe di testo.`);
-    // Per non inondare la console, mostriamo solo le prime 20 righe
-    console.log("DEBUG: Prime 20 righe ricostruite:", reconstructedLines.slice(0, 20));
-
+    
+    console.log(`DEBUG: Ricostruite ${reconstructedLines.length} righe.`);
+    
     const searchTerms = [
         { key: 'valore_produzione', labels: ['valore della produzione', 'a) valore della produzione'] },
         { key: 'ricavi_vendite', labels: ['ricavi delle vendite e delle prestazioni', '1) ricavi delle vendite'] },
@@ -153,19 +150,42 @@ async function extractFinancialData(pdfFile) {
     ];
 
     const extracted = {};
-    console.log("DEBUG: Inizio ricerca termini...");
-    for (const line of reconstructedLines) {
+    console.log("DEBUG: Inizio ricerca termini con logica migliorata...");
+
+    for (let i = 0; i < reconstructedLines.length; i++) {
+        const line = reconstructedLines[i];
         for (const term of searchTerms) {
             if (extracted[term.key]) continue;
+
             for (const label of term.labels) {
                 const cleanLine = line.toLowerCase().replace(/\s+/g, ' ');
                 const cleanLabel = label.toLowerCase().replace(/\s+/g, ' ');
-                if (cleanLine.startsWith(cleanLabel)) {
-                    const valueMatch = line.match(/(-?\(?[\d.,]+\)?)\s*$/);
-                    if (valueMatch && valueMatch[1]) {
-                        extracted[term.key] = normalizeValue(valueMatch[1]);
-                        console.log(`DEBUG: Trovato! Chiave: ${term.key}, Valore: ${extracted[term.key]}`);
-                        break;
+
+                if (cleanLine.includes(cleanLabel)) {
+                    console.log(`DEBUG: Potenziale match per '${term.key}' sulla riga: "${line}"`);
+                    
+                    const numbersOnLine = line.match(/(-?\(?[\d.,\s]+\)?)/g);
+
+                    if (numbersOnLine && numbersOnLine.length > 0) {
+                        const filteredNumbers = numbersOnLine.filter(n => n.trim().match(/\d/));
+                        if (filteredNumbers.length > 0) {
+                            const value = filteredNumbers[filteredNumbers.length - 1];
+                            extracted[term.key] = normalizeValue(value);
+                            console.log(`DEBUG: Trovato! Chiave: ${term.key}, Valore: ${extracted[term.key]} (dalla stessa riga)`);
+                            break; 
+                        }
+                    } else if (i + 1 < reconstructedLines.length) {
+                        const nextLine = reconstructedLines[i + 1];
+                        const numbersOnNextLine = nextLine.match(/(-?\(?[\d.,\s]+\)?)/g);
+                        if (numbersOnNextLine && numbersOnNextLine.length > 0) {
+                             const filteredNumbers = numbersOnNextLine.filter(n => n.trim().match(/\d/));
+                             if (filteredNumbers.length > 0) {
+                                const value = filteredNumbers[filteredNumbers.length - 1];
+                                extracted[term.key] = normalizeValue(value);
+                                console.log(`DEBUG: Trovato! Chiave: ${term.key}, Valore: ${extracted[term.key]} (dalla riga successiva)`);
+                                break;
+                             }
+                        }
                     }
                 }
             }
@@ -178,7 +198,7 @@ async function extractFinancialData(pdfFile) {
 }
 
 
-// --- Componente del Form di Upload (CON LOGICA FINALE E DEBUG) ---
+// --- Componente del Form di Upload (invariato) ---
 function CheckupHdForm({ token }) {
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
