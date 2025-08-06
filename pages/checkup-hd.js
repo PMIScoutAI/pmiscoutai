@@ -1,6 +1,6 @@
 // /pages/checkup-hd.js
 // Pagina per il nuovo flusso di analisi "High Definition".
-// Versione con logica di estrazione potenziata (v7) e debug.
+// Versione con logica di estrazione robusta basata su pattern flessibili.
 
 import ValidationModal from '../components/ValidationModal';
 import { useState, useRef } from 'react';
@@ -89,112 +89,144 @@ function CheckupHdPageLayout({ user, token }) {
     );
 }
 
-// --- LOGICA DI ESTRAZIONE POTENZIATA (V7) ---
+// --- NUOVA LOGICA DI ESTRAZIONE (ROBUSTA v2) ---
 
+// VERSIONE ROBUSTA - Approccio con testo grezzo e pattern flessibili
 function normalizeValue(value) {
     if (!value) return '';
     let cleanValue = value.trim();
+    
+    // Gestione parentesi (numeri negativi)
     if (cleanValue.startsWith('(') && cleanValue.endsWith(')')) {
         cleanValue = '-' + cleanValue.substring(1, cleanValue.length - 1);
     }
-    // Rimuove spazi e punti delle migliaia, e sostituisce la virgola decimale
-    return cleanValue.replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+    
+    // Pulizia formato italiano: 1.234.567,89 -> 1234567.89
+    return cleanValue
+        .replace(/\s+/g, '')           // Rimuovi spazi
+        .replace(/\./g, '')            // Rimuovi punti (migliaia)
+        .replace(',', '.');            // Virgola -> punto decimale
 }
 
 async function extractFinancialData(pdfFile) {
-    console.log("DEBUG (v7): Avvio di extractFinancialData...");
-    const arrayBuffer = await pdfFile.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-    console.log(`DEBUG: Documento PDF caricato. Pagine: ${pdf.numPages}`);
+    console.log("🔄 ROBUST EXTRACTOR v2: Avvio...");
     
-    let allItems = [];
-    for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        allItems.push(...textContent.items);
-    }
-    console.log(`DEBUG: Raccolti ${allItems.length} elementi di testo.`);
-
-    const lines = allItems.reduce((acc, item) => {
-        const y = Math.round(item.transform[5]);
-        if (!acc[y]) acc[y] = [];
-        acc[y].push({ text: item.str, x: Math.round(item.transform[4]) });
-        return acc;
-    }, {});
-
-    const reconstructedLines = Object.values(lines)
-        .map(lineItems => lineItems.sort((a, b) => a.x - b.x).map(item => item.text).join(' '))
-        .filter(line => line.trim().length > 1);
-    
-    console.log(`DEBUG: Ricostruite ${reconstructedLines.length} righe.`);
-    
-    const searchTerms = [
-        { key: 'valore_produzione', labels: ['valore della produzione', 'a) valore della produzione'] },
-        { key: 'ricavi_vendite', labels: ['ricavi delle vendite e delle prestazioni', '1) ricavi delle vendite'] },
-        { key: 'costi_produzione', labels: ['costi della produzione', 'b) costi della produzione'] },
-        { key: 'costi_materie_prime', labels: ['per materie prime', '6) per materie prime'] },
-        { key: 'costi_servizi', labels: ['per servizi', '7) per servizi'] },
-        { key: 'costi_personale', labels: ['per il personale', '9) per il personale'] },
-        { key: 'ammortamenti', labels: ['ammortamenti e svalutazioni', '10) ammortamenti'] },
-        { key: 'risultato_ante_imposte', labels: ['risultato prima delle imposte', 'e) risultato prima delle imposte'] },
-        { key: 'imposte_esercizio', labels: ['imposte sul reddito dell\'esercizio', '20) imposte sul reddito'] },
-        { key: 'utile_esercizio', labels: ['utile (perdita) dell\'esercizio', '21) utile (perdita) dell\'esercizio'] },
-        { key: 'totale_attivo', labels: ['totale attivo', 'totale stato patrimoniale attivo'] },
-        { key: 'patrimonio_netto', labels: ['patrimonio netto', 'a) patrimonio netto'] },
-        { key: 'totale_immobilizzazioni', labels: ['totale immobilizzazioni', 'b) immobilizzazioni'] },
-        { key: 'totale_attivo_circolante', labels: ['totale attivo circolante', 'c) attivo circolante'] },
-        { key: 'crediti_clienti', labels: ['crediti verso clienti', 'ii - crediti'] },
-        { key: 'disponibilita_liquide', labels: ['disponibilità liquide', 'iv - disponibilità liquide'] },
-        { key: 'debiti', labels: ['d) debiti'] },
-        { key: 'debiti_fornitori', labels: ['debiti verso fornitori'] },
-    ];
-
-    const extracted = {};
-    console.log("DEBUG: Inizio ricerca termini con logica migliorata...");
-
-    for (let i = 0; i < reconstructedLines.length; i++) {
-        const line = reconstructedLines[i];
+    try {
+        const arrayBuffer = await pdfFile.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+        console.log(`📄 PDF caricato. Pagine: ${pdf.numPages}`);
+        
+        // Estrai TUTTO il testo come stringa unica
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map(item => item.str).join(' ');
+            fullText += pageText + ' ';
+        }
+        
+        console.log(`📝 Testo estratto: ${fullText.length} caratteri`);
+        console.log(`🔍 Preview testo:`, fullText.substring(0, 500));
+        
+        // Dizionario con pattern MOLTO flessibili
+        const searchTerms = [
+            { 
+                key: 'valore_produzione', 
+                patterns: [
+                    /(?:a\)?\s*)?valore\s+della\s+produzione[^\d]*?([\d.,\s\(\)]+)/gi,
+                    /totale\s+valore\s+produzione[^\d]*?([\d.,\s\(\)]+)/gi
+                ]
+            },
+            { 
+                key: 'ricavi_vendite', 
+                patterns: [
+                    /(?:1\)?\s*)?ricavi\s+delle\s+vendite[^\d]*?([\d.,\s\(\)]+)/gi,
+                    /ricavi\s+vendite\s+e\s+prestazioni[^\d]*?([\d.,\s\(\)]+)/gi
+                ]
+            },
+            { 
+                key: 'costi_produzione', 
+                patterns: [
+                    /(?:b\)?\s*)?costi\s+della\s+produzione[^\d]*?([\d.,\s\(\)]+)/gi,
+                    /totale\s+costi\s+produzione[^\d]*?([\d.,\s\(\)]+)/gi
+                ]
+            },
+            { 
+                key: 'costi_materie_prime', 
+                patterns: [
+                    /(?:6\)?\s*)?(?:per\s+)?materie\s+prime[^\d]*?([\d.,\s\(\)]+)/gi,
+                    /costi\s+materie\s+prime[^\d]*?([\d.,\s\(\)]+)/gi
+                ]
+            },
+            { 
+                key: 'costi_personale', 
+                patterns: [
+                    /(?:9\)?\s*)?(?:per\s+il\s+)?personale[^\d]*?([\d.,\s\(\)]+)/gi,
+                    /costi\s+del\s+personale[^\d]*?([\d.,\s\(\)]+)/gi
+                ]
+            },
+            { 
+                key: 'utile_esercizio', 
+                patterns: [
+                    /utile\s+\(?perdita\)?\s+dell?[''']?\s*esercizio[^\d]*?([\d.,\s\(\)]+)/gi,
+                    /risultato\s+dell?[''']?\s*esercizio[^\d]*?([\d.,\s\(\)]+)/gi
+                ]
+            },
+            { 
+                key: 'totale_attivo', 
+                patterns: [
+                    /totale\s+attivo[^\d]*?([\d.,\s\(\)]+)/gi,
+                    /totale\s+stato\s+patrimoniale\s+attivo[^\d]*?([\d.,\s\(\)]+)/gi
+                ]
+            },
+            { 
+                key: 'patrimonio_netto', 
+                patterns: [
+                    /(?:a\)?\s*)?patrimonio\s+netto[^\d]*?([\d.,\s\(\)]+)/gi,
+                    /totale\s+patrimonio\s+netto[^\d]*?([\d.,\s\(\)]+)/gi
+                ]
+            },
+            { 
+                key: 'disponibilita_liquide', 
+                patterns: [
+                    /(?:iv\s*-?\s*)?disponibilit[aà]\s+liquide[^\d]*?([\d.,\s\(\)]+)/gi
+                ]
+            }
+        ];
+        const extracted = {};
+        
+        // Cerca ogni termine nel testo completo
         for (const term of searchTerms) {
-            if (extracted[term.key]) continue;
-
-            for (const label of term.labels) {
-                const cleanLine = line.toLowerCase().replace(/\s+/g, ' ');
-                const cleanLabel = label.toLowerCase().replace(/\s+/g, ' ');
-
-                if (cleanLine.includes(cleanLabel)) {
-                    console.log(`DEBUG: Potenziale match per '${term.key}' sulla riga: "${line}"`);
+            console.log(`🔍 Cerco: ${term.key}`);
+            
+            for (const pattern of term.patterns) {
+                const matches = [...fullText.matchAll(pattern)];
+                
+                if (matches.length > 0) {
+                    console.log(`✅ Trovato ${matches.length} match per ${term.key}`);
                     
-                    const numbersOnLine = line.match(/(-?\(?[\d.,\s]+\)?)/g);
-
-                    if (numbersOnLine && numbersOnLine.length > 0) {
-                        const filteredNumbers = numbersOnLine.filter(n => n.trim().match(/\d/));
-                        if (filteredNumbers.length > 0) {
-                            const value = filteredNumbers[filteredNumbers.length - 1];
-                            extracted[term.key] = normalizeValue(value);
-                            console.log(`DEBUG: Trovato! Chiave: ${term.key}, Valore: ${extracted[term.key]} (dalla stessa riga)`);
-                            break; 
-                        }
-                    } else if (i + 1 < reconstructedLines.length) {
-                        const nextLine = reconstructedLines[i + 1];
-                        const numbersOnNextLine = nextLine.match(/(-?\(?[\d.,\s]+\)?)/g);
-                        if (numbersOnNextLine && numbersOnNextLine.length > 0) {
-                             const filteredNumbers = numbersOnNextLine.filter(n => n.trim().match(/\d/));
-                             if (filteredNumbers.length > 0) {
-                                const value = filteredNumbers[filteredNumbers.length - 1];
-                                extracted[term.key] = normalizeValue(value);
-                                console.log(`DEBUG: Trovato! Chiave: ${term.key}, Valore: ${extracted[term.key]} (dalla riga successiva)`);
-                                break;
-                             }
-                        }
+                    // Prendi l'ultimo match (di solito il più accurato)
+                    const lastMatch = matches[matches.length - 1];
+                    const rawValue = lastMatch[1];
+                    
+                    // Estrai solo numeri validi
+                    const numberMatch = rawValue.match(/([\d.,\(\)]+)/);
+                    if (numberMatch) {
+                        extracted[term.key] = normalizeValue(numberMatch[1]);
+                        console.log(`💰 ${term.key}: ${extracted[term.key]} (da: "${rawValue.trim()}")`);
+                        break; // Trovato, passa al prossimo termine
                     }
                 }
             }
-            if (extracted[term.key]) break;
         }
+        
+        console.log('🎉 ESTRAZIONE COMPLETATA:', extracted);
+        return extracted;
+            
+    } catch (error) {
+        console.error('❌ ERRORE ROBUSTO:', error);
+        throw error;
     }
-    
-    console.log('DEBUG: Estrazione completata. Dati finali:', extracted);
-    return extracted;
 }
 
 
@@ -236,7 +268,7 @@ function CheckupHdForm({ token }) {
 
     try {
       console.log("DEBUG: Chiamata a extractFinancialData in corso...");
-      const data = await extractFinancialData(pdfFile);
+      const data = await extractFinancialData(pdfFile); // Chiamata alla nuova funzione
       console.log("DEBUG: Ritorno da extractFinancialData. Dati ricevuti:", data);
       setExtractedData(data);
       setIsModalOpen(true);
