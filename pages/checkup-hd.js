@@ -1,6 +1,6 @@
 // /pages/checkup-hd.js
 // Pagina per il nuovo flusso di analisi "High Definition".
-// Versione finale con invio dati al backend.
+// Versione con logica di estrazione avanzata per schema scalare.
 
 import ValidationModal from '../components/ValidationModal';
 import { useState, useRef } from 'react';
@@ -88,39 +88,89 @@ function CheckupHdPageLayout({ user, token }) {
     );
 }
 
-// Funzione di aiuto per l'estrazione dei dati dal PDF (invariata)
+// --- NUOVA VERSIONE DELLA LOGICA DI ESTRAZIONE ---
+
+// Funzione di aiuto per "pulire" i numeri estratti
+function normalizeValue(value) {
+    if (!value) return '';
+    let cleanValue = value.trim();
+    // Se il numero è tra parentesi, è negativo
+    if (cleanValue.startsWith('(') && cleanValue.endsWith(')')) {
+        cleanValue = '-' + cleanValue.substring(1, cleanValue.length - 1);
+    }
+    // Rimuove i punti delle migliaia e sostituisce la virgola decimale con un punto
+    return cleanValue.replace(/\./g, '').replace(',', '.');
+}
+
+// Funzione di estrazione potenziata per lo schema scalare
 async function extractFinancialData(pdfFile) {
     const arrayBuffer = await pdfFile.arrayBuffer();
     const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-    let fullText = '';
+    let textByLine = [];
+
+    // Estraiamo il testo pagina per pagina, mantenendo la struttura a righe
     for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        fullText += textContent.items.map(item => item.str).join(' ');
+        // Un semplice split per newline è un buon punto di partenza
+        textByLine.push(...textContent.items.map(item => item.str).join('').split('\n').map(line => line.trim()));
     }
+    // Filtriamo le righe vuote
+    const cleanedLines = textByLine.filter(line => line.length > 2);
+
+    // Il nostro "dizionario" potenziato. Aggiungi qui tutte le etichette che trovi.
     const searchTerms = [
-        { key: 'valore_produzione', labels: ['valore della produzione', 'totale valore produzione', 'a) valore della produzione'] },
-        { key: 'ricavi_vendite', labels: ['ricavi delle vendite e delle prestazioni', 'a.1) ricavi delle vendite'] },
-        { key: 'costi_produzione', labels: ['costi della produzione', 'totale costi produzione', 'b) costi della produzione'] },
-        { key: 'utile_esercizio', labels: ['utile (perdita) dell\'esercizio', 'risultato dell\'esercizio', 'utile dell\'esercizio'] },
-        { key: 'patrimonio_netto', labels: ['patrimonio netto', 'totale patrimonio netto', 'a) patrimonio netto'] },
+        // Conto Economico
+        { key: 'valore_produzione', labels: ['valore della produzione', 'a) valore della produzione'] },
+        { key: 'ricavi_vendite', labels: ['ricavi delle vendite e delle prestazioni', '1) ricavi delle vendite'] },
+        { key: 'costi_produzione', labels: ['costi della produzione', 'b) costi della produzione'] },
+        { key: 'costi_materie_prime', labels: ['per materie prime', '6) per materie prime'] },
+        { key: 'costi_servizi', labels: ['per servizi', '7) per servizi'] },
+        { key: 'costi_personale', labels: ['per il personale', '9) per il personale'] },
+        { key: 'ammortamenti', labels: ['ammortamenti e svalutazioni', '10) ammortamenti'] },
+        { key: 'risultato_ante_imposte', labels: ['risultato prima delle imposte', 'e) risultato prima delle imposte'] },
+        { key: 'imposte_esercizio', labels: ['imposte sul reddito dell\'esercizio', '20) imposte sul reddito'] },
+        { key: 'utile_esercizio', labels: ['utile (perdita) dell\'esercizio', '21) utile (perdita) dell\'esercizio'] },
+        // Stato Patrimoniale
         { key: 'totale_attivo', labels: ['totale attivo', 'totale stato patrimoniale attivo'] },
+        { key: 'patrimonio_netto', labels: ['patrimonio netto', 'a) patrimonio netto'] },
+        { key: 'totale_immobilizzazioni', labels: ['totale immobilizzazioni', 'b) immobilizzazioni'] },
+        { key: 'totale_attivo_circolante', labels: ['totale attivo circolante', 'c) attivo circolante'] },
+        { key: 'crediti_clienti', labels: ['crediti verso clienti', 'ii - crediti'] },
         { key: 'disponibilita_liquide', labels: ['disponibilità liquide', 'iv - disponibilità liquide'] },
+        { key: 'debiti', labels: ['d) debiti'] },
+        { key: 'debiti_fornitori', labels: ['debiti verso fornitori'] },
     ];
+
     const extracted = {};
-    for (const term of searchTerms) {
-        for (const label of term.labels) {
-            const regex = new RegExp(`${label}[\\s\\n]*([\\d.,-]+)`, 'i');
-            const match = fullText.match(regex);
-            if (match && match[1]) {
-                extracted[term.key] = match[1].trim();
-                break;
+
+    // Scansioniamo il documento riga per riga
+    for (const line of cleanedLines) {
+        for (const term of searchTerms) {
+            // Se abbiamo già trovato questa voce, non la cerchiamo più
+            if (extracted[term.key]) continue;
+
+            for (const label of term.labels) {
+                // Creiamo una regex per trovare una riga che INIZIA con la nostra etichetta
+                // e finisce con un numero, anche su più righe o con spazi.
+                const regex = new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
+                if (regex.test(line)) {
+                    // Trovata l'etichetta! Ora cerchiamo il valore numerico alla fine della riga.
+                    const valueMatch = line.match(/([\d.,()]+)\s*$/);
+                    if (valueMatch && valueMatch[1]) {
+                        extracted[term.key] = normalizeValue(valueMatch[1]);
+                        break; // Passiamo al prossimo termine
+                    }
+                }
             }
+            if (extracted[term.key]) break;
         }
     }
-    console.log('Dati estratti:', extracted);
+    
+    console.log('Dati estratti (puliti):', extracted);
     return extracted;
 }
+
 
 // --- Componente del Form di Upload (CON LOGICA FINALE) ---
 function CheckupHdForm({ token }) {
@@ -167,7 +217,6 @@ function CheckupHdForm({ token }) {
     }
   };
 
-  // --- MODIFICA FINALE: Ora inviamo i dati al backend ---
   const handleConfirmFromModal = async (finalData) => {
     setIsModalOpen(false);
     setLoading(true);
@@ -191,7 +240,6 @@ function CheckupHdForm({ token }) {
             throw new Error(result.error || 'Errore del server durante l\'avvio dell\'analisi.');
         }
         
-        // Se tutto va bene, reindirizziamo alla pagina dei risultati
         router.push(`/analisi-hd/${result.sessionId}`);
 
     } catch (err) {
