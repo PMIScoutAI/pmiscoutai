@@ -1,97 +1,139 @@
 // /api/analyze-hd.js
-// VERSIONE ULTRA-SEMPLIFICATA: Estrae solo 2 dati chiave per massima affidabilità.
+// ULTRA-MINIMAL (deterministico, senza LLM): estrae 2 voci (anno più recente)
+// - revenue_current  = Totale valore della produzione
+// - net_income_current = Utile (perdita) dell’esercizio
+// *_previous = null
 
 import { createClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
-import { ChatOpenAI } from "@langchain/openai";
-import { PromptTemplate } from "@langchain/core/prompts";
-import { StringOutputParser } from "@langchain/core/output_parsers";
 import { formatDocumentsAsString } from "langchain/util/document";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-const embeddings = new OpenAIEmbeddings({ openAIApiKey: process.env.OPENAI_API_KEY });
-const llm = new ChatOpenAI({ 
-    openAIApiKey: process.env.OPENAI_API_KEY, 
-    modelName: "gpt-4o",
-    temperature: 0,
-});
 
-// Funzione di pulizia robusta per i formati numerici italiani
-const parseItalianNumber = (text) => {
-    if (typeof text !== 'string') return 0;
-    const cleanedText = text.trim().replace(/€/g, '').replace(/\./g, '').replace(',', '.');
-    return parseFloat(cleanedText) || 0;
+// ---------- Helpers ----------
+const numberPattern = /-?\d{1,3}(?:\.\d{3})*(?:,\d+)?/g;
+
+const parseIt = (s) => {
+  if (typeof s !== 'string') return 0;
+  const m = s.replace(/\u00A0/g, ' ').match(/-?\d{1,3}(?:\.\d{3})*(?:,\d+)?/);
+  if (!m) return 0;
+  return parseFloat(m[0].replace(/\./g, '').replace(',', '.')) || 0;
 };
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Metodo non permesso' });
+const sanitizeContext = (txt) => {
+  if (!txt) return "";
+  const t = txt
+    .replace(/\u00A0/g, ' ')
+    .replace(/\r/g, '')
+    .replace(/[ \t]+/g, ' ');
+  // Rimuovi riferimenti a capogruppo/riassunti
+  return t.split('\n').filter(l =>
+    !/prospetto riepilogativo/i.test(l) &&
+    !/direzione e coordinamento/i.test(l) &&
+    !/capogruppo/i.test(l) &&
+    !/consolidato/i.test(l)
+  ).join('\n');
+};
+
+// Estrae il PRIMO numero dopo la label (colonna anno più recente)
+const extractAfterLabel = (ctx, labelRegex, lookahead = 600) => {
+  const re = new RegExp(labelRegex, 'i');
+  const m = re.exec(ctx);
+  if (!m) return 0;
+  const slice = ctx.slice(m.index, m.index + lookahead);
+  const nums = slice.match(numberPattern);
+  if (!nums || !nums.length) return 0;
+  return parseIt(nums[0]); // primo numero = colonna anno corrente (nelle tavole XBRL)
+};
+
+const extractRevenueCurrent = (ctx) => {
+  const patterns = [
+    /Totale\s+(del\s+)?valore\s+della\s+produzione/,
+    /A\)\s*Valore\s+della\s+produzione/,      // alcune stampe riportano la riga senza "Totale"
+    /Valore\s+della\s+produzione/            // fallback generico
+  ];
+  for (const p of patterns) {
+    const v = extractAfterLabel(ctx, p);
+    if (v > 0) return v;
   }
+  // Fallback: A1 + A5 se presenti
+  const a1 = extractAfterLabel(ctx, /1\)\s*ricavi\s+delle\s+vendite\s+e\s+delle\s+prestazioni/);
+  const a5 = extractAfterLabel(ctx, /5\)\s*altri\s+ricavi\s+e\s+proventi/);
+  return (a1 > 0 && a5 > 0) ? (a1 + a5) : 0;
+};
+
+const extractNetIncomeCurrent = (ctx) => {
+  const patterns = [
+    /21\)\s*Utile\s*\(perdita\)\s*dell'?esercizio/,
+    /Utile\s*\(perdita\)\s*dell'?esercizio/
+  ];
+  for (const p of patterns) {
+    const v = extractAfterLabel(ctx, p);
+    if (v !== 0) return v;
+  }
+  return 0;
+};
+
+// ---------- Handler ----------
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
 
   const { sessionId } = req.body;
   if (!sessionId) return res.status(400).json({ error: 'SessionId mancante' });
 
-  let contextForDebug = "";
-
   try {
-    console.log(`[Analyze-HD/${sessionId}] Inizio estrazione semplificata (2 voci).`);
+    console.log(`[Analyze-HD/${sessionId}] Start deterministic extraction (2 fields).`);
 
-    const vectorStore = new SupabaseVectorStore(embeddings, {
-      client: supabase, tableName: 'documents', queryName: 'match_documents',
-    });
-    const retriever = vectorStore.asRetriever({ k: 15, searchKwargs: { filter: { session_id: sessionId } } });
-
-    // ✅ OBIETTIVO SEMPLICE: Estraiamo solo 2 dati chiave.
-    const domandeBilancio = [
-      {
-        key: "revenue_current",
-        domanda: `Dal Conto Economico, qual è il valore esatto della voce "A) Valore della produzione" per l'anno più recente?`
-      },
-      {
-        key: "net_income_current",
-        domanda: `Dal Conto Economico, qual è il valore finale di "Utile (perdita) dell'esercizio" per l'anno più recente?`
-      }
-    ];
-
-    const domandaPrompt = PromptTemplate.fromTemplate(
-      `Analizza il Contesto da un bilancio italiano e rispondi alla Domanda. Rispondi con **solo il numero** in formato standard (es. 1234567.89), senza simboli o commenti.\n\nDomanda: {domanda}\n\nContesto:\n{context}`
+    // Retrieval unico, ampio e diversificato
+    const vectorStore = new SupabaseVectorStore(
+      new OpenAIEmbeddings({ openAIApiKey: process.env.OPENAI_API_KEY }),
+      { client: supabase, tableName: 'documents', queryName: 'match_documents' }
     );
-
-    const extractedData = {};
-    for (const { key, domanda } of domandeBilancio) {
-        const relevantDocs = await retriever.getRelevantDocuments(domanda);
-        const context = formatDocumentsAsString(relevantDocs);
-        contextForDebug = context;
-
-        const chain = domandaPrompt.pipe(llm).pipe(new StringOutputParser());
-        const answer = await chain.invoke({ domanda, context });
-        
-        extractedData[key] = parseItalianNumber(answer);
-    }
-    console.log(`[Analyze-HD/${sessionId}] Dati estratti:`, extractedData);
-
-    // Salviamo solo i 2 dati estratti per la verifica.
-    await supabase.from('analysis_results_hd').insert({
-        session_id: sessionId,
-        raw_parsed_data: extractedData,
-        summary: `Estrazione semplificata completata.`
+    const retriever = vectorStore.asRetriever({
+      k: 60,
+      searchType: 'mmr',
+      searchKwargs: { filter: { session_id: sessionId }, lambda: 0.5 },
     });
 
-    await supabase.from('checkup_sessions_hd').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
-    console.log(`[Analyze-HD/${sessionId}] 🎉 Estrazione semplificata completata con successo!`);
+    const query = "Conto economico | Valore della produzione | Totale valore della produzione | Utile (perdita) dell'esercizio | 31/12 | A) Valore della produzione | 21) Utile";
+    const docs = await retriever.getRelevantDocuments(query);
 
-    res.status(200).json({ success: true, sessionId });
+    const raw = formatDocumentsAsString(docs);
+    const context = sanitizeContext(raw);
+
+    const revenue_current = extractRevenueCurrent(context);
+    const net_income_current = extractNetIncomeCurrent(context);
+
+    const output = {
+      revenue_current,
+      revenue_previous: null,
+      net_income_current,
+      net_income_previous: null
+    };
+
+    console.log(`[Analyze-HD/${sessionId}] OUTPUT →`, output);
+
+    await supabase.from('analysis_results_hd').insert({
+      session_id: sessionId,
+      raw_parsed_data: output,
+      summary: `Estrazione deterministica (2 voci) completata.`
+    });
+
+    await supabase.from('checkup_sessions_hd')
+      .update({ status: 'completed', completed_at: new Date().toISOString() })
+      .eq('id', sessionId);
+
+    return res.status(200).json({ success: true, sessionId, data: output });
 
   } catch (error) {
     console.error(`💥 [Analyze-HD/${sessionId}] Errore fatale:`, error);
-    if (contextForDebug) {
-        console.error(`[Analyze-HD/${sessionId}] Contesto usato (primi 3000 caratteri):\n`, contextForDebug.slice(0, 3000));
-    }
-    await supabase.from('checkup_sessions_hd').update({ status: 'failed', error_message: error.message }).eq('id', sessionId);
-    res.status(500).json({ error: error.message });
+    await supabase.from('checkup_sessions_hd')
+      .update({ status: 'failed', error_message: error.message })
+      .eq('id', sessionId);
+    return res.status(500).json({ error: error.message });
   }
 }
