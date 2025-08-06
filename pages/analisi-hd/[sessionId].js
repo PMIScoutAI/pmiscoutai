@@ -1,5 +1,5 @@
 // /pages/analisi-hd/[sessionId].js
-// VERSIONE SEMPLIFICATA: Mostra una tabella chiara con i dati estratti per la verifica.
+// VERSIONE SEMPLIFICATA: Mostra solo i 2 dati chiave estratti per la verifica.
 
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -13,7 +13,7 @@ export default function AnalisiHdReportPageWrapper() {
   return (
     <>
       <Head>
-        <title>Report Dati Estratti - PMIScout</title>
+        <title>Report Dati Estratti (Beta) - PMIScout</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -117,32 +117,25 @@ function AnalisiHdReportPage({ user, token }) {
 const LoadingState = ({ text, status }) => (<div className="flex items-center justify-center h-full p-10"><div className="text-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div><h2 className="text-2xl font-bold text-slate-800">{text}</h2>{status && <p className="text-sm text-slate-500 mt-4">Stato attuale: <strong className="uppercase font-semibold text-purple-700">{status}</strong></p>}</div></div>);
 const ErrorState = ({ message }) => (<div className="text-center p-10 bg-white rounded-xl shadow-lg border-l-4 border-red-500"><Icon path={icons.alertTriangle} className="w-12 h-12 text-red-500 mx-auto mb-4" /><h2 className="text-2xl font-bold text-red-700">Si è verificato un errore</h2><p className="text-slate-600 mt-2">{message}</p></div>);
 
-// ✅ NUOVO: Componente ReportView semplificato per mostrare i dati estratti.
+// ✅ NUOVO: Componente ReportView ultra-semplificato.
 const ReportView = ({ result, companyName }) => {
-    const { summary, raw_parsed_data } = result;
+    const { raw_parsed_data } = result;
 
-    // Mappatura per avere etichette più leggibili
     const dataLabels = {
-        revenue_current: "Fatturato (Anno Corrente)",
-        revenue_previous: "Fatturato (Anno Precedente)",
-        ebitda_current: "EBITDA (Anno Corrente)",
-        net_income_current: "Utile Netto (Anno Corrente)",
-        net_equity_current: "Patrimonio Netto (Anno Corrente)",
-        total_assets_current: "Totale Attivo (Anno Corrente)",
-        cash_and_equivalents_current: "Disponibilità Liquide (Anno Corrente)",
-        total_debt_current: "Debiti Totali (Anno Corrente)",
+        revenue_current: "Fatturato (Valore della Produzione)",
+        net_income_current: "Utile Netto d'Esercizio",
     };
 
     return (
         <div className="space-y-8">
             <div className="p-8 bg-white rounded-xl shadow-md border border-slate-200">
-                <p className="text-sm font-medium text-purple-600">Report Dati Estratti (Beta)</p>
+                <p className="text-sm font-medium text-purple-600">Report Dati Estratti (Beta Semplificato)</p>
                 <h1 className="text-3xl font-bold text-slate-900 mt-1">{companyName || 'Azienda'}</h1>
-                <p className="mt-4 text-slate-600 leading-relaxed">{summary || 'Estrazione dati completata. Verifica i valori di seguito.'}</p>
+                <p className="mt-4 text-slate-600">Di seguito i due dati chiave estratti per la verifica. L'obiettivo è ottenere questi valori in modo perfetto prima di procedere.</p>
             </div>
 
             <div className="p-8 bg-white rounded-xl shadow-md border border-slate-200">
-                <h2 className="text-xl font-bold text-slate-800 mb-4">Dati Principali Estratti dal Bilancio</h2>
+                <h2 className="text-xl font-bold text-slate-800 mb-4">Dati Chiave Estratti</h2>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left text-slate-500">
                         <thead className="text-xs text-slate-700 uppercase bg-slate-50">
@@ -152,13 +145,13 @@ const ReportView = ({ result, companyName }) => {
                             </tr>
                         </thead>
                         <tbody>
-                            {raw_parsed_data && Object.entries(raw_parsed_data).map(([key, value]) => (
+                            {raw_parsed_data && Object.entries(dataLabels).map(([key, label]) => (
                                 <tr key={key} className="bg-white border-b hover:bg-slate-50">
                                     <th scope="row" className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">
-                                        {dataLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                        {label}
                                     </th>
-                                    <td className="px-6 py-4 text-right font-mono">
-                                        {new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(value)}
+                                    <td className="px-6 py-4 text-right font-mono text-lg">
+                                        {new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(raw_parsed_data[key] || 0)}
                                     </td>
                                 </tr>
                             ))}
