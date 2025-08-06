@@ -2,6 +2,9 @@
 // Pagina per il nuovo flusso di analisi "High Definition".
 // Utilizza il componente di protezione semplificato per lo sviluppo del beta.
 
+// --- NUOVO: Importiamo il nostro componente Modal e l'hook useEffect ---
+import ValidationModal from '../components/ValidationModal';
+
 import { useState, useRef } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -61,7 +64,7 @@ function CheckupHdPageLayout({ user, token }) {
       <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-center h-16 border-b">
-             <img src="https://www.pmiscout.eu/wp-content/uploads/2024/07/Logo_Pmi_Scout_favicon.jpg" alt="Logo PMIScout" className="h-8 w-auto" onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/150x40/007BFF/FFFFFF?text=PMIScout'; }}/>
+              <img src="https://www.pmiscout.eu/wp-content/uploads/2024/07/Logo_Pmi_Scout_favicon.jpg" alt="Logo PMIScout" className="h-8 w-auto" onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/150x40/007BFF/FFFFFF?text=PMIScout'; }}/>
           </div>
           <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
             <nav className="flex-1 px-2 pb-4 space-y-1">
@@ -88,7 +91,7 @@ function CheckupHdPageLayout({ user, token }) {
   );
 }
 
-// --- Componente del Form di Upload ---
+// --- Componente del Form di Upload (CON LE MODIFICHE) ---
 function CheckupHdForm({ token }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -96,6 +99,11 @@ function CheckupHdForm({ token }) {
   const [pdfFile, setPdfFile] = useState(null);
   const fileInputRef = useRef(null);
   const router = useRouter();
+
+  // --- NUOVO: Aggiungiamo lo stato per controllare il nostro popup ---
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  // --- NUOVO: Stato per contenere i dati che estrarremo (per ora vuoto) ---
+  const [extractedData, setExtractedData] = useState({});
 
   const handleFileChange = (selectedFile) => {
     if (!selectedFile) return;
@@ -106,9 +114,25 @@ function CheckupHdForm({ token }) {
 
   const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.files && e.dataTransfer.files[0]) { handleFileChange(e.dataTransfer.files[0]); } };
 
+  // --- MODIFICATO: La logica di submit ora apre il popup invece di inviare il file ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!companyName.trim() || !pdfFile) { setError('Nome azienda e file PDF sono obbligatori.'); return; }
+    
+    // Per ora, invece di inviare i dati, apriamo il popup.
+    // La logica di estrazione la inseriremo qui nel prossimo passo.
+    console.log("Invece di inviare, apro il popup per il test...");
+    
+    // Impostiamo dei dati finti per vedere se il popup li mostra
+    setExtractedData({
+        valore_produzione: '1.000.000',
+        ricavi_vendite: '950.000',
+        utile_esercizio: '50.000'
+    });
+
+    setIsModalOpen(true);
+
+    /* --- VECCHIA LOGICA (La commentiamo, non la cancelliamo!) ---
     setLoading(true); setError('');
 
     try {
@@ -125,10 +149,29 @@ function CheckupHdForm({ token }) {
       setError(err.message);
       setLoading(false);
     }
+    */
+  };
+
+  // --- NUOVO: Funzione che verrà chiamata quando si conferma dal popup ---
+  const handleConfirmFromModal = (finalData) => {
+    console.log("Dati finali confermati dall'utente:", finalData);
+    // Qui, nel prossimo passo, metteremo la logica per inviare i dati al backend.
+    setIsModalOpen(false); // Chiudiamo il popup
+    alert("Dati confermati! Ora dovremmo inviarli al backend. Controlla la console del browser.");
   };
 
   return (
     <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
+      
+      {/* --- NUOVO: Aggiungiamo il nostro componente Modal qui --- */}
+      {/* Sarà invisibile finché isModalOpen non diventa true */}
+      <ValidationModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        initialData={extractedData}
+        onConfirm={handleConfirmFromModal}
+      />
+
       <form onSubmit={handleSubmit} className="space-y-6">
         {error && (<div className="flex items-start p-4 text-sm text-red-700 bg-red-50 rounded-lg"><Icon path={icons.alert} className="w-5 h-5 mr-3 flex-shrink-0" /><div>{error}</div></div>)}
         <div>
