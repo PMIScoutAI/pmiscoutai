@@ -1,6 +1,6 @@
 // /pages/checkup-hd.js
 // Pagina per il nuovo flusso di analisi "High Definition".
-// Versione con logica di estrazione dati da PDF.
+// Versione finale con invio dati al backend.
 
 import ValidationModal from '../components/ValidationModal';
 import { useState, useRef } from 'react';
@@ -10,12 +10,8 @@ import Script from 'next/script';
 import { useRouter } from 'next/router';
 import { ProtectedPageHd } from '../utils/ProtectedPageHd';
 
-// --- NUOVO: Importiamo la libreria pdf.js ---
 import * as pdfjsLib from 'pdfjs-dist/build/pdf';
-// --- NUOVO: Dobbiamo dire a pdf.js dove trovare un file di supporto ("worker") ---
-// Questo è necessario per farlo funzionare correttamente nel browser.
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-
 
 // --- Componente Wrapper (invariato) ---
 export default function CheckupHdPageWrapper() {
@@ -53,7 +49,6 @@ const icons = {
 
 // --- Layout della Pagina (invariato) ---
 function CheckupHdPageLayout({ user, token }) {
-    // ... (il codice del layout rimane identico)
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const navLinks = [
         { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
@@ -61,7 +56,6 @@ function CheckupHdPageLayout({ user, token }) {
         { href: '/checkup', text: 'Check-UP AI', icon: icons.checkup, active: false },
         { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
     ];
-
     return (
         <div className="relative flex min-h-screen bg-slate-50 text-slate-800">
         <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
@@ -94,27 +88,16 @@ function CheckupHdPageLayout({ user, token }) {
     );
 }
 
-
-// --- NUOVO: Funzione di aiuto per l'estrazione dei dati dal PDF ---
-// Questa è la funzione che contiene la logica "magica".
+// Funzione di aiuto per l'estrazione dei dati dal PDF (invariata)
 async function extractFinancialData(pdfFile) {
-    // 1. Convertiamo il file in un formato che pdf.js può leggere (ArrayBuffer)
     const arrayBuffer = await pdfFile.arrayBuffer();
-
-    // 2. Carichiamo il PDF
     const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
     let fullText = '';
-
-    // 3. Estraiamo il testo da ogni pagina e lo uniamo in un'unica grande stringa
     for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         fullText += textContent.items.map(item => item.str).join(' ');
     }
-
-    // 4. Definiamo cosa cercare. Per ogni voce, abbiamo:
-    //    - key: il nome che useremo nel nostro oggetto dati
-    //    - labels: un elenco di possibili testi da cercare nel PDF (in minuscolo)
     const searchTerms = [
         { key: 'valore_produzione', labels: ['valore della produzione', 'totale valore produzione', 'a) valore della produzione'] },
         { key: 'ricavi_vendite', labels: ['ricavi delle vendite e delle prestazioni', 'a.1) ricavi delle vendite'] },
@@ -124,30 +107,25 @@ async function extractFinancialData(pdfFile) {
         { key: 'totale_attivo', labels: ['totale attivo', 'totale stato patrimoniale attivo'] },
         { key: 'disponibilita_liquide', labels: ['disponibilità liquide', 'iv - disponibilità liquide'] },
     ];
-
     const extracted = {};
-
-    // 5. Cerchiamo ogni termine nel testo completo
-    // Questa è una logica semplice, si può migliorare molto ma è un ottimo inizio.
     for (const term of searchTerms) {
         for (const label of term.labels) {
-            const regex = new RegExp(`${label}\\s*([\\d.,-]+)`, 'i');
+            const regex = new RegExp(`${label}[\\s\\n]*([\\d.,-]+)`, 'i');
             const match = fullText.match(regex);
             if (match && match[1]) {
                 extracted[term.key] = match[1].trim();
-                break; // Trovato, passiamo al prossimo termine
+                break;
             }
         }
     }
-    
     console.log('Dati estratti:', extracted);
     return extracted;
 }
 
-
-// --- Componente del Form di Upload (CON LE MODIFICHE) ---
+// --- Componente del Form di Upload (CON LOGICA FINALE) ---
 function CheckupHdForm({ token }) {
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
   const [error, setError] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [pdfFile, setPdfFile] = useState(null);
@@ -166,7 +144,6 @@ function CheckupHdForm({ token }) {
 
   const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.files && e.dataTransfer.files[0]) { handleFileChange(e.dataTransfer.files[0]); } };
 
-  // --- MODIFICATO: Ora handleSubmit avvia l'estrazione vera e propria! ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!companyName.trim() || !pdfFile) {
@@ -175,10 +152,10 @@ function CheckupHdForm({ token }) {
     }
     
     setLoading(true);
+    setLoadingMessage('Elaborazione PDF...');
     setError('');
 
     try {
-      // Chiamiamo la nostra nuova funzione per estrarre i dati
       const data = await extractFinancialData(pdfFile);
       setExtractedData(data);
       setIsModalOpen(true);
@@ -186,17 +163,42 @@ function CheckupHdForm({ token }) {
       console.error("Errore durante l'estrazione del PDF:", err);
       setError("Non è stato possibile leggere il file PDF. Assicurati che non sia protetto o corrotto.");
     } finally {
-      // In ogni caso, smettiamo di caricare quando abbiamo finito
       setLoading(false);
     }
   };
 
-  // --- Funzione che verrà chiamata quando si conferma dal popup (INVARIATA PER ORA) ---
-  const handleConfirmFromModal = (finalData) => {
-    console.log("Dati finali confermati dall'utente:", finalData);
+  // --- MODIFICA FINALE: Ora inviamo i dati al backend ---
+  const handleConfirmFromModal = async (finalData) => {
     setIsModalOpen(false);
-    alert("Dati confermati! Ora dovremmo inviarli al backend. Controlla la console del browser.");
-    // La logica di invio al backend andrà qui nel prossimo passo
+    setLoading(true);
+    setLoadingMessage('Avvio analisi AI...');
+    setError('');
+
+    try {
+        const payload = {
+            companyName: companyName,
+            financialData: finalData,
+        };
+
+        const response = await fetch('/api/start-checkup-hd', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || 'Errore del server durante l\'avvio dell\'analisi.');
+        }
+        
+        // Se tutto va bene, reindirizziamo alla pagina dei risultati
+        router.push(`/analisi-hd/${result.sessionId}`);
+
+    } catch (err) {
+        console.error("Errore durante l'invio dei dati:", err);
+        setError(err.message);
+        setLoading(false);
+    }
   };
 
   return (
@@ -209,7 +211,6 @@ function CheckupHdForm({ token }) {
       />
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* ... il resto del form rimane identico ... */}
         {error && (<div className="flex items-start p-4 text-sm text-red-700 bg-red-50 rounded-lg"><Icon path={icons.alert} className="w-5 h-5 mr-3 flex-shrink-0" /><div>{error}</div></div>)}
         <div>
           <label htmlFor="companyName" className="block text-sm font-medium text-slate-700 mb-1">Nome Azienda *</label>
@@ -229,7 +230,7 @@ function CheckupHdForm({ token }) {
         </div>
         <div className="flex items-center text-xs text-slate-500"><Icon path={icons.lock} className="w-4 h-4 mr-2 flex-shrink-0" /><span>I tuoi dati sono crittografati e usati solo per questa analisi.</span></div>
         <button type="submit" disabled={loading} className="w-full flex justify-center items-center px-4 py-3 font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all duration-300">
-          {loading ? (<><svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Elaborazione PDF...</>) : ( 'Avvia Check-UP AI HD' )}
+          {loading ? (<><svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>{loadingMessage}</>) : ( 'Avvia Check-UP AI HD' )}
         </button>
       </form>
     </div>
