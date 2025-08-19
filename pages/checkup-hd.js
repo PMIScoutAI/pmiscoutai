@@ -1,6 +1,6 @@
 // /pages/checkup-hd.js
 // Pagina per il nuovo flusso di analisi "High Definition".
-// Versione con logica di estrazione robusta basata su pattern flessibili.
+// VERSIONE AGGIORNATA: Utilizza il backend con Google Document AI per l'estrazione dati.
 
 import ValidationModal from '../components/ValidationModal';
 import { useState, useRef } from 'react';
@@ -10,9 +10,7 @@ import Script from 'next/script';
 import { useRouter } from 'next/router';
 import { ProtectedPageHd } from '../utils/ProtectedPageHd';
 
-import * as pdfjsLib from 'pdfjs-dist/build/pdf';
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-
+// Non è più necessario importare pdfjsLib qui, l'estrazione avviene nel backend.
 
 // --- Componente Wrapper (invariato) ---
 export default function CheckupHdPageWrapper() {
@@ -89,148 +87,11 @@ function CheckupHdPageLayout({ user, token }) {
     );
 }
 
-// --- NUOVA LOGICA DI ESTRAZIONE (ROBUSTA v2) ---
+// --- VECCHIA LOGICA DI ESTRAZIONE RIMOSSA ---
+// La funzione `extractFinancialData` e le sue regex sono state eliminate.
+// L'estrazione ora avviene nel backend tramite l'endpoint /api/extract-with-doc-ai.
 
-// VERSIONE ROBUSTA - Approccio con testo grezzo e pattern flessibili
-function normalizeValue(value) {
-    if (!value) return '';
-    let cleanValue = value.trim();
-    
-    // Gestione parentesi (numeri negativi)
-    if (cleanValue.startsWith('(') && cleanValue.endsWith(')')) {
-        cleanValue = '-' + cleanValue.substring(1, cleanValue.length - 1);
-    }
-    
-    // Pulizia formato italiano: 1.234.567,89 -> 1234567.89
-    return cleanValue
-        .replace(/\s+/g, '')           // Rimuovi spazi
-        .replace(/\./g, '')            // Rimuovi punti (migliaia)
-        .replace(',', '.');            // Virgola -> punto decimale
-}
-
-async function extractFinancialData(pdfFile) {
-    console.log("🔄 ROBUST EXTRACTOR v2: Avvio...");
-    
-    try {
-        const arrayBuffer = await pdfFile.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-        console.log(`📄 PDF caricato. Pagine: ${pdf.numPages}`);
-        
-        // Estrai TUTTO il testo come stringa unica
-        let fullText = '';
-        for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items.map(item => item.str).join(' ');
-            fullText += pageText + ' ';
-        }
-        
-        console.log(`📝 Testo estratto: ${fullText.length} caratteri`);
-        console.log(`🔍 Preview testo:`, fullText.substring(0, 500));
-        
-        // Dizionario con pattern MOLTO flessibili
-        const searchTerms = [
-            { 
-                key: 'valore_produzione', 
-                patterns: [
-                    /(?:a\)?\s*)?valore\s+della\s+produzione[^\d]*?([\d.,\s\(\)]+)/gi,
-                    /totale\s+valore\s+produzione[^\d]*?([\d.,\s\(\)]+)/gi
-                ]
-            },
-            { 
-                key: 'ricavi_vendite', 
-                patterns: [
-                    /(?:1\)?\s*)?ricavi\s+delle\s+vendite[^\d]*?([\d.,\s\(\)]+)/gi,
-                    /ricavi\s+vendite\s+e\s+prestazioni[^\d]*?([\d.,\s\(\)]+)/gi
-                ]
-            },
-            { 
-                key: 'costi_produzione', 
-                patterns: [
-                    /(?:b\)?\s*)?costi\s+della\s+produzione[^\d]*?([\d.,\s\(\)]+)/gi,
-                    /totale\s+costi\s+produzione[^\d]*?([\d.,\s\(\)]+)/gi
-                ]
-            },
-            { 
-                key: 'costi_materie_prime', 
-                patterns: [
-                    /(?:6\)?\s*)?(?:per\s+)?materie\s+prime[^\d]*?([\d.,\s\(\)]+)/gi,
-                    /costi\s+materie\s+prime[^\d]*?([\d.,\s\(\)]+)/gi
-                ]
-            },
-            { 
-                key: 'costi_personale', 
-                patterns: [
-                    /(?:9\)?\s*)?(?:per\s+il\s+)?personale[^\d]*?([\d.,\s\(\)]+)/gi,
-                    /costi\s+del\s+personale[^\d]*?([\d.,\s\(\)]+)/gi
-                ]
-            },
-            { 
-                key: 'utile_esercizio', 
-                patterns: [
-                    /utile\s+\(?perdita\)?\s+dell?[''']?\s*esercizio[^\d]*?([\d.,\s\(\)]+)/gi,
-                    /risultato\s+dell?[''']?\s*esercizio[^\d]*?([\d.,\s\(\)]+)/gi
-                ]
-            },
-            { 
-                key: 'totale_attivo', 
-                patterns: [
-                    /totale\s+attivo[^\d]*?([\d.,\s\(\)]+)/gi,
-                    /totale\s+stato\s+patrimoniale\s+attivo[^\d]*?([\d.,\s\(\)]+)/gi
-                ]
-            },
-            { 
-                key: 'patrimonio_netto', 
-                patterns: [
-                    /(?:a\)?\s*)?patrimonio\s+netto[^\d]*?([\d.,\s\(\)]+)/gi,
-                    /totale\s+patrimonio\s+netto[^\d]*?([\d.,\s\(\)]+)/gi
-                ]
-            },
-            { 
-                key: 'disponibilita_liquide', 
-                patterns: [
-                    /(?:iv\s*-?\s*)?disponibilit[aà]\s+liquide[^\d]*?([\d.,\s\(\)]+)/gi
-                ]
-            }
-        ];
-        const extracted = {};
-        
-        // Cerca ogni termine nel testo completo
-        for (const term of searchTerms) {
-            console.log(`🔍 Cerco: ${term.key}`);
-            
-            for (const pattern of term.patterns) {
-                const matches = [...fullText.matchAll(pattern)];
-                
-                if (matches.length > 0) {
-                    console.log(`✅ Trovato ${matches.length} match per ${term.key}`);
-                    
-                    // Prendi l'ultimo match (di solito il più accurato)
-                    const lastMatch = matches[matches.length - 1];
-                    const rawValue = lastMatch[1];
-                    
-                    // Estrai solo numeri validi
-                    const numberMatch = rawValue.match(/([\d.,\(\)]+)/);
-                    if (numberMatch) {
-                        extracted[term.key] = normalizeValue(numberMatch[1]);
-                        console.log(`💰 ${term.key}: ${extracted[term.key]} (da: "${rawValue.trim()}")`);
-                        break; // Trovato, passa al prossimo termine
-                    }
-                }
-            }
-        }
-        
-        console.log('🎉 ESTRAZIONE COMPLETATA:', extracted);
-        return extracted;
-            
-    } catch (error) {
-        console.error('❌ ERRORE ROBUSTO:', error);
-        throw error;
-    }
-}
-
-
-// --- Componente del Form di Upload (invariato) ---
+// --- Componente del Form di Upload (Logica Aggiornata) ---
 function CheckupHdForm({ token }) {
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
@@ -252,51 +113,65 @@ function CheckupHdForm({ token }) {
 
   const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.files && e.dataTransfer.files[0]) { handleFileChange(e.dataTransfer.files[0]); } };
 
+  // NUOVA LOGICA: Step 1 - Chiama l'endpoint di estrazione dati
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log("DEBUG: handleSubmit premuto.");
 
     if (!companyName.trim() || !pdfFile) {
-      console.log("DEBUG: Validazione fallita: nome azienda o file PDF mancante.");
       setError('Nome azienda e file PDF sono obbligatori.');
       return;
     }
     
     setLoading(true);
-    setLoadingMessage('Analisi del documento in corso...');
+    setLoadingMessage('Estrazione dati ad alta precisione...');
     setError('');
 
     try {
-      console.log("DEBUG: Chiamata a extractFinancialData in corso...");
-      const data = await extractFinancialData(pdfFile); // Chiamata alla nuova funzione
-      console.log("DEBUG: Ritorno da extractFinancialData. Dati ricevuti:", data);
-      setExtractedData(data);
-      setIsModalOpen(true);
+      const formData = new FormData();
+      formData.append('pdfFile', pdfFile);
+
+      // Chiama il nuovo endpoint che usa Document AI
+      const response = await fetch('/api/extract-with-doc-ai', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Errore durante l\'estrazione dei dati.');
+      }
+      
+      console.log("Dati estratti da Document AI:", result.data);
+      setExtractedData(result.data);
+      setIsModalOpen(true); // Apri il modale di validazione con i dati pre-compilati
+
     } catch (err) {
-      console.error("ERRORE CRITICO in handleSubmit:", err);
-      setError("Non è stato possibile leggere il file PDF. Assicurati che non sia protetto o corrotto. Controlla la console per dettagli.");
+      console.error("Errore durante la chiamata a extract-with-doc-ai:", err);
+      setError(`Errore di estrazione: ${err.message}. Controlla la console per dettagli.`);
     } finally {
       setLoading(false);
-      console.log("DEBUG: handleSubmit completato.");
     }
   };
 
+  // NUOVA LOGICA: Step 2 - Invia i dati validati e il PDF per l'analisi completa
   const handleConfirmFromModal = async (finalData) => {
     setIsModalOpen(false);
     setLoading(true);
-    setLoadingMessage('Avvio analisi AI...');
+    setLoadingMessage('Avvio indicizzazione e analisi AI...');
     setError('');
 
     try {
-        const payload = {
-            companyName: companyName,
-            financialData: finalData,
-        };
+        const formData = new FormData();
+        formData.append('companyName', companyName);
+        formData.append('pdfFile', pdfFile);
+        // Aggiungiamo i dati estratti e validall'utente come stringa JSON
+        formData.append('extractedDataJson', JSON.stringify(finalData));
 
+        // Chiama l'endpoint originale, che ora riceverà anche i dati estratti
         const response = await fetch('/api/start-checkup-hd', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: formData
         });
 
         const result = await response.json();
@@ -304,10 +179,11 @@ function CheckupHdForm({ token }) {
             throw new Error(result.error || 'Errore del server durante l\'avvio dell\'analisi.');
         }
         
+        // Reindirizza alla pagina di analisi come prima
         router.push(`/analisi-hd/${result.sessionId}`);
 
     } catch (err) {
-        console.error("Errore durante l'invio dei dati:", err);
+        console.error("Errore durante l'invio dei dati a start-checkup-hd:", err);
         setError(err.message);
         setLoading(false);
     }
