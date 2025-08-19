@@ -2,7 +2,7 @@
 // Questo endpoint riceve un file PDF, lo invia al processore personalizzato di Document AI
 // e restituisce i dati strutturati estratti.
 
-import { DocumentProcessorServiceClient } from '@google-cloud/documentai').v1;
+import { DocumentProcessorServiceClient } from '@google-cloud/documentai'; // FIX: Rimosso '.v1'
 import formidable from 'formidable';
 import fs from 'fs';
 
