@@ -97,6 +97,7 @@ function CheckupHdForm({ token }) {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [extractedData, setExtractedData] = useState({});
+  const [originalExtractedData, setOriginalExtractedData] = useState({}); // Stato per i dati originali
 
   const handleFileChange = (selectedFile) => {
     if (!selectedFile) return;
@@ -135,14 +136,17 @@ function CheckupHdForm({ token }) {
       }
       
       console.log("Dati ricevuti da Document AI:", result.data);
+      setOriginalExtractedData(result.data); // Salva i dati originali
 
-      // --- NUOVO: Blocco di Mappatura Dati ---
-      // Traduciamo i nomi delle etichette di Document AI in quelli attesi dal ValidationModal.
+      // --- NUOVO: Blocco di Mappatura Dati ESTESO ---
+      // Traduciamo i nomi per il ValidationModal, includendo tutti e 6 i campi.
       const mappedData = {
-        valore_produzione: result.data.fatturato_anno_corrente || '',
-        utile_esercizio: result.data.utile_esercizio_anno_corrente || '',
-        patrimonio_netto: result.data.patrimonio_netto_anno_corrente || '',
-        // Aggiungi qui altre mappature se il tuo modale ne richiede di più
+        fatturato_anno_corrente: result.data.fatturato_anno_corrente || '',
+        utile_esercizio_anno_corrente: result.data.utile_esercizio_anno_corrente || '',
+        patrimonio_netto_anno_corrente: result.data.patrimonio_netto_anno_corrente || '',
+        fatturato_anno_precedente: result.data.fatturato_anno_precedente || '',
+        utile_esercizio_anno_precedente: result.data.utile_esercizio_anno_precedente || '',
+        patrimonio_netto_anno_precedente: result.data.patrimonio_netto_anno_precedente || '',
       };
       console.log("Dati mappati per il modal:", mappedData);
       
@@ -170,14 +174,18 @@ function CheckupHdForm({ token }) {
         
         // NOTA: Inviamo i dati originali estratti da Document AI (non quelli mappati)
         // perché il nostro backend (`start-checkup-hd`) si aspetta i nomi completi.
-        const originalData = {
-            fatturato_anno_corrente: finalData.valore_produzione,
-            utile_esercizio_anno_corrente: finalData.utile_esercizio,
-            patrimonio_netto_anno_corrente: finalData.patrimonio_netto,
-            // Qui dovremmo recuperare anche i dati dell'anno precedente se necessario
+        // Uniamo i dati originali con le eventuali modifiche fatte dall'utente nel modal.
+        const dataToSend = {
+            ...originalExtractedData, // Manteniamo eventuali altri campi non mostrati nel modal
+            fatturato_anno_corrente: finalData.fatturato_anno_corrente,
+            utile_esercizio_anno_corrente: finalData.utile_esercizio_anno_corrente,
+            patrimonio_netto_anno_corrente: finalData.patrimonio_netto_anno_corrente,
+            fatturato_anno_precedente: finalData.fatturato_anno_precedente,
+            utile_esercizio_anno_precedente: finalData.utile_esercizio_anno_precedente,
+            patrimonio_netto_anno_precedente: finalData.patrimonio_netto_anno_precedente,
         };
 
-        formData.append('extractedDataJson', JSON.stringify(originalData));
+        formData.append('extractedDataJson', JSON.stringify(dataToSend));
 
         const response = await fetch('/api/start-checkup-hd', {
             method: 'POST',
