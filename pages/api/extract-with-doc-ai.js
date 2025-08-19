@@ -9,15 +9,23 @@ import fs from 'fs';
 // --- CONFIGURAZIONE ---
 const gcloudProjectId = process.env.GCLOUD_PROJECT_ID;
 const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID;
-const location = 'eu'; // Assicurati che sia la stessa regione del tuo processore
+const location = process.env.DOCUMENT_AI_LOCATION; 
 
-// --- FIX: Inizializzazione Corretta del Client per Vercel ---
-// Leggiamo esplicitamente le credenziali dalla variabile d'ambiente.
+// --- Inizializzazione Corretta del Client per Vercel ---
 if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
     throw new Error("La variabile d'ambiente GOOGLE_APPLICATION_CREDENTIALS_JSON non è impostata.");
 }
+if (!location) {
+    throw new Error("La variabile d'ambiente DOCUMENT_AI_LOCATION non è impostata (es. 'us' o 'eu').");
+}
+
 const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
-const docAiClient = new DocumentProcessorServiceClient({ credentials });
+
+const clientOptions = {
+    credentials,
+    apiEndpoint: `${location}-documentai.googleapis.com`,
+};
+const docAiClient = new DocumentProcessorServiceClient(clientOptions);
 
 
 // --- FUNZIONI HELPER (invariate) ---
@@ -47,6 +55,14 @@ export default async function handler(req, res) {
     }
 
     try {
+        // --- NUOVO: LOG DI DEBUG PER LE VARIABILI D'AMBIENTE ---
+        console.log("--- DEBUGGING ENVIRONMENT VARIABLES ---");
+        console.log(`GCLOUD_PROJECT_ID: [${gcloudProjectId || 'NON IMPOSTATO'}]`);
+        console.log(`DOCUMENT_AI_PROCESSOR_ID: [${processorId || 'NON IMPOSTATO'}]`);
+        console.log(`DOCUMENT_AI_LOCATION: [${location || 'NON IMPOSTATO'}]`);
+        console.log("---------------------------------------");
+        // --- FINE LOG DI DEBUG ---
+
         const form = formidable({ maxFileSize: 10 * 1024 * 1024 });
         const [fields, files] = await form.parse(req);
         const pdfFile = files.pdfFile?.[0];
@@ -59,6 +75,10 @@ export default async function handler(req, res) {
         const encodedDocument = Buffer.from(fileContent).toString('base64');
 
         const processorName = `projects/${gcloudProjectId}/locations/${location}/processors/${processorId}`;
+        
+        // NUOVO: Log del nome completo del processore che stiamo per chiamare
+        console.log(`[DocAI] Nome completo della risorsa: ${processorName}`);
+
         const request = {
             name: processorName,
             rawDocument: {
@@ -67,7 +87,7 @@ export default async function handler(req, res) {
             },
         };
 
-        console.log(`[DocAI] Invio del documento al processore: ${processorId}`);
+        console.log(`[DocAI] Invio del documento al processore...`);
         const [result] = await docAiClient.processDocument(request);
         const { entities } = result.document;
 
