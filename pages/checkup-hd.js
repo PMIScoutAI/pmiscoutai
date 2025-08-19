@@ -1,6 +1,6 @@
 // /pages/checkup-hd.js
 // Pagina per il nuovo flusso di analisi "High Definition".
-// VERSIONE AGGIORNATA: Utilizza il backend con Google Document AI per l'estrazione dati.
+// FIX FINALE: Aggiunta mappatura dati per il ValidationModal.
 
 import ValidationModal from '../components/ValidationModal';
 import { useState, useRef } from 'react';
@@ -9,8 +9,6 @@ import Link from 'next/link';
 import Script from 'next/script';
 import { useRouter } from 'next/router';
 import { ProtectedPageHd } from '../utils/ProtectedPageHd';
-
-// Non è più necessario importare pdfjsLib qui, l'estrazione avviene nel backend.
 
 // --- Componente Wrapper (invariato) ---
 export default function CheckupHdPageWrapper() {
@@ -87,10 +85,6 @@ function CheckupHdPageLayout({ user, token }) {
     );
 }
 
-// --- VECCHIA LOGICA DI ESTRAZIONE RIMOSSA ---
-// La funzione `extractFinancialData` e le sue regex sono state eliminate.
-// L'estrazione ora avviene nel backend tramite l'endpoint /api/extract-with-doc-ai.
-
 // --- Componente del Form di Upload (Logica Aggiornata) ---
 function CheckupHdForm({ token }) {
   const [loading, setLoading] = useState(false);
@@ -113,7 +107,6 @@ function CheckupHdForm({ token }) {
 
   const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.files && e.dataTransfer.files[0]) { handleFileChange(e.dataTransfer.files[0]); } };
 
-  // NUOVA LOGICA: Step 1 - Chiama l'endpoint di estrazione dati
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -130,7 +123,6 @@ function CheckupHdForm({ token }) {
       const formData = new FormData();
       formData.append('pdfFile', pdfFile);
 
-      // Chiama il nuovo endpoint che usa Document AI
       const response = await fetch('/api/extract-with-doc-ai', {
         method: 'POST',
         body: formData,
@@ -142,9 +134,20 @@ function CheckupHdForm({ token }) {
         throw new Error(result.error || 'Errore durante l\'estrazione dei dati.');
       }
       
-      console.log("Dati estratti da Document AI:", result.data);
-      setExtractedData(result.data);
-      setIsModalOpen(true); // Apri il modale di validazione con i dati pre-compilati
+      console.log("Dati ricevuti da Document AI:", result.data);
+
+      // --- NUOVO: Blocco di Mappatura Dati ---
+      // Traduciamo i nomi delle etichette di Document AI in quelli attesi dal ValidationModal.
+      const mappedData = {
+        valore_produzione: result.data.fatturato_anno_corrente || '',
+        utile_esercizio: result.data.utile_esercizio_anno_corrente || '',
+        patrimonio_netto: result.data.patrimonio_netto_anno_corrente || '',
+        // Aggiungi qui altre mappature se il tuo modale ne richiede di più
+      };
+      console.log("Dati mappati per il modal:", mappedData);
+      
+      setExtractedData(mappedData);
+      setIsModalOpen(true);
 
     } catch (err) {
       console.error("Errore durante la chiamata a extract-with-doc-ai:", err);
@@ -154,7 +157,6 @@ function CheckupHdForm({ token }) {
     }
   };
 
-  // NUOVA LOGICA: Step 2 - Invia i dati validati e il PDF per l'analisi completa
   const handleConfirmFromModal = async (finalData) => {
     setIsModalOpen(false);
     setLoading(true);
@@ -165,10 +167,18 @@ function CheckupHdForm({ token }) {
         const formData = new FormData();
         formData.append('companyName', companyName);
         formData.append('pdfFile', pdfFile);
-        // Aggiungiamo i dati estratti e validall'utente come stringa JSON
-        formData.append('extractedDataJson', JSON.stringify(finalData));
+        
+        // NOTA: Inviamo i dati originali estratti da Document AI (non quelli mappati)
+        // perché il nostro backend (`start-checkup-hd`) si aspetta i nomi completi.
+        const originalData = {
+            fatturato_anno_corrente: finalData.valore_produzione,
+            utile_esercizio_anno_corrente: finalData.utile_esercizio,
+            patrimonio_netto_anno_corrente: finalData.patrimonio_netto,
+            // Qui dovremmo recuperare anche i dati dell'anno precedente se necessario
+        };
 
-        // Chiama l'endpoint originale, che ora riceverà anche i dati estratti
+        formData.append('extractedDataJson', JSON.stringify(originalData));
+
         const response = await fetch('/api/start-checkup-hd', {
             method: 'POST',
             body: formData
@@ -179,7 +189,6 @@ function CheckupHdForm({ token }) {
             throw new Error(result.error || 'Errore del server durante l\'avvio dell\'analisi.');
         }
         
-        // Reindirizza alla pagina di analisi come prima
         router.push(`/analisi-hd/${result.sessionId}`);
 
     } catch (err) {
