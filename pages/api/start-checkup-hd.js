@@ -1,14 +1,15 @@
 // /api/start-checkup-hd.js
-// VERSIONE FINALE: Aggiunge un outseta_user_id fittizio per risolvere l'errore not-null.
+// VERSIONE IBRIDA: Salva i dati strutturati pre-estratti da Document AI
+// e poi procede con l'indicizzazione vettoriale del documento completo.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
-import fs from 'fs';
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 
+// Inizializzazione dei client (invariata)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -25,39 +26,43 @@ export default async function handler(req, res) {
   let session;
 
   try {
+    // La logica dell'utente fittizio per la beta rimane invariata
     const userId = '11111111-1111-1111-1111-111111111111';
-    console.log(`[HD] Procedo con utente fittizio: ${userId}`);
-
-    // ✅ FIX DEFINITIVO: Aggiungiamo un outseta_user_id fittizio per soddisfare
-    // il vincolo NOT NULL del database.
     const { error: userError } = await supabase
       .from('users')
       .upsert({ 
         id: userId, 
         email: 'beta@pmiscout.eu',
-        outseta_user_id: 'dummy-outseta-id-for-beta' // Aggiunto campo richiesto
+        outseta_user_id: 'dummy-outseta-id-for-beta'
       }, { onConflict: 'id' });
       
     if (userError) throw new Error(`Errore DB users: ${userError.message}`);
     console.log(`[HD] Utente fittizio ${userId} verificato/creato.`);
 
+    // 1. Estrai i dati dal form: PDF, nome azienda e i NUOVI dati estratti
     const form = formidable({ maxFileSize: 10 * 1024 * 1024, keepExtensions: true });
     const [fields, files] = await form.parse(req);
+    
     const companyName = fields.companyName?.[0];
     const pdfFile = files.pdfFile?.[0];
-    
-    if (!companyName || !pdfFile) {
-      return res.status(400).json({ error: 'Nome azienda o file PDF mancante.' });
+    const extractedDataJson = fields.extractedDataJson?.[0]; // NUOVO CAMPO
+
+    if (!companyName || !pdfFile || !extractedDataJson) {
+      return res.status(400).json({ error: 'Dati mancanti: nome azienda, file PDF o dati estratti sono richiesti.' });
     }
 
+    const extractedData = JSON.parse(extractedDataJson);
+    console.log('[HD] Dati numerici pre-estratti ricevuti:', extractedData);
+
+    // La creazione dell'azienda rimane invariata
     const { data: company, error: companyError } = await supabase
       .from('companies')
       .upsert({ user_id: userId, company_name: companyName }, { onConflict: 'user_id, company_name' })
       .select().single();
-    
+      
     if (companyError) throw new Error(`Errore DB companies: ${companyError.message}`);
-    if (!company) throw new Error('Impossibile creare l\'azienda nel database. Controlla i permessi.');
     
+    // La creazione della sessione rimane invariata
     const { data: sessionData, error: sessionError } = await supabase
       .from('checkup_sessions_hd')
       .insert({ 
@@ -70,8 +75,29 @@ export default async function handler(req, res) {
 
     if (sessionError) throw new Error(`Errore creazione sessione: ${sessionError.message}`);
     session = sessionData;
-    console.log(`[HD/${session.id}] Sessione creata, avvio indicizzazione...`);
+    console.log(`[HD/${session.id}] Sessione creata.`);
 
+    // 2. NUOVO STEP: Salva i dati numerici estratti nella nuova tabella
+    console.log(`[HD/${session.id}] Salvataggio dati numerici estratti...`);
+    const { error: extractedDataError } = await supabase
+      .from('risultati_estratti_hd') // Nome della nuova tabella
+      .insert({
+        session_id: session.id,
+        fatturato_anno_corrente: extractedData.fatturato_anno_corrente,
+        fatturato_anno_precedente: extractedData.fatturato_anno_precedente,
+        utile_esercizio_anno_corrente: extractedData.utile_esercizio_anno_corrente,
+        utile_esercizio_anno_precedente: extractedData.utile_esercizio_anno_precedente,
+        patrimonio_netto_anno_corrente: extractedData.patrimonio_netto_anno_corrente,
+        patrimonio_netto_anno_precedente: extractedData.patrimonio_netto_anno_precedente,
+      });
+
+    if (extractedDataError) {
+      throw new Error(`Errore salvataggio dati estratti: ${extractedDataError.message}`);
+    }
+    console.log(`[HD/${session.id}] ✅ Dati numerici salvati correttamente.`);
+
+    // 3. L'indicizzazione vettoriale del documento completo procede come prima
+    console.log(`[HD/${session.id}] Avvio indicizzazione vettoriale...`);
     const loader = new PDFLoader(pdfFile.filepath);
     const docs = await loader.load();
     const splitter = new RecursiveCharacterTextSplitter({ chunkSize: 1000, chunkOverlap: 200 });
@@ -87,8 +113,9 @@ export default async function handler(req, res) {
       tableName: 'documents',
       queryName: 'match_documents',
     });
-    console.log(`[HD/${session.id}] ✅ Indicizzazione completata.`);
+    console.log(`[HD/${session.id}] ✅ Indicizzazione vettoriale completata.`);
 
+    // Il resto del flusso (aggiornamento stato e avvio analisi) rimane invariato
     await supabase.from('checkup_sessions_hd').update({ status: 'processing' }).eq('id', session.id);
     console.log(`[HD/${session.id}] Stato aggiornato a 'processing'. Avvio analisi in background...`);
 
