@@ -1,5 +1,5 @@
 // /components/ValidationModal.js
-// VERSIONE AGGIORNATA con tutti i nuovi campi di input.
+// VERSIONE SEMPLIFICATA: Mostra solo i 6 campi chiave per la validazione.
 
 import React, { useState, useEffect } from 'react';
 
@@ -33,44 +33,34 @@ export default function ValidationModal({ isOpen, onClose, initialData, onConfir
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-4xl transform transition-all max-h-full overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-3xl transform transition-all max-h-full overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-slate-800">Verifica i Dati Estratti</h2>
+          <h2 className="text-2xl font-bold text-slate-800">Verifica i Dati Chiave</h2>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-800">
             <Icon path={icons.x} />
           </button>
         </div>
         <p className="text-slate-600 mb-6">
-          Controlla i valori estratti. Se noti un errore o un campo vuoto, correggilo manualmente prima di continuare.
+          Controlla i 6 valori più importanti estratti dall'IA. Correggi eventuali errori prima di continuare.
         </p>
 
         <form onSubmit={handleSubmit}>
-          {/* --- SEZIONE CONTO ECONOMICO --- */}
-          <h3 className="text-lg font-semibold text-slate-700 mt-6 mb-4 border-b pb-2">Conto Economico</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
-            <InputField label="Valore della produzione (A)" name="valore_produzione" value={formData.valore_produzione || ''} onChange={handleChange} />
-            <InputField label="Ricavi delle vendite (A.1)" name="ricavi_vendite" value={formData.ricavi_vendite || ''} onChange={handleChange} />
-            <InputField label="Costi della produzione (B)" name="costi_produzione" value={formData.costi_produzione || ''} onChange={handleChange} />
-            <InputField label="Costi per materie prime" name="costi_materie_prime" value={formData.costi_materie_prime || ''} onChange={handleChange} />
-            <InputField label="Costi per servizi" name="costi_servizi" value={formData.costi_servizi || ''} onChange={handleChange} />
-            <InputField label="Costi per il personale" name="costi_personale" value={formData.costi_personale || ''} onChange={handleChange} />
-            <InputField label="Ammortamenti e svalutazioni" name="ammortamenti" value={formData.ammortamenti || ''} onChange={handleChange} />
-            <InputField label="Risultato prima delle imposte" name="risultato_ante_imposte" value={formData.risultato_ante_imposte || ''} onChange={handleChange} />
-            <InputField label="Imposte sul reddito" name="imposte_esercizio" value={formData.imposte_esercizio || ''} onChange={handleChange} />
-            <InputField label="Utile/Perdita d'esercizio" name="utile_esercizio" value={formData.utile_esercizio || ''} onChange={handleChange} />
-          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+            {/* --- ANNO CORRENTE --- */}
+            <div className="space-y-4">
+               <h3 className="text-lg font-semibold text-slate-700 border-b pb-2">Anno Corrente</h3>
+               <InputField label="Fatturato (Valore Produzione)" name="fatturato_anno_corrente" value={formData.fatturato_anno_corrente || ''} onChange={handleChange} />
+               <InputField label="Utile d'Esercizio" name="utile_esercizio_anno_corrente" value={formData.utile_esercizio_anno_corrente || ''} onChange={handleChange} />
+               <InputField label="Patrimonio Netto" name="patrimonio_netto_anno_corrente" value={formData.patrimonio_netto_anno_corrente || ''} onChange={handleChange} />
+            </div>
 
-          {/* --- SEZIONE STATO PATRIMONIALE --- */}
-          <h3 className="text-lg font-semibold text-slate-700 mt-8 mb-4 border-b pb-2">Stato Patrimoniale</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
-            <InputField label="Totale Attivo" name="totale_attivo" value={formData.totale_attivo || ''} onChange={handleChange} />
-            <InputField label="Totale Immobilizzazioni" name="totale_immobilizzazioni" value={formData.totale_immobilizzazioni || ''} onChange={handleChange} />
-            <InputField label="Totale Attivo Circolante" name="totale_attivo_circolante" value={formData.totale_attivo_circolante || ''} onChange={handleChange} />
-            <InputField label="Crediti verso Clienti" name="crediti_clienti" value={formData.crediti_clienti || ''} onChange={handleChange} />
-            <InputField label="Disponibilità Liquide" name="disponibilita_liquide" value={formData.disponibilita_liquide || ''} onChange={handleChange} />
-            <InputField label="Patrimonio Netto" name="patrimonio_netto" value={formData.patrimonio_netto || ''} onChange={handleChange} />
-            <InputField label="Totale Debiti" name="debiti" value={formData.debiti || ''} onChange={handleChange} />
-            <InputField label="Debiti verso Fornitori" name="debiti_fornitori" value={formData.debiti_fornitori || ''} onChange={handleChange} />
+            {/* --- ANNO PRECEDENTE --- */}
+            <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-slate-700 border-b pb-2">Anno Precedente</h3>
+                <InputField label="Fatturato (Valore Produzione)" name="fatturato_anno_precedente" value={formData.fatturato_anno_precedente || ''} onChange={handleChange} />
+                <InputField label="Utile d'Esercizio" name="utile_esercizio_anno_precedente" value={formData.utile_esercizio_anno_precedente || ''} onChange={handleChange} />
+                <InputField label="Patrimonio Netto" name="patrimonio_netto_anno_precedente" value={formData.patrimonio_netto_anno_precedente || ''} onChange={handleChange} />
+            </div>
           </div>
 
           <div className="mt-8 flex justify-end space-x-4">
@@ -79,7 +69,7 @@ export default function ValidationModal({ isOpen, onClose, initialData, onConfir
             </button>
             <button type="submit" className="px-6 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors flex items-center">
               <Icon path={icons.check} className="w-5 h-5 mr-2" />
-              Conferma Dati e Avvia Analisi
+              Conferma e Avvia Analisi
             </button>
           </div>
         </form>
