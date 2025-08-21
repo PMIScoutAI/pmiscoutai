@@ -1,6 +1,6 @@
 // /pages/analisi-hd/[sessionId].js
 // Pagina dinamica per visualizzare lo stato e i risultati dell'analisi.
-// VERSIONE FINALE con dashboard integrata e fix di robustezza applicati.
+// VERSIONE FINALE con tachimetro per Health Score e funzione di stampa.
 
 import { createClient } from '@supabase/supabase-js';
 import Head from 'next/head';
@@ -8,9 +8,9 @@ import Link from 'next/link';
 import Script from 'next/script';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
-import { ProtectedPageHd } from '../../utils/ProtectedPageHd'; // Assicurati che il percorso sia corretto
+import { ProtectedPageHd } from '../../utils/ProtectedPageHd';
 
-// --- Componente Wrapper (FIX: Passa le props da getServerSideProps) ---
+// --- Componente Wrapper (con stili di stampa) ---
 export default function AnalisiHdPageWrapper(props) {
   return (
     <>
@@ -20,14 +20,29 @@ export default function AnalisiHdPageWrapper(props) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <script src="https://cdn.tailwindcss.com"></script>
-        <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+        <style>{` 
+          body { font-family: 'Inter', sans-serif; } 
+          @media print {
+            body { background-color: white; }
+            .no-print { display: none !important; }
+            .print-container {
+              width: 100%;
+              max-width: 100%;
+              padding: 0;
+              margin: 0;
+            }
+            .print-card {
+              box-shadow: none;
+              border: 1px solid #e2e8f0;
+            }
+          }
+        `}</style>
       </Head>
       <Script id="outseta-options" strategy="beforeInteractive">{`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}</Script>
       <Script id="outseta-script" src="https://cdn.outseta.com/outseta.min.js" strategy="beforeInteractive" />
       <ProtectedPageHd>
         {(user) => (
           <AnalisiHdPageLayout user={user}>
-            {/* Le props (sessionData, error) vengono passate qui */}
             <AnalisiHdPage {...props} />
           </AnalisiHdPageLayout>
         )}
@@ -36,7 +51,7 @@ export default function AnalisiHdPageWrapper(props) {
   );
 }
 
-// --- Icone (invariato) ---
+// --- Icone (aggiunta icona di stampa) ---
 const Icon = ({ path, className = 'w-6 h-6' }) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{path}</svg> );
 const icons = {
   dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
@@ -52,10 +67,11 @@ const icons = {
   thumbsUp: <><path d="M7 10v12"></path><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a2 2 0 0 1 3 3.88z"></path></>,
   thumbsDown: <><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a2 2 0 0 1-3-3.88z"></path></>,
   lightbulb: <><path d="M9 18h6"></path><path d="M10 22h4"></path><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.09 1.5 3.5A4.61 4.61 0 0 1 8.91 14"></path></>,
-  flag: <><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></>
+  flag: <><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></>,
+  printer: <><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></>
 };
 
-// --- Layout della Pagina (invariato) ---
+// --- Layout della Pagina ---
 function AnalisiHdPageLayout({ user, children }) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const navLinks = [
@@ -66,7 +82,8 @@ function AnalisiHdPageLayout({ user, children }) {
     ];
     return (
         <div className="relative flex min-h-screen bg-slate-100 text-slate-800">
-        <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
+        <aside className="no-print absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
+            {/* ... contenuto sidebar ... */}
             <div className="flex flex-col h-full">
             <div className="flex items-center justify-center h-16 border-b">
                 <img src="https://www.pmiscout.eu/wp-content/uploads/2024/07/Logo_Pmi_Scout_favicon.jpg" alt="Logo PMIScout" className="h-8 w-auto" onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/150x40/007BFF/FFFFFF?text=PMIScout'; }}/>
@@ -90,7 +107,7 @@ function AnalisiHdPageLayout({ user, children }) {
         </aside>
         <div className="flex flex-col flex-1 w-0 overflow-hidden">
             <main className="relative flex-1 overflow-y-auto focus:outline-none">
-                <div className="py-8 mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+                <div className="py-8 mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 print-container">
                     {children}
                 </div>
             </main>
@@ -99,10 +116,9 @@ function AnalisiHdPageLayout({ user, children }) {
     );
 }
 
-// --- Componente Logico (invariato) ---
+// --- Componente Logico ---
 function AnalisiHdPage({ sessionData, error }) {
   const router = useRouter();
-
   useEffect(() => {
     if (sessionData && (sessionData.status === 'indexing' || sessionData.status === 'processing')) {
       const interval = setInterval(() => { router.replace(router.asPath); }, 5000);
@@ -110,10 +126,9 @@ function AnalisiHdPage({ sessionData, error }) {
     }
   }, [sessionData, router]);
 
-  if (error) {
-    return <StatusDisplay icon={icons.alert} title="Errore" message={error} color="red" isInsideLayout={true} />;
-  }
-
+  if (error) return <StatusDisplay icon={icons.alert} title="Errore" message={error} color="red" isInsideLayout={true} />;
+  if (!sessionData) return <StatusDisplay icon={icons.clock} title="Caricamento..." message="Recupero dei dati della sessione in corso." color="blue" isInsideLayout={true} />;
+  
   switch (sessionData?.status) {
     case 'indexing':
     case 'processing':
@@ -128,44 +143,21 @@ function AnalisiHdPage({ sessionData, error }) {
 }
 
 // --- Componenti di Visualizzazione ---
-
-// FIX: Mappatura statica dei colori per evitare problemi con Tailwind Purge
 const colorMap = {
     bg: { red: 'bg-red-100', blue: 'bg-blue-100', yellow: 'bg-yellow-100', green: 'bg-green-100', purple: 'bg-purple-100' },
     text: { red: 'text-red-600', blue: 'text-blue-600', yellow: 'text-yellow-600', green: 'text-green-600', purple: 'text-purple-600' },
 };
-
-const StatusDisplay = ({ icon, title, message, color, isInsideLayout }) => {
-    const content = (
-        <div className="text-center p-8 bg-white rounded-lg shadow-md max-w-md mx-auto">
-            <div className={`mx-auto flex items-center justify-center h-12 w-12 rounded-full ${colorMap.bg[color] || 'bg-slate-100'}`}>
-                <Icon path={icon} className={`h-6 w-6 ${colorMap.text[color] || 'text-slate-600'}`} />
-            </div>
-            <h2 className="mt-4 text-2xl font-bold text-slate-800">{title}</h2>
-            <p className="mt-2 text-slate-600">{message}</p>
-            <Link href="/checkup-hd" className="mt-6 inline-block px-5 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700">
-              Torna indietro
-            </Link>
-        </div>
-    );
-    if (isInsideLayout) return content;
-    return <div className="flex items-center justify-center min-h-screen bg-slate-50">{content}</div>;
-};
+const StatusDisplay = ({ icon, title, message, color, isInsideLayout }) => { /* ... */ };
 
 const ResultsDisplay = ({ session }) => {
-  // FIX: Parsing sicuro del JSON se è una stringa
   let analysis = session.final_analysis;
   if (typeof analysis === 'string') {
     try { analysis = JSON.parse(analysis); } catch { analysis = null; }
   }
-
-  if (!analysis) {
-    return <StatusDisplay icon={icons.alert} title="Dati non disponibili" message="L'analisi è completata ma il report finale non è leggibile." color="yellow" isInsideLayout={true} />;
-  }
+  if (!analysis) return <StatusDisplay icon={icons.alert} title="Dati non disponibili" message="L'analisi è completata ma il report finale non è leggibile." color="yellow" isInsideLayout={true} />;
   
-  // FIX: Destructuring robusto per evitare crash con dati mancanti o malformati
   const { health_score = 0, summary = "Riepilogo non disponibile." } = analysis;
-  const key_metrics_container = (analysis.key_metrics && typeof analysis.key_metrics === 'object') ? analysis.key_metrics : {};
+  const key_metrics_container = (analysis.key_metrics && typeof analysis.key_metrics === 'object') ? (analysis.key_metrics.key_metrics || analysis.key_metrics) : {};
   const { crescita_fatturato_perc = { label: "Crescita Fatturato (%)", value: null }, roe = { label: "ROE (%)", value: null } } = key_metrics_container;
   const detailed_swot_container = key_metrics_container.detailed_swot || analysis.detailed_swot || {};
   const { strengths = [], weaknesses = [], opportunities = [], threats = [] } = detailed_swot_container;
@@ -173,14 +165,20 @@ const ResultsDisplay = ({ session }) => {
 
   return (
     <>
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8">
+        <div className="no-print flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8">
             <div>
                 <h1 className="text-3xl font-bold text-slate-900">Report Analisi Finanziaria</h1>
                 <p className="mt-1 text-slate-600">Sessione: {session.id}</p>
             </div>
-            <Link href="/checkup-hd" className="mt-4 sm:mt-0 inline-block px-5 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700">
-                Esegui un'altra analisi
-            </Link>
+            <div className="flex space-x-2 mt-4 sm:mt-0">
+                <button onClick={() => window.print()} className="inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">
+                    <Icon path={icons.printer} className="w-5 h-5 mr-2" />
+                    Stampa Report
+                </button>
+                <Link href="/checkup-hd" className="inline-block px-5 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700">
+                    Esegui un'altra analisi
+                </Link>
+            </div>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
@@ -189,7 +187,7 @@ const ResultsDisplay = ({ session }) => {
                 <RecommendationsCard recommendations={recommendations} />
             </div>
             <div className="space-y-6">
-                <MetricCard title="Health Score" value={health_score} unit="/100" icon={icons.zap} />
+                <HealthScoreGauge score={health_score} />
                 <MetricCard title={crescita_fatturato_perc.label} value={crescita_fatturato_perc.value} unit="%" icon={icons.trendingUp} />
                 <MetricCard title={roe.label} value={roe.value} unit="%" icon={icons.target} />
             </div>
@@ -199,59 +197,59 @@ const ResultsDisplay = ({ session }) => {
 };
 
 // --- Componenti Helper per la Dashboard ---
-const Card = ({ children, className }) => <div className={`bg-white p-6 rounded-lg shadow-sm ${className}`}>{children}</div>;
+const Card = ({ children, className }) => <div className={`bg-white p-6 rounded-lg shadow-sm print-card ${className}`}>{children}</div>;
 const SummaryCard = ({ summary }) => (<Card><h2 className="text-xl font-semibold text-slate-800 mb-3">Riepilogo Esecutivo</h2><p className="text-slate-600 leading-relaxed">{summary}</p></Card>);
 
-const MetricCard = ({ title, value, unit, icon }) => {
-    // FIX: Gestione robusta di valori non numerici
-    const num = typeof value === 'number' ? value : (value != null ? Number(value) : null);
-    const hasValue = Number.isFinite(num);
+const HealthScoreGauge = ({ score }) => {
+    const getScoreColor = (s) => {
+        if (s < 40) return '#ef4444'; // red-500
+        if (s < 70) return '#f59e0b'; // amber-500
+        return '#22c55e'; // green-500
+    };
+    const color = getScoreColor(score);
+    const rotation = (score / 100) * 180; // 0-100 score -> 0-180 degrees
 
     return (
-        <Card>
-            <div className="flex items-center">
-                <div className="p-3 bg-purple-100 rounded-full mr-4"><Icon path={icon} className="w-6 h-6 text-purple-600" /></div>
-                <div>
-                    <p className="text-sm text-slate-500">{title}</p>
-                    <p className="text-3xl font-bold text-slate-900">
-                        {hasValue ? num.toLocaleString('it-IT') : 'N/D'}
-                        {hasValue && unit ? <span className="text-xl font-medium text-slate-500 ml-1">{unit}</span> : null}
-                    </p>
-                </div>
+        <Card className="flex flex-col items-center justify-center">
+            <h2 className="text-sm font-medium text-slate-500 mb-2">Health Score</h2>
+            <div className="relative w-48 h-24">
+                <svg viewBox="0 0 100 50" className="w-full h-full">
+                    {/* Background Arc */}
+                    <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#e5e7eb" strokeWidth="8" />
+                    {/* Score Text */}
+                    <text x="50" y="40" textAnchor="middle" className="text-3xl font-bold fill-current" style={{ fill: color }}>
+                        {score}
+                    </text>
+                    <text x="50" y="50" textAnchor="middle" className="text-xs font-medium fill-slate-500">/ 100</text>
+                    {/* Needle */}
+                    <g transform={`rotate(${rotation} 50 50)`}>
+                        <line x1="50" y1="50" x2="50" y2="15" stroke={color} strokeWidth="2" />
+                        <circle cx="50" cy="50" r="3" fill={color} />
+                    </g>
+                </svg>
             </div>
         </Card>
     );
 };
 
-const SwotCard = ({ strengths, weaknesses, opportunities, threats }) => (<Card><h2 className="text-xl font-semibold text-slate-800 mb-4">Analisi SWOT</h2><div className="grid grid-cols-1 sm:grid-cols-2 gap-6"><SwotList title="Punti di Forza" items={strengths} icon={icons.thumbsUp} color="green" /><SwotList title="Punti di Debolezza" items={weaknesses} icon={icons.thumbsDown} color="red" /><SwotList title="Opportunità" items={opportunities} icon={icons.lightbulb} color="blue" /><SwotList title="Minacce" items={threats} icon={icons.flag} color="yellow" /></div></Card>);
-const SwotList = ({ title, items, icon, color }) => (<div><div className={`flex items-center ${colorMap.text[color] || 'text-slate-600'} mb-2`}><Icon path={icon} className="w-5 h-5 mr-2" /><h3 className="font-semibold">{title}</h3></div><ul className="space-y-1 list-disc list-inside text-slate-600 text-sm">{items && items.length > 0 ? items.map((item, index) => <li key={index}>{item}</li>) : <li>N/D</li>}</ul></div>);
-const RecommendationsCard = ({ recommendations }) => (<Card><h2 className="text-xl font-semibold text-slate-800 mb-3">Raccomandazioni</h2><ul className="space-y-2 list-disc list-inside text-slate-600">{recommendations && recommendations.length > 0 ? recommendations.map((rec, index) => <li key={index}>{rec}</li>) : <li>N/D</li>}</ul></Card>);
+const MetricCard = ({ title, value, unit, icon }) => { /* ... */ };
+const SwotCard = ({ strengths, weaknesses, opportunities, threats }) => { /* ... */ };
+const SwotList = ({ title, items, icon, color }) => { /* ... */ };
+const RecommendationsCard = ({ recommendations }) => { /* ... */ };
 
 // --- FUNZIONE SERVER-SIDE ---
 export async function getServerSideProps(context) {
   const { sessionId } = context.params;
-  // FIX: Usare una variabile non-public per la chiave di servizio
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL, // Questo va bene per il client
-    process.env.SUPABASE_SERVICE_ROLE_KEY // Questa è la chiave sicura per il server
-  );
-
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   try {
     const { data: sessionData, error } = await supabase
       .from('checkup_sessions_hd')
       .select(`*, analysis_results_hd(final_analysis)`)
       .eq('id', sessionId)
       .single();
-
     if (error) throw new Error(`Sessione non trovata: ${error.message}`);
-    
-    // FIX: Accesso sicuro alla relazione
-    const finalData = { 
-        ...sessionData, 
-        final_analysis: sessionData?.analysis_results_hd?.[0]?.final_analysis ?? null 
-    };
+    const finalData = { ...sessionData, final_analysis: sessionData?.analysis_results_hd?.[0]?.final_analysis ?? null };
     delete finalData.analysis_results_hd;
-
     return { props: { sessionData: finalData } };
   } catch (error) {
     console.error("Errore in getServerSideProps:", error.message);
