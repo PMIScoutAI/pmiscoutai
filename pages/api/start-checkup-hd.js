@@ -35,7 +35,7 @@ function calculateMetrics(data) {
     return { crescita_fatturato_perc, roe, revenue_current, revenue_previous };
 }
 
-// Lo schema di validazione rimane invariato
+// FIX: Spostato 'recommendations' per rispecchiare l'output effettivo dell'LLM.
 const analysisSchema = z.object({
   health_score: z.number().int().min(0).max(100).describe("Numero intero da 0 a 100 che rappresenta la salute finanziaria."),
   summary: z.string().describe("Riassunto dell'analisi in 2-3 frasi, basato sui dati."),
@@ -49,9 +49,10 @@ const analysisSchema = z.object({
         strengths: z.array(z.string()).describe("Punti di forza basati su dati numerici."),
         weaknesses: z.array(z.string()).describe("Punti di debolezza basati su dati numerici."),
         opportunities: z.array(z.string()).describe("Opportunità basate su dati numerici."),
-        threats: z.array(z.string()).describe("Minacce basate su dati numerici."),
-        recommendations: z.array(z.string()).describe("Raccomandazioni concrete e misurabili.")
+        threats: z.array(z.string()).describe("Minacce basate su dati numerici.")
     }),
+    // L'IA sta mettendo 'recommendations' qui, come fratello di 'detailed_swot'
+    recommendations: z.array(z.string()).describe("Raccomandazioni concrete e misurabili.")
   }),
 });
 
