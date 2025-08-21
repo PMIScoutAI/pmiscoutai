@@ -1,6 +1,6 @@
 // /pages/analisi-hd/[sessionId].js
 // Pagina dinamica per visualizzare lo stato e i risultati dell'analisi.
-// VERSIONE FINALE con tachimetro per Health Score e funzione di stampa.
+// VERSIONE FINALE con dashboard integrata e fix di robustezza applicati.
 
 import { createClient } from '@supabase/supabase-js';
 import Head from 'next/head';
@@ -8,9 +8,9 @@ import Link from 'next/link';
 import Script from 'next/script';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
-import { ProtectedPageHd } from '../../utils/ProtectedPageHd';
+import { ProtectedPageHd } from '../../utils/ProtectedPageHd'; // Assicurati che il percorso sia corretto
 
-// --- Componente Wrapper (con stili di stampa) ---
+// --- Componente Wrapper (FIX: Passa le props da getServerSideProps) ---
 export default function AnalisiHdPageWrapper(props) {
   return (
     <>
@@ -43,6 +43,7 @@ export default function AnalisiHdPageWrapper(props) {
       <ProtectedPageHd>
         {(user) => (
           <AnalisiHdPageLayout user={user}>
+            {/* Le props (sessionData, error) vengono passate qui */}
             <AnalisiHdPage {...props} />
           </AnalisiHdPageLayout>
         )}
@@ -51,7 +52,7 @@ export default function AnalisiHdPageWrapper(props) {
   );
 }
 
-// --- Icone (aggiunta icona di stampa) ---
+// --- Icone (invariato) ---
 const Icon = ({ path, className = 'w-6 h-6' }) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{path}</svg> );
 const icons = {
   dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
@@ -71,7 +72,7 @@ const icons = {
   printer: <><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></>
 };
 
-// --- Layout della Pagina ---
+// --- Layout della Pagina (invariato) ---
 function AnalisiHdPageLayout({ user, children }) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const navLinks = [
@@ -82,7 +83,6 @@ function AnalisiHdPageLayout({ user, children }) {
     ];
     return (
         <div className="relative flex min-h-screen bg-slate-100 text-slate-800">
-        {/* FIX: Corrette le virgolette da " a ` per la stringa template */}
         <aside className={`no-print absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
             <div className="flex flex-col h-full">
             <div className="flex items-center justify-center h-16 border-b">
@@ -91,6 +91,7 @@ function AnalisiHdPageLayout({ user, children }) {
             <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
                 <nav className="flex-1 px-2 pb-4 space-y-1">
                 {navLinks.map((link) => (
+                    // FIX: Rimosso <a> figlio da <Link>
                     <Link key={link.text} href={link.href} className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${ link.active ? 'bg-purple-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}>
                         <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
                         {link.text}
@@ -116,9 +117,10 @@ function AnalisiHdPageLayout({ user, children }) {
     );
 }
 
-// --- Componente Logico ---
+// --- Componente Logico (invariato) ---
 function AnalisiHdPage({ sessionData, error }) {
   const router = useRouter();
+
   useEffect(() => {
     if (sessionData && (sessionData.status === 'indexing' || sessionData.status === 'processing')) {
       const interval = setInterval(() => { router.replace(router.asPath); }, 5000);
@@ -126,9 +128,14 @@ function AnalisiHdPage({ sessionData, error }) {
     }
   }, [sessionData, router]);
 
-  if (error) return <StatusDisplay icon={icons.alert} title="Errore" message={error} color="red" isInsideLayout={true} />;
-  if (!sessionData) return <StatusDisplay icon={icons.clock} title="Caricamento..." message="Recupero dei dati della sessione in corso." color="blue" isInsideLayout={true} />;
-  
+  if (error) {
+    return <StatusDisplay icon={icons.alert} title="Errore" message={error} color="red" isInsideLayout={true} />;
+  }
+
+  if (!sessionData) {
+     return <StatusDisplay icon={icons.clock} title="Caricamento..." message="Recupero dei dati della sessione in corso." color="blue" isInsideLayout={true} />;
+  }
+
   switch (sessionData?.status) {
     case 'indexing':
     case 'processing':
@@ -143,19 +150,42 @@ function AnalisiHdPage({ sessionData, error }) {
 }
 
 // --- Componenti di Visualizzazione ---
+
+// FIX: Mappatura statica dei colori per evitare problemi con Tailwind Purge
 const colorMap = {
     bg: { red: 'bg-red-100', blue: 'bg-blue-100', yellow: 'bg-yellow-100', green: 'bg-green-100', purple: 'bg-purple-100' },
     text: { red: 'text-red-600', blue: 'text-blue-600', yellow: 'text-yellow-600', green: 'text-green-600', purple: 'text-purple-600' },
 };
-const StatusDisplay = ({ icon, title, message, color, isInsideLayout }) => { /* ... */ };
+
+const StatusDisplay = ({ icon, title, message, color, isInsideLayout }) => {
+    const content = (
+        <div className="text-center p-8 bg-white rounded-lg shadow-md max-w-md mx-auto">
+            <div className={`mx-auto flex items-center justify-center h-12 w-12 rounded-full ${colorMap.bg[color] || 'bg-slate-100'}`}>
+                <Icon path={icon} className={`h-6 w-6 ${colorMap.text[color] || 'text-slate-600'}`} />
+            </div>
+            <h2 className="mt-4 text-2xl font-bold text-slate-800">{title}</h2>
+            <p className="mt-2 text-slate-600">{message}</p>
+            <Link href="/checkup-hd" className="mt-6 inline-block px-5 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700">
+              Torna indietro
+            </Link>
+        </div>
+    );
+    if (isInsideLayout) return content;
+    return <div className="flex items-center justify-center min-h-screen bg-slate-50">{content}</div>;
+};
 
 const ResultsDisplay = ({ session }) => {
+  // FIX: Parsing sicuro del JSON se è una stringa
   let analysis = session.final_analysis;
   if (typeof analysis === 'string') {
     try { analysis = JSON.parse(analysis); } catch { analysis = null; }
   }
-  if (!analysis) return <StatusDisplay icon={icons.alert} title="Dati non disponibili" message="L'analisi è completata ma il report finale non è leggibile." color="yellow" isInsideLayout={true} />;
+
+  if (!analysis) {
+    return <StatusDisplay icon={icons.alert} title="Dati non disponibili" message="L'analisi è completata ma il report finale non è leggibile." color="yellow" isInsideLayout={true} />;
+  }
   
+  // FIX: Destructuring robusto per evitare crash con dati mancanti o malformati
   const { health_score = 0, summary = "Riepilogo non disponibile." } = analysis;
   const key_metrics_container = (analysis.key_metrics && typeof analysis.key_metrics === 'object') ? (analysis.key_metrics.key_metrics || analysis.key_metrics) : {};
   const { crescita_fatturato_perc = { label: "Crescita Fatturato (%)", value: null }, roe = { label: "ROE (%)", value: null } } = key_metrics_container;
@@ -200,56 +230,56 @@ const ResultsDisplay = ({ session }) => {
 const Card = ({ children, className }) => <div className={`bg-white p-6 rounded-lg shadow-sm print-card ${className}`}>{children}</div>;
 const SummaryCard = ({ summary }) => (<Card><h2 className="text-xl font-semibold text-slate-800 mb-3">Riepilogo Esecutivo</h2><p className="text-slate-600 leading-relaxed">{summary}</p></Card>);
 
-const HealthScoreGauge = ({ score }) => {
-    const getScoreColor = (s) => {
-        if (s < 40) return '#ef4444'; // red-500
-        if (s < 70) return '#f59e0b'; // amber-500
-        return '#22c55e'; // green-500
-    };
-    const color = getScoreColor(score);
-    const rotation = (score / 100) * 180; // 0-100 score -> 0-180 degrees
+const MetricCard = ({ title, value, unit, icon }) => {
+    // FIX: Gestione robusta di valori non numerici
+    const num = typeof value === 'number' ? value : (value != null ? Number(value) : null);
+    const hasValue = Number.isFinite(num);
 
     return (
-        <Card className="flex flex-col items-center justify-center">
-            <h2 className="text-sm font-medium text-slate-500 mb-2">Health Score</h2>
-            <div className="relative w-48 h-24">
-                <svg viewBox="0 0 100 50" className="w-full h-full">
-                    {/* Background Arc */}
-                    <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#e5e7eb" strokeWidth="8" />
-                    {/* Score Text */}
-                    <text x="50" y="40" textAnchor="middle" className="text-3xl font-bold fill-current" style={{ fill: color }}>
-                        {score}
-                    </text>
-                    <text x="50" y="50" textAnchor="middle" className="text-xs font-medium fill-slate-500">/ 100</text>
-                    {/* Needle */}
-                    <g transform={`rotate(${rotation} 50 50)`}>
-                        <line x1="50" y1="50" x2="50" y2="15" stroke={color} strokeWidth="2" />
-                        <circle cx="50" cy="50" r="3" fill={color} />
-                    </g>
-                </svg>
+        <Card>
+            <div className="flex items-center">
+                <div className="p-3 bg-purple-100 rounded-full mr-4"><Icon path={icon} className="w-6 h-6 text-purple-600" /></div>
+                <div>
+                    <p className="text-sm text-slate-500">{title}</p>
+                    <p className="text-3xl font-bold text-slate-900">
+                        {hasValue ? num.toLocaleString('it-IT') : 'N/D'}
+                        {hasValue && unit ? <span className="text-xl font-medium text-slate-500 ml-1">{unit}</span> : null}
+                    </p>
+                </div>
             </div>
         </Card>
     );
 };
 
-const MetricCard = ({ title, value, unit, icon }) => { /* ... */ };
-const SwotCard = ({ strengths, weaknesses, opportunities, threats }) => { /* ... */ };
-const SwotList = ({ title, items, icon, color }) => { /* ... */ };
-const RecommendationsCard = ({ recommendations }) => { /* ... */ };
+const SwotCard = ({ strengths, weaknesses, opportunities, threats }) => (<Card><h2 className="text-xl font-semibold text-slate-800 mb-4">Analisi SWOT</h2><div className="grid grid-cols-1 sm:grid-cols-2 gap-6"><SwotList title="Punti di Forza" items={strengths} icon={icons.thumbsUp} color="green" /><SwotList title="Punti di Debolezza" items={weaknesses} icon={icons.thumbsDown} color="red" /><SwotList title="Opportunità" items={opportunities} icon={icons.lightbulb} color="blue" /><SwotList title="Minacce" items={threats} icon={icons.flag} color="yellow" /></div></Card>);
+const SwotList = ({ title, items, icon, color }) => (<div><div className={`flex items-center ${colorMap.text[color] || 'text-slate-600'} mb-2`}><Icon path={icon} className="w-5 h-5 mr-2" /><h3 className="font-semibold">{title}</h3></div><ul className="space-y-1 list-disc list-inside text-slate-600 text-sm">{items && items.length > 0 ? items.map((item, index) => <li key={index}>{item}</li>) : <li>N/D</li>}</ul></div>);
+const RecommendationsCard = ({ recommendations }) => (<Card><h2 className="text-xl font-semibold text-slate-800 mb-3">Raccomandazioni</h2><ul className="space-y-2 list-disc list-inside text-slate-600">{recommendations && recommendations.length > 0 ? recommendations.map((rec, index) => <li key={index}>{rec}</li>) : <li>N/D</li>}</ul></Card>);
 
 // --- FUNZIONE SERVER-SIDE ---
 export async function getServerSideProps(context) {
   const { sessionId } = context.params;
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  // FIX: Usare una variabile non-public per la chiave di servizio
+  const supabase = createClient(
+    process.env.SUPABASE_URL, // Usare la variabile server-side
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+
   try {
     const { data: sessionData, error } = await supabase
       .from('checkup_sessions_hd')
       .select(`*, analysis_results_hd(final_analysis)`)
       .eq('id', sessionId)
       .single();
+
     if (error) throw new Error(`Sessione non trovata: ${error.message}`);
-    const finalData = { ...sessionData, final_analysis: sessionData?.analysis_results_hd?.[0]?.final_analysis ?? null };
+    
+    // FIX: Accesso sicuro alla relazione
+    const finalData = { 
+        ...sessionData, 
+        final_analysis: sessionData?.analysis_results_hd?.[0]?.final_analysis ?? null 
+    };
     delete finalData.analysis_results_hd;
+
     return { props: { sessionData: finalData } };
   } catch (error) {
     console.error("Errore in getServerSideProps:", error.message);
