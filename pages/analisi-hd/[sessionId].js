@@ -1,6 +1,6 @@
 // /pages/analisi-hd/[sessionId].js
 // Pagina dinamica per visualizzare lo stato e i risultati dell'analisi.
-// VERSIONE FINALE con dashboard integrata e fix di robustezza applicati.
+// VERSIONE FINALE con tachimetro grafico per Health Score.
 
 import { createClient } from '@supabase/supabase-js';
 import Head from 'next/head';
@@ -93,7 +93,6 @@ function AnalisiHdPageLayout({ user, children }) {
             <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
                 <nav className="flex-1 px-2 pb-4 space-y-1">
                 {navLinks.map((link) => (
-                    // FIX: Rimosso <a> figlio da <Link>
                     <Link key={link.text} href={link.href} className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${ link.active ? 'bg-purple-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}>
                         <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
                         {link.text}
@@ -152,8 +151,6 @@ function AnalisiHdPage({ sessionData, error }) {
 }
 
 // --- Componenti di Visualizzazione ---
-
-// FIX: Mappatura statica dei colori per evitare problemi con Tailwind Purge
 const colorMap = {
     bg: { red: 'bg-red-100', blue: 'bg-blue-100', yellow: 'bg-yellow-100', green: 'bg-green-100', purple: 'bg-purple-100' },
     text: { red: 'text-red-600', blue: 'text-blue-600', yellow: 'text-yellow-600', green: 'text-green-600', purple: 'text-purple-600' },
@@ -177,7 +174,6 @@ const StatusDisplay = ({ icon, title, message, color, isInsideLayout }) => {
 };
 
 const ResultsDisplay = ({ session }) => {
-  // FIX: Parsing sicuro del JSON se è una stringa
   let analysis = session.final_analysis;
   if (typeof analysis === 'string') {
     try { analysis = JSON.parse(analysis); } catch { analysis = null; }
@@ -187,7 +183,6 @@ const ResultsDisplay = ({ session }) => {
     return <StatusDisplay icon={icons.alert} title="Dati non disponibili" message="L'analisi è completata ma il report finale non è leggibile." color="yellow" isInsideLayout={true} />;
   }
   
-  // FIX: Destructuring robusto per evitare crash con dati mancanti o malformati
   const { health_score = 0, summary = "Riepilogo non disponibile." } = analysis;
   const key_metrics_container = (analysis.key_metrics && typeof analysis.key_metrics === 'object') ? (analysis.key_metrics.key_metrics || analysis.key_metrics) : {};
   const { crescita_fatturato_perc = { label: "Crescita Fatturato (%)", value: null }, roe = { label: "ROE (%)", value: null } } = key_metrics_container;
@@ -232,20 +227,43 @@ const ResultsDisplay = ({ session }) => {
 const Card = ({ children, className }) => <div className={`bg-white p-6 rounded-lg shadow-sm print-card ${className}`}>{children}</div>;
 const SummaryCard = ({ summary }) => (<Card><h2 className="text-xl font-semibold text-slate-800 mb-3">Riepilogo Esecutivo</h2><p className="text-slate-600 leading-relaxed">{summary}</p></Card>);
 
-// FIX: Aggiunto placeholder per HealthScoreGauge
+// NUOVO: Componente Tachimetro per HealthScore
 const HealthScoreGauge = ({ score = 0 }) => {
   const s = Math.max(0, Math.min(100, Number(score) || 0));
+  
+  const getScoreColor = (value) => {
+    if (value < 40) return { bg: 'bg-red-100', text: 'text-red-600', stroke: '#ef4444' }; // red-500
+    if (value < 70) return { bg: 'bg-yellow-100', text: 'text-yellow-600', stroke: '#f59e0b' }; // amber-500
+    return { bg: 'bg-green-100', text: 'text-green-600', stroke: '#22c55e' }; // green-500
+  };
+
+  const color = getScoreColor(s);
+  const circumference = 2 * Math.PI * 40; // Circonferenza dell'arco (raggio 40)
+  const arcLength = (s / 100) * (circumference / 2); // Lunghezza dell'arco per il punteggio (metà circonferenza)
+
   return (
     <Card>
-      <h3 className="text-sm text-slate-500 mb-2">Health Score</h3>
-      <div className="text-3xl font-bold text-slate-900">{s}/100</div>
-      <p className="text-slate-600 text-sm mt-1">Valutazione sintetica della salute finanziaria</p>
+      <h3 className="text-sm font-medium text-slate-500 mb-2">Health Score</h3>
+      <div className="relative flex justify-center items-end h-32">
+        <svg viewBox="0 0 100 55" className="w-full h-full absolute top-0 left-0">
+          {/* Arco di sfondo */}
+          <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#e5e7eb" strokeWidth="10" strokeLinecap="round" />
+          {/* Arco del punteggio */}
+          <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke={color.stroke} strokeWidth="10" strokeLinecap="round"
+                strokeDasharray={`${arcLength}, ${circumference}`}
+                style={{ transition: 'stroke-dasharray 0.5s ease-in-out' }} />
+        </svg>
+        <div className="relative text-center">
+            <span className={`text-4xl font-bold ${color.text}`}>{s}</span>
+            <span className="text-xl text-slate-500">/100</span>
+        </div>
+      </div>
     </Card>
   );
 };
 
+
 const MetricCard = ({ title, value, unit, icon }) => {
-    // FIX: Gestione robusta di valori non numerici
     const num = typeof value === 'number'
         ? value
         : (typeof value === 'string'
@@ -276,9 +294,8 @@ const RecommendationsCard = ({ recommendations }) => (<Card><h2 className="text-
 // --- FUNZIONE SERVER-SIDE ---
 export async function getServerSideProps(context) {
   const { sessionId } = context.params;
-  // FIX: Usare una variabile non-public per la chiave di servizio
   const supabase = createClient(
-    process.env.SUPABASE_URL, // Usare la variabile server-side
+    process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
   );
 
@@ -291,7 +308,6 @@ export async function getServerSideProps(context) {
 
     if (error) throw new Error(`Sessione non trovata: ${error.message}`);
     
-    // FIX: Accesso sicuro alla relazione
     const finalData = { 
         ...sessionData, 
         final_analysis: sessionData?.analysis_results_hd?.[0]?.final_analysis ?? null 
