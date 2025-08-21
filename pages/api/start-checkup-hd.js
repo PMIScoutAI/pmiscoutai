@@ -35,25 +35,25 @@ function calculateMetrics(data) {
     return { crescita_fatturato_perc, roe, revenue_current, revenue_previous };
 }
 
-// FIX: Spostato 'recommendations' per rispecchiare l'output effettivo dell'LLM.
+// FIX: Schema corretto per rispecchiare il prompt.
+// 'charts_data', 'detailed_swot', e 'recommendations' sono al livello superiore.
 const analysisSchema = z.object({
   health_score: z.number().int().min(0).max(100).describe("Numero intero da 0 a 100 che rappresenta la salute finanziaria."),
   summary: z.string().describe("Riassunto dell'analisi in 2-3 frasi, basato sui dati."),
   key_metrics: z.object({
     crescita_fatturato_perc: z.object({ value: z.number().nullable(), label: z.string() }),
-    roe: z.object({ value: z.number().nullable(), label: z.string() }),
-    charts_data: z.object({
-        revenue_trend: z.object({ current_year: z.number().nullable(), previous_year: z.number().nullable() })
-    }),
-    detailed_swot: z.object({
-        strengths: z.array(z.string()).describe("Punti di forza basati su dati numerici."),
-        weaknesses: z.array(z.string()).describe("Punti di debolezza basati su dati numerici."),
-        opportunities: z.array(z.string()).describe("Opportunità basate su dati numerici."),
-        threats: z.array(z.string()).describe("Minacce basate su dati numerici.")
-    }),
-    // L'IA sta mettendo 'recommendations' qui, come fratello di 'detailed_swot'
-    recommendations: z.array(z.string()).describe("Raccomandazioni concrete e misurabili.")
+    roe: z.object({ value: z.number().nullable(), label: z.string() })
   }),
+  charts_data: z.object({
+    revenue_trend: z.object({ current_year: z.number().nullable(), previous_year: z.number().nullable() })
+  }),
+  detailed_swot: z.object({
+    strengths: z.array(z.string()).describe("Punti di forza basati su dati numerici."),
+    weaknesses: z.array(z.string()).describe("Punti di debolezza basati su dati numerici."),
+    opportunities: z.array(z.string()).describe("Opportunità basate su dati numerici."),
+    threats: z.array(z.string()).describe("Minacce basate su dati numerici.")
+  }),
+  recommendations: z.array(z.string()).describe("Raccomandazioni concrete e misurabili.")
 });
 
 
@@ -88,8 +88,7 @@ export default async function handler(req, res) {
     // --- FASE 3: ANALISI FINALE CON PROMPT DINAMICO ---
     console.log(`[HD/${session.id}] Avvio analisi finale con LLM...`);
     
-    // NUOVO: Recupera il prompt dal database
-    const promptName = 'ANALISI_FINALE_HD_V1'; // Potresti passare questo dal frontend in futuro
+    const promptName = 'ANALISI_FINALE_HD_V1';
     console.log(`[HD/${session.id}] Recupero prompt: ${promptName}`);
     const { data: promptDataRow, error: promptError } = await supabase
         .from('ai_prompts')
@@ -103,11 +102,9 @@ export default async function handler(req, res) {
     
     const promptTemplate = promptDataRow.prompt_template;
     
-    // Prepara i dati da inserire nel template
     const metrics = calculateMetrics(extractedData);
     const promptPayload = { ...metrics, document_context: formatDocumentsAsString(docs).substring(0, 10000) };
     
-    // Inserisce i dati nel template
     const systemPrompt = promptTemplate.replace('{data}', JSON.stringify(promptPayload, null, 2));
 
     const model = new ChatOpenAI({ modelName: "gpt-4-turbo", temperature: 0.1 });
