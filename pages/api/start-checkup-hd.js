@@ -35,24 +35,26 @@ function calculateMetrics(data) {
     return { crescita_fatturato_perc, roe, revenue_current, revenue_previous };
 }
 
-// Definisce la struttura JSON che vogliamo ottenere dall'IA
+// FIX: Aggiornato lo schema per rispecchiare l'output dell'LLM, che annida tutto dentro key_metrics.
 const analysisSchema = z.object({
   health_score: z.number().int().min(0).max(100).describe("Numero intero da 0 a 100 che rappresenta la salute finanziaria."),
   summary: z.string().describe("Riassunto dell'analisi in 2-3 frasi, basato sui dati."),
   key_metrics: z.object({
     crescita_fatturato_perc: z.object({ value: z.number().nullable(), label: z.string() }),
-    roe: z.object({ value: z.number().nullable(), label: z.string() })
+    roe: z.object({ value: z.number().nullable(), label: z.string() }),
+    // I seguenti campi erano attesi al livello superiore, ma l'LLM li ha inseriti qui.
+    // Adattiamo lo schema per accettare questa struttura.
+    charts_data: z.object({
+        revenue_trend: z.object({ current_year: z.number().nullable(), previous_year: z.number().nullable() })
+    }),
+    detailed_swot: z.object({
+        strengths: z.array(z.string()).describe("Punti di forza basati su dati numerici."),
+        weaknesses: z.array(z.string()).describe("Punti di debolezza basati su dati numerici."),
+        opportunities: z.array(z.string()).describe("Opportunità basate su dati numerici."),
+        threats: z.array(z.string()).describe("Minacce basate su dati numerici.")
+    }),
+    recommendations: z.array(z.string()).describe("Raccomandazioni concrete e misurabili.")
   }),
-  charts_data: z.object({
-    revenue_trend: z.object({ current_year: z.number().nullable(), previous_year: z.number().nullable() })
-  }),
-  detailed_swot: z.object({
-    strengths: z.array(z.string()).describe("Punti di forza basati su dati numerici."),
-    weaknesses: z.array(z.string()).describe("Punti di debolezza basati su dati numerici."),
-    opportunities: z.array(z.string()).describe("Opportunità basate su dati numerici."),
-    threats: z.array(z.string()).describe("Minacce basate su dati numerici.")
-  }),
-  recommendations: z.array(z.string()).describe("Raccomandazioni concrete e misurabili.")
 });
 
 
