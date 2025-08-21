@@ -1,6 +1,6 @@
 // /pages/analisi-hd/[sessionId].js
 // Pagina dinamica per visualizzare lo stato e i risultati dell'analisi.
-// VERSIONE FINALE con dashboard integrata nel layout dell'applicazione.
+// VERSIONE FINALE con dashboard integrata e fix di robustezza applicati.
 
 import { createClient } from '@supabase/supabase-js';
 import Head from 'next/head';
@@ -10,8 +10,8 @@ import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { ProtectedPageHd } from '../../utils/ProtectedPageHd'; // Assicurati che il percorso sia corretto
 
-// --- Componente Wrapper (per autenticazione e layout base) ---
-export default function AnalisiHdPageWrapper() {
+// --- Componente Wrapper (FIX: Passa le props da getServerSideProps) ---
+export default function AnalisiHdPageWrapper(props) {
   return (
     <>
       <Head>
@@ -25,13 +25,18 @@ export default function AnalisiHdPageWrapper() {
       <Script id="outseta-options" strategy="beforeInteractive">{`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}</Script>
       <Script id="outseta-script" src="https://cdn.outseta.com/outseta.min.js" strategy="beforeInteractive" />
       <ProtectedPageHd>
-        {(user) => <AnalisiHdPageLayout user={user} />}
+        {(user) => (
+          <AnalisiHdPageLayout user={user}>
+            {/* Le props (sessionData, error) vengono passate qui */}
+            <AnalisiHdPage {...props} />
+          </AnalisiHdPageLayout>
+        )}
       </ProtectedPageHd>
     </>
   );
 }
 
-// --- Icone (replicate per coerenza con il layout) ---
+// --- Icone (invariato) ---
 const Icon = ({ path, className = 'w-6 h-6' }) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{path}</svg> );
 const icons = {
   dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
@@ -50,12 +55,12 @@ const icons = {
   flag: <><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></>
 };
 
-// --- Layout della Pagina (per coerenza con il resto del SaaS) ---
+// --- Layout della Pagina (invariato) ---
 function AnalisiHdPageLayout({ user, children }) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const navLinks = [
         { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
-        { href: '/checkup-hd', text: 'Check-UP AI HD', icon: icons.zap, active: true }, // La pagina attiva è questa
+        { href: '/checkup-hd', text: 'Check-UP AI HD', icon: icons.zap, active: true },
         { href: '/checkup', text: 'Check-UP AI', icon: icons.checkup, active: false },
         { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
     ];
@@ -69,10 +74,17 @@ function AnalisiHdPageLayout({ user, children }) {
             <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
                 <nav className="flex-1 px-2 pb-4 space-y-1">
                 {navLinks.map((link) => (
-                    <Link key={link.text} href={link.href}><a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${ link.active ? 'bg-purple-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}><Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />{link.text}</a></Link>
+                    <Link key={link.text} href={link.href} className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${ link.active ? 'bg-purple-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}>
+                        <Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />
+                        {link.text}
+                    </Link>
                 ))}
                 </nav>
-                <div className="px-2 py-4 border-t"><a href="mailto:antonio@pmiscout.eu" className="flex items-center px-2 py-2 text-sm font-medium text-slate-600 rounded-md hover:bg-slate-100 hover:text-slate-900 group"><Icon path={icons.support} className="w-6 h-6 mr-3 text-slate-500" />Supporto</a></div>
+                <div className="px-2 py-4 border-t">
+                    <a href="mailto:antonio@pmiscout.eu" className="flex items-center px-2 py-2 text-sm font-medium text-slate-600 rounded-md hover:bg-slate-100 hover:text-slate-900 group">
+                        <Icon path={icons.support} className="w-6 h-6 mr-3 text-slate-500" />Supporto
+                    </a>
+                </div>
             </div>
             </div>
         </aside>
@@ -87,7 +99,7 @@ function AnalisiHdPageLayout({ user, children }) {
     );
 }
 
-// --- Componente Logico (che gestisce lo stato) ---
+// --- Componente Logico (invariato) ---
 function AnalisiHdPage({ sessionData, error }) {
   const router = useRouter();
 
@@ -116,33 +128,48 @@ function AnalisiHdPage({ sessionData, error }) {
 }
 
 // --- Componenti di Visualizzazione ---
+
+// FIX: Mappatura statica dei colori per evitare problemi con Tailwind Purge
+const colorMap = {
+    bg: { red: 'bg-red-100', blue: 'bg-blue-100', yellow: 'bg-yellow-100', green: 'bg-green-100', purple: 'bg-purple-100' },
+    text: { red: 'text-red-600', blue: 'text-blue-600', yellow: 'text-yellow-600', green: 'text-green-600', purple: 'text-purple-600' },
+};
+
 const StatusDisplay = ({ icon, title, message, color, isInsideLayout }) => {
     const content = (
         <div className="text-center p-8 bg-white rounded-lg shadow-md max-w-md mx-auto">
-            <div className={`mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-${color}-100`}><Icon path={icon} className={`h-6 w-6 text-${color}-600`} /></div>
+            <div className={`mx-auto flex items-center justify-center h-12 w-12 rounded-full ${colorMap.bg[color] || 'bg-slate-100'}`}>
+                <Icon path={icon} className={`h-6 w-6 ${colorMap.text[color] || 'text-slate-600'}`} />
+            </div>
             <h2 className="mt-4 text-2xl font-bold text-slate-800">{title}</h2>
             <p className="mt-2 text-slate-600">{message}</p>
-            <Link href="/checkup-hd"><a className="mt-6 inline-block px-5 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700">Torna indietro</a></Link>
+            <Link href="/checkup-hd" className="mt-6 inline-block px-5 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700">
+              Torna indietro
+            </Link>
         </div>
     );
-
-    if (isInsideLayout) return content; // Se è dentro il layout, non serve lo sfondo
-    
+    if (isInsideLayout) return content;
     return <div className="flex items-center justify-center min-h-screen bg-slate-50">{content}</div>;
 };
 
 const ResultsDisplay = ({ session }) => {
-  const analysis = session.final_analysis;
+  // FIX: Parsing sicuro del JSON se è una stringa
+  let analysis = session.final_analysis;
+  if (typeof analysis === 'string') {
+    try { analysis = JSON.parse(analysis); } catch { analysis = null; }
+  }
 
   if (!analysis) {
-    return <StatusDisplay icon={icons.alert} title="Dati non disponibili" message="L'analisi è completata ma non è stato possibile recuperare il report finale." color="yellow" isInsideLayout={true} />;
+    return <StatusDisplay icon={icons.alert} title="Dati non disponibili" message="L'analisi è completata ma il report finale non è leggibile." color="yellow" isInsideLayout={true} />;
   }
   
-  const { health_score = 0, summary = "Riepilogo non disponibile.", key_metrics = {}, detailed_swot = {}, recommendations = [] } = analysis;
-  const { crescita_fatturato_perc = { label: "Crescita Fatturato (%)", value: null }, roe = { label: "ROE (%)", value: null } } = key_metrics.key_metrics ? key_metrics.key_metrics : key_metrics; // Gestisce il doppio annidamento
-  const { strengths = [], weaknesses = [], opportunities = [], threats = [] } = key_metrics.detailed_swot || detailed_swot;
-  const finalRecommendations = key_metrics.recommendations || recommendations;
-
+  // FIX: Destructuring robusto per evitare crash con dati mancanti o malformati
+  const { health_score = 0, summary = "Riepilogo non disponibile." } = analysis;
+  const key_metrics_container = (analysis.key_metrics && typeof analysis.key_metrics === 'object') ? analysis.key_metrics : {};
+  const { crescita_fatturato_perc = { label: "Crescita Fatturato (%)", value: null }, roe = { label: "ROE (%)", value: null } } = key_metrics_container;
+  const detailed_swot_container = key_metrics_container.detailed_swot || analysis.detailed_swot || {};
+  const { strengths = [], weaknesses = [], opportunities = [], threats = [] } = detailed_swot_container;
+  const recommendations = key_metrics_container.recommendations || analysis.recommendations || [];
 
   return (
     <>
@@ -151,16 +178,18 @@ const ResultsDisplay = ({ session }) => {
                 <h1 className="text-3xl font-bold text-slate-900">Report Analisi Finanziaria</h1>
                 <p className="mt-1 text-slate-600">Sessione: {session.id}</p>
             </div>
-            <Link href="/checkup-hd"><a className="mt-4 sm:mt-0 inline-block px-5 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700">Esegui un'altra analisi</a></Link>
+            <Link href="/checkup-hd" className="mt-4 sm:mt-0 inline-block px-5 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700">
+                Esegui un'altra analisi
+            </Link>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
                 <SummaryCard summary={summary} />
                 <SwotCard strengths={strengths} weaknesses={weaknesses} opportunities={opportunities} threats={threats} />
-                <RecommendationsCard recommendations={finalRecommendations} />
+                <RecommendationsCard recommendations={recommendations} />
             </div>
             <div className="space-y-6">
-                <MetricCard title="Health Score" value={health_score} unit="/ 100" icon={icons.zap} />
+                <MetricCard title="Health Score" value={health_score} unit="/100" icon={icons.zap} />
                 <MetricCard title={crescita_fatturato_perc.label} value={crescita_fatturato_perc.value} unit="%" icon={icons.trendingUp} />
                 <MetricCard title={roe.label} value={roe.value} unit="%" icon={icons.target} />
             </div>
@@ -172,15 +201,40 @@ const ResultsDisplay = ({ session }) => {
 // --- Componenti Helper per la Dashboard ---
 const Card = ({ children, className }) => <div className={`bg-white p-6 rounded-lg shadow-sm ${className}`}>{children}</div>;
 const SummaryCard = ({ summary }) => (<Card><h2 className="text-xl font-semibold text-slate-800 mb-3">Riepilogo Esecutivo</h2><p className="text-slate-600 leading-relaxed">{summary}</p></Card>);
-const MetricCard = ({ title, value, unit, icon }) => (<Card><div className="flex items-center"><div className="p-3 bg-purple-100 rounded-full mr-4"><Icon path={icon} className="w-6 h-6 text-purple-600" /></div><div><p className="text-sm text-slate-500">{title}</p><p className="text-3xl font-bold text-slate-900">{value !== null ? value.toLocaleString('it-IT') : 'N/D'}<span className="text-xl font-medium text-slate-500 ml-1">{unit}</span></p></div></div></Card>);
+
+const MetricCard = ({ title, value, unit, icon }) => {
+    // FIX: Gestione robusta di valori non numerici
+    const num = typeof value === 'number' ? value : (value != null ? Number(value) : null);
+    const hasValue = Number.isFinite(num);
+
+    return (
+        <Card>
+            <div className="flex items-center">
+                <div className="p-3 bg-purple-100 rounded-full mr-4"><Icon path={icon} className="w-6 h-6 text-purple-600" /></div>
+                <div>
+                    <p className="text-sm text-slate-500">{title}</p>
+                    <p className="text-3xl font-bold text-slate-900">
+                        {hasValue ? num.toLocaleString('it-IT') : 'N/D'}
+                        {hasValue && unit ? <span className="text-xl font-medium text-slate-500 ml-1">{unit}</span> : null}
+                    </p>
+                </div>
+            </div>
+        </Card>
+    );
+};
+
 const SwotCard = ({ strengths, weaknesses, opportunities, threats }) => (<Card><h2 className="text-xl font-semibold text-slate-800 mb-4">Analisi SWOT</h2><div className="grid grid-cols-1 sm:grid-cols-2 gap-6"><SwotList title="Punti di Forza" items={strengths} icon={icons.thumbsUp} color="green" /><SwotList title="Punti di Debolezza" items={weaknesses} icon={icons.thumbsDown} color="red" /><SwotList title="Opportunità" items={opportunities} icon={icons.lightbulb} color="blue" /><SwotList title="Minacce" items={threats} icon={icons.flag} color="yellow" /></div></Card>);
-const SwotList = ({ title, items, icon, color }) => (<div><div className={`flex items-center text-${color}-600 mb-2`}><Icon path={icon} className="w-5 h-5 mr-2" /><h3 className="font-semibold">{title}</h3></div><ul className="space-y-1 list-disc list-inside text-slate-600 text-sm">{items && items.length > 0 ? items.map((item, index) => <li key={index}>{item}</li>) : <li>N/D</li>}</ul></div>);
+const SwotList = ({ title, items, icon, color }) => (<div><div className={`flex items-center ${colorMap.text[color] || 'text-slate-600'} mb-2`}><Icon path={icon} className="w-5 h-5 mr-2" /><h3 className="font-semibold">{title}</h3></div><ul className="space-y-1 list-disc list-inside text-slate-600 text-sm">{items && items.length > 0 ? items.map((item, index) => <li key={index}>{item}</li>) : <li>N/D</li>}</ul></div>);
 const RecommendationsCard = ({ recommendations }) => (<Card><h2 className="text-xl font-semibold text-slate-800 mb-3">Raccomandazioni</h2><ul className="space-y-2 list-disc list-inside text-slate-600">{recommendations && recommendations.length > 0 ? recommendations.map((rec, index) => <li key={index}>{rec}</li>) : <li>N/D</li>}</ul></Card>);
 
-// --- FUNZIONE SERVER-SIDE (Aggiornata per prendere final_analysis) ---
+// --- FUNZIONE SERVER-SIDE ---
 export async function getServerSideProps(context) {
   const { sessionId } = context.params;
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  // FIX: Usare una variabile non-public per la chiave di servizio
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL, // Questo va bene per il client
+    process.env.SUPABASE_SERVICE_ROLE_KEY // Questa è la chiave sicura per il server
+  );
 
   try {
     const { data: sessionData, error } = await supabase
@@ -191,12 +245,16 @@ export async function getServerSideProps(context) {
 
     if (error) throw new Error(`Sessione non trovata: ${error.message}`);
     
-    const finalData = { ...sessionData, final_analysis: sessionData.analysis_results_hd[0]?.final_analysis || null };
+    // FIX: Accesso sicuro alla relazione
+    const finalData = { 
+        ...sessionData, 
+        final_analysis: sessionData?.analysis_results_hd?.[0]?.final_analysis ?? null 
+    };
     delete finalData.analysis_results_hd;
 
     return { props: { sessionData: finalData } };
   } catch (error) {
     console.error("Errore in getServerSideProps:", error.message);
-    return { props: { error: error.message } };
+    return { props: { error: error.message, sessionData: null } };
   }
 }
