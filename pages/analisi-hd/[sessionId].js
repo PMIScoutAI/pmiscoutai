@@ -17,9 +17,9 @@ export default function AnalisiHdPageWrapper(props) {
       <Head>
         <title>Risultati Analisi - PMIScout</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
+        {/* FIX: crossOrigin corretto */}
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-        <script src="https://cdn.tailwindcss.com"></script>
         <style>{` 
           body { font-family: 'Inter', sans-serif; } 
           @media print {
@@ -38,6 +38,8 @@ export default function AnalisiHdPageWrapper(props) {
           }
         `}</style>
       </Head>
+      {/* FIX: Tailwind caricato con next/script */}
+      <Script src="https://cdn.tailwindcss.com" strategy="beforeInteractive" />
       <Script id="outseta-options" strategy="beforeInteractive">{`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}</Script>
       <Script id="outseta-script" src="https://cdn.outseta.com/outseta.min.js" strategy="beforeInteractive" />
       <ProtectedPageHd>
@@ -230,9 +232,25 @@ const ResultsDisplay = ({ session }) => {
 const Card = ({ children, className }) => <div className={`bg-white p-6 rounded-lg shadow-sm print-card ${className}`}>{children}</div>;
 const SummaryCard = ({ summary }) => (<Card><h2 className="text-xl font-semibold text-slate-800 mb-3">Riepilogo Esecutivo</h2><p className="text-slate-600 leading-relaxed">{summary}</p></Card>);
 
+// FIX: Aggiunto placeholder per HealthScoreGauge
+const HealthScoreGauge = ({ score = 0 }) => {
+  const s = Math.max(0, Math.min(100, Number(score) || 0));
+  return (
+    <Card>
+      <h3 className="text-sm text-slate-500 mb-2">Health Score</h3>
+      <div className="text-3xl font-bold text-slate-900">{s}/100</div>
+      <p className="text-slate-600 text-sm mt-1">Valutazione sintetica della salute finanziaria</p>
+    </Card>
+  );
+};
+
 const MetricCard = ({ title, value, unit, icon }) => {
     // FIX: Gestione robusta di valori non numerici
-    const num = typeof value === 'number' ? value : (value != null ? Number(value) : null);
+    const num = typeof value === 'number'
+        ? value
+        : (typeof value === 'string'
+            ? parseFloat(value.replace(/\./g, '').replace(',', '.'))
+            : (value != null ? Number(value) : null));
     const hasValue = Number.isFinite(num);
 
     return (
