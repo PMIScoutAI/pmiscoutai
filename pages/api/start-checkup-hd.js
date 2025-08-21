@@ -61,19 +61,25 @@ export default async function handler(req, res) {
   
   let session;
   try {
-    // FASE 1: RICEZIONE E CREAZIONE SESSIONE (invariata)
+    // FASE 1: RICEZIONE E CREAZIONE SESSIONE
     const userId = '11111111-1111-1111-1111-111111111111';
     const form = formidable({ maxFileSize: 10 * 1024 * 1024, keepExtensions: true });
     const [fields, files] = await form.parse(req);
     const companyName = fields.companyName?.[0], pdfFile = files.pdfFile?.[0], extractedDataJson = fields.extractedDataJson?.[0];
     if (!companyName || !pdfFile || !extractedDataJson) return res.status(400).json({ error: 'Dati mancanti.' });
     const extractedData = JSON.parse(extractedDataJson);
-    const { data: company } = await supabase.from('companies').upsert({ user_id: userId, company_name: companyName }, { onConflict: 'user_id, company_name' }).select().single();
-    const { data: sessionData } = await supabase.from('checkup_sessions_hd').insert({ user_id: userId, company_id: company.id, status: 'processing', session_name: `Check-UP HD ${companyName}` }).select().single();
+
+    // FIX: Aggiunto controllo robusto per l'operazione sulla tabella 'companies'
+    const { data: company, error: companyError } = await supabase.from('companies').upsert({ user_id: userId, company_name: companyName }, { onConflict: 'user_id, company_name' }).select().single();
+    if (companyError) throw new Error(`Errore DB (companies): ${companyError.message}`);
+    if (!company) throw new Error('Impossibile creare o trovare l\'azienda nel database.');
+
+    const { data: sessionData, error: sessionError } = await supabase.from('checkup_sessions_hd').insert({ user_id: userId, company_id: company.id, status: 'processing', session_name: `Check-UP HD ${companyName}` }).select().single();
+    if (sessionError) throw new Error(`Errore DB (checkup_sessions_hd): ${sessionError.message}`);
     session = sessionData;
     console.log(`[HD/${session.id}] Sessione creata, avvio processo completo...`);
 
-    // FASE 2: SALVATAGGIO DATI E INDICIZZAZIONE (invariata)
+    // FASE 2: SALVATAGGIO DATI E INDICIZZAZIONE
     await supabase.from('risultati_estratti_hd').insert({ session_id: session.id, ...extractedData });
     const loader = new PDFLoader(pdfFile.filepath);
     const docs = await loader.load();
@@ -99,12 +105,12 @@ export default async function handler(req, res) {
     await supabase.from('analysis_results_hd').insert({
       session_id: session.id,
       raw_parsed_data: extractedData,
-      final_analysis: analysisResult, // NUOVA COLONNA
+      final_analysis: analysisResult,
       summary: analysisResult.summary
     });
     console.log(`[HD/${session.id}] Risultati finali salvati.`);
 
-    // FASE 4: COMPLETAMENTO (invariata)
+    // FASE 4: COMPLETAMENTO
     await supabase.from('checkup_sessions_hd').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', session.id);
     console.log(`[HD/${session.id}] ✅ Processo completo terminato.`);
     
