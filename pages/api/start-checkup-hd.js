@@ -1,5 +1,5 @@
 // /api/start-checkup-hd.js
-// VERSIONE FINALE: Esegue estrazione, indicizzazione E analisi qualitativa con LLM.
+// VERSIONE FINALE E DINAMICA: Recupera il prompt per l'analisi direttamente da Supabase.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -35,7 +35,7 @@ function calculateMetrics(data) {
     return { crescita_fatturato_perc, roe, revenue_current, revenue_previous };
 }
 
-// FIX: Spostato 'recommendations' all'interno di 'detailed_swot' per rispecchiare l'output dell'LLM.
+// Lo schema di validazione rimane invariato
 const analysisSchema = z.object({
   health_score: z.number().int().min(0).max(100).describe("Numero intero da 0 a 100 che rappresenta la salute finanziaria."),
   summary: z.string().describe("Riassunto dell'analisi in 2-3 frasi, basato sui dati."),
@@ -50,7 +50,7 @@ const analysisSchema = z.object({
         weaknesses: z.array(z.string()).describe("Punti di debolezza basati su dati numerici."),
         opportunities: z.array(z.string()).describe("Opportunità basate su dati numerici."),
         threats: z.array(z.string()).describe("Minacce basate su dati numerici."),
-        recommendations: z.array(z.string()).describe("Raccomandazioni concrete e misurabili.") // L'IA lo mette qui
+        recommendations: z.array(z.string()).describe("Raccomandazioni concrete e misurabili.")
     }),
   }),
 });
@@ -61,25 +61,20 @@ export default async function handler(req, res) {
   
   let session;
   try {
-    // FASE 1: RICEZIONE E CREAZIONE SESSIONE
+    // FASE 1 e 2 (invariate)
     const userId = '11111111-1111-1111-1111-111111111111';
     const form = formidable({ maxFileSize: 10 * 1024 * 1024, keepExtensions: true });
     const [fields, files] = await form.parse(req);
     const companyName = fields.companyName?.[0], pdfFile = files.pdfFile?.[0], extractedDataJson = fields.extractedDataJson?.[0];
     if (!companyName || !pdfFile || !extractedDataJson) return res.status(400).json({ error: 'Dati mancanti.' });
     const extractedData = JSON.parse(extractedDataJson);
-
-    // FIX: Aggiunto controllo robusto per l'operazione sulla tabella 'companies'
     const { data: company, error: companyError } = await supabase.from('companies').upsert({ user_id: userId, company_name: companyName }, { onConflict: 'user_id, company_name' }).select().single();
     if (companyError) throw new Error(`Errore DB (companies): ${companyError.message}`);
     if (!company) throw new Error('Impossibile creare o trovare l\'azienda nel database.');
-
     const { data: sessionData, error: sessionError } = await supabase.from('checkup_sessions_hd').insert({ user_id: userId, company_id: company.id, status: 'processing', session_name: `Check-UP HD ${companyName}` }).select().single();
     if (sessionError) throw new Error(`Errore DB (checkup_sessions_hd): ${sessionError.message}`);
     session = sessionData;
     console.log(`[HD/${session.id}] Sessione creata, avvio processo completo...`);
-
-    // FASE 2: SALVATAGGIO DATI E INDICIZZAZIONE
     await supabase.from('risultati_estratti_hd').insert({ session_id: session.id, ...extractedData });
     const loader = new PDFLoader(pdfFile.filepath);
     const docs = await loader.load();
@@ -89,19 +84,37 @@ export default async function handler(req, res) {
     await SupabaseVectorStore.fromDocuments(docsWithMetadata, embeddings, { client: supabase, tableName: 'documents', queryName: 'match_documents' });
     console.log(`[HD/${session.id}] Indicizzazione completata.`);
 
-    // --- FASE 3: ANALISI FINALE CON LLM ---
+    // --- FASE 3: ANALISI FINALE CON PROMPT DINAMICO ---
     console.log(`[HD/${session.id}] Avvio analisi finale con LLM...`);
+    
+    // NUOVO: Recupera il prompt dal database
+    const promptName = 'ANALISI_FINALE_HD_V1'; // Potresti passare questo dal frontend in futuro
+    console.log(`[HD/${session.id}] Recupero prompt: ${promptName}`);
+    const { data: promptDataRow, error: promptError } = await supabase
+        .from('ai_prompts')
+        .select('prompt_template')
+        .eq('name', promptName)
+        .single();
+
+    if (promptError || !promptDataRow) {
+        throw new Error(`Impossibile recuperare il prompt '${promptName}' da Supabase: ${promptError?.message}`);
+    }
+    
+    const promptTemplate = promptDataRow.prompt_template;
+    
+    // Prepara i dati da inserire nel template
     const metrics = calculateMetrics(extractedData);
-    const promptData = { ...metrics, document_context: formatDocumentsAsString(docs).substring(0, 10000) };
+    const promptPayload = { ...metrics, document_context: formatDocumentsAsString(docs).substring(0, 10000) };
     
-    const systemPrompt = `Sei un analista finanziario esperto per PMI italiane. Il tuo compito è analizzare i dati pre-calcolati forniti e generare un report in formato JSON. La tua analisi deve basarsi ESCLUSIVAMENTE sui dati forniti. Dati Pre-calcolati Forniti: ${JSON.stringify(promptData, null, 2)}. Se i dati (in particolare revenue_current) sono 0 o palesemente errati, genera un JSON di errore: {"error": "I dati estratti non sono sufficienti per un'analisi affidabile."}. Altrimenti, genera il report completo seguendo le istruzioni e il formato richiesto.`;
-    
+    // Inserisce i dati nel template
+    const systemPrompt = promptTemplate.replace('{data}', JSON.stringify(promptPayload, null, 2));
+
     const model = new ChatOpenAI({ modelName: "gpt-4-turbo", temperature: 0.1 });
     const structuredModel = model.withStructuredOutput(analysisSchema);
     const analysisResult = await structuredModel.invoke(systemPrompt);
-    console.log(`[HD/${session.id}] Report AI generato.`);
+    console.log(`[HD/${session.id}] Report AI generato con prompt dinamico.`);
 
-    // Salviamo il report completo
+    // Salvataggio e completamento (invariato)
     await supabase.from('analysis_results_hd').insert({
       session_id: session.id,
       raw_parsed_data: extractedData,
@@ -109,8 +122,6 @@ export default async function handler(req, res) {
       summary: analysisResult.summary
     });
     console.log(`[HD/${session.id}] Risultati finali salvati.`);
-
-    // FASE 4: COMPLETAMENTO
     await supabase.from('checkup_sessions_hd').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', session.id);
     console.log(`[HD/${session.id}] ✅ Processo completo terminato.`);
     
