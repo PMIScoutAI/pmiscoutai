@@ -82,8 +82,8 @@ function AnalisiHdPageLayout({ user, children }) {
     ];
     return (
         <div className="relative flex min-h-screen bg-slate-100 text-slate-800">
-        <aside className="no-print absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
-            {/* ... contenuto sidebar ... */}
+        {/* FIX: Corrette le virgolette da " a ` per la stringa template */}
+        <aside className={`no-print absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
             <div className="flex flex-col h-full">
             <div className="flex items-center justify-center h-16 border-b">
                 <img src="https://www.pmiscout.eu/wp-content/uploads/2024/07/Logo_Pmi_Scout_favicon.jpg" alt="Logo PMIScout" className="h-8 w-auto" onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/150x40/007BFF/FFFFFF?text=PMIScout'; }}/>
