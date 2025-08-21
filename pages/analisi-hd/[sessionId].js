@@ -9,7 +9,7 @@ import { useRouter } from 'next/router';
 import { useEffect } from 'react';
 
 // --- Componenti UI (Icone, etc.) ---
-const Icon = ({ path, className = 'w-6 h-6' }) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{path}</svg> );
+const Icon = ({ path, className = 'w-6 h-6' }) => ( <svg xmlns="http://www.w.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{path}</svg> );
 const icons = {
   zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></>,
   check: <><polyline points="20 6 9 17 4 12"></polyline></>,
@@ -69,9 +69,26 @@ const ResultsDisplay = ({ session }) => {
     return <StatusDisplay icon={icons.alert} title="Dati non disponibili" message="L'analisi è completata ma non è stato possibile recuperare il report finale." color="yellow" />;
   }
 
-  const { health_score, summary, key_metrics, detailed_swot, recommendations } = analysis;
-  const { crescita_fatturato_perc, roe } = key_metrics;
-  const { strengths, weaknesses, opportunities, threats } = detailed_swot;
+  // --- FIX: Aggiunti valori di fallback per rendere il componente più robusto ---
+  const { 
+    health_score = 0, 
+    summary = "Riepilogo non disponibile.", 
+    key_metrics = {}, 
+    detailed_swot = {}, 
+    recommendations = [] 
+  } = analysis;
+  
+  const { 
+    crescita_fatturato_perc = { label: "Crescita Fatturato (%)", value: null }, 
+    roe = { label: "ROE (%)", value: null } 
+  } = key_metrics;
+  
+  const { 
+    strengths = [], 
+    weaknesses = [], 
+    opportunities = [], 
+    threats = [] 
+  } = detailed_swot;
 
   return (
     <div className="min-h-screen bg-slate-100 p-4 sm:p-8">
@@ -151,7 +168,10 @@ const SwotList = ({ title, items, icon, color }) => (
             <h3 className="font-semibold">{title}</h3>
         </div>
         <ul className="space-y-1 list-disc list-inside text-slate-600 text-sm">
-            {items.map((item, index) => <li key={index}>{item}</li>)}
+            {items && items.length > 0 
+                ? items.map((item, index) => <li key={index}>{item}</li>)
+                : <li>Nessun dato disponibile.</li>
+            }
         </ul>
     </div>
 );
@@ -160,7 +180,10 @@ const RecommendationsCard = ({ recommendations }) => (
     <Card>
         <h2 className="text-xl font-semibold text-slate-800 mb-3">Raccomandazioni</h2>
         <ul className="space-y-2 list-disc list-inside text-slate-600">
-            {recommendations.map((rec, index) => <li key={index}>{rec}</li>)}
+            {recommendations && recommendations.length > 0
+                ? recommendations.map((rec, index) => <li key={index}>{rec}</li>)
+                : <li>Nessuna raccomandazione disponibile.</li>
+            }
         </ul>
     </Card>
 );
