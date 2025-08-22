@@ -169,27 +169,24 @@ export default function Home() {
     { href: '#', text: 'Marketplace', icon: icons.marketplace, active: false },
   ];
   
-  // --- MODIFICA QUI: Aggiunto Check-UP HD e corretto il link del check-up standard ---
-  const toolCards = [
+ const toolCards = [
     { 
-      title: 'Check-UP AI HD (Beta)', 
-      description: 'Nuova analisi potenziata con tecnologia RAG per una precisione e un dettaglio superiori.', 
-      linkText: 'Avvia Analisi HD', 
-      href: '/checkup-hd', // Nuovo percorso per la versione HD
-      icon: icons.zap // Nuova icona per distinguere
+      title: 'Check-AI XBRL', 
+      description: 'Carica un file XBRL per un\'analisi finanziaria istantanea e precisa.', 
+      linkText: 'Avvia Analisi XBRL', 
+      href: '/check-ai-xbrl', // Nuovo percorso per l'analisi XBRL
+      icon: icons.xbrl // Nuova icona specifica per XBRL
     },
     { 
-      title: 'Check-UP AI Azienda', 
-      description: 'Analisi approfondita della tua azienda tramite intelligenza artificiale standard.', 
-      linkText: 'Inizia analisi', 
-      href: '/checkup', // Corretto il link al percorso esistente
-      icon: icons.checkup 
+      title: 'Analisi Attività (RAG)', 
+      description: 'Analisi potenziata con tecnologia RAG per una precisione e un dettaglio superiori.', 
+      linkText: 'Avvia Analisi Attività', 
+      href: '/checkup-hd',
+      icon: icons.rag
     },
     { title: 'Risparmio Costi', description: 'Identifica e ottimizza le spese per massimizzare i profitti.', linkText: 'Scopri come', href: '#', icon: icons.cost },
-    { title: 'Risparmio Tempo', description: 'Automatizza i processi e guadagna tempo prezioso per il tuo business.', linkText: 'Automatizza ora', href: '#', icon: icons.time },
+    { title: 'Risparmio Tempo', description: 'Automatizza i processi e guadagna tempo prezioso.', linkText: 'Automatizza ora', href: '#', icon: icons.time },
     { title: 'Semplifica Burocrazia', description: 'Gestisci documenti e adempimenti in modo facile e veloce.', linkText: 'Inizia a semplificare', href: '#', icon: icons.bureaucracy },
-    { title: 'Ottimizza Campagne', description: 'Migliora il ROI delle tue campagne pubblicitarie con i nostri tool.', linkText: 'Ottimizza campagne', href: '#', icon: icons.campaigns },
-    { title: 'Il tuo Competitor', description: 'Analizza la concorrenza e scopri i loro punti deboli e di forza.', linkText: 'Analizza competitor', href: '#', icon: icons.competitor },
   ];
 
   // --- DASHBOARD PRINCIPALE (solo per utenti autenticati) ---
@@ -320,15 +317,17 @@ export default function Home() {
                 </div>
               </div>
               
-              {/* --- MODIFICA QUI: Manteniamo il banner principale che punta al checkup standard per ora --- */}
-              <div className="relative p-8 mt-8 overflow-hidden text-white bg-center bg-cover rounded-lg shadow-lg" style={{ backgroundImage: "url('https://www.pmiscout.eu/wp-content/uploads/2022/03/115-business-consulting-agency_blog_4.jpg')" }}>
-                <div className="absolute inset-0 bg-black bg-opacity-50" />
-                <div className="relative z-10">
-                  <h2 className="text-2xl font-bold md:text-3xl">Inizia con il Check-UP AI</h2>
-                  <p className="mt-2 text-gray-200">Ottieni un'analisi istantanea e approfondita della tua azienda con la nostra intelligenza artificiale.</p>
-                  <a href="/checkup" className="inline-block px-5 py-2 mt-6 font-semibold text-blue-600 bg-white rounded-lg shadow-md hover:bg-blue-50 transition-colors">Esegui Check-UP &rarr;</a>
-                </div>
-              </div>
+        {/* ✅ MODIFICA QUI: Banner principale ora punta al nuovo Check-AI XBRL */}
+<div className="relative p-8 mt-8 overflow-hidden text-white bg-center bg-cover rounded-lg shadow-lg" style={{ backgroundImage: "url('https://www.pmiscout.eu/wp-content/uploads/2022/03/115-business-consulting-agency_blog_4.jpg')" }}>
+  <div className="absolute inset-0 bg-black bg-opacity-50" />
+  <div className="relative z-10">
+    <h2 className="text-2xl font-bold md:text-3xl">Inizia con il Check-AI XBRL</h2>
+    <p className="mt-2 text-gray-200">La nuova analisi basata su file XBRL per la massima precisione.</p>
+    <Link href="/check-ai-xbrl" legacyBehavior>
+      <a className="inline-block px-5 py-2 mt-6 font-semibold text-blue-600 bg-white rounded-lg shadow-md hover:bg-blue-50 transition-colors">Esegui Analisi &rarr;</a>
+    </Link>
+  </div>
+</div>
 
               <div className="mt-10">
                 <h2 className="text-lg font-semibold leading-6 text-slate-900">I tuoi Macro Tool</h2>
