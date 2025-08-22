@@ -1,6 +1,6 @@
 // /pages/api/start-checkup.js
-// VERSIONE CON FIX 3.0: Corretto il nome del parametro nella chiamata RPC.
-// - Risolve l'errore 'Could not find the function... in the schema cache'.
+// VERSIONE CON FIX 4.0: Aggiunti tutti i parametri richiesti dalla funzione RPC.
+// - Risolve l'errore 'Could not find the function...' aggiungendo p_first_name e p_last_name.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -37,10 +37,12 @@ export default async function handler(req, res) {
     
     const outsetaUser = await outsetaResponse.json();
     
-    // ✅ FIX: Corretto il nome del parametro da `p_outseta_uid` a `p_outseta_id` come suggerito dall'errore.
+    // ✅ FIX: Aggiunti p_first_name e p_last_name per corrispondere alla firma della funzione in Supabase.
     const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', { 
       p_outseta_id: outsetaUser.Uid, 
-      p_email: outsetaUser.Email 
+      p_email: outsetaUser.Email,
+      p_first_name: outsetaUser.FirstName || '', // Aggiunto nome
+      p_last_name: outsetaUser.LastName || ''   // Aggiunto cognome
     });
 
     if (userError || !userId) {
