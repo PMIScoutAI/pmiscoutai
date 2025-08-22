@@ -1,6 +1,6 @@
 // /pages/api/start-checkup.js
-// VERSIONE CON FIX 4.0: Aggiunti tutti i parametri richiesti dalla funzione RPC.
-// - Risolve l'errore 'Could not find the function...' aggiungendo p_first_name e p_last_name.
+// VERSIONE CON FIX 5.0: Aggiunto parametro p_vat_number alla chiamata RPC per la company.
+// - Risolve l'errore 'Could not find the function get_or_create_company...'.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -37,12 +37,11 @@ export default async function handler(req, res) {
     
     const outsetaUser = await outsetaResponse.json();
     
-    // ✅ FIX: Aggiunti p_first_name e p_last_name per corrispondere alla firma della funzione in Supabase.
     const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', { 
       p_outseta_id: outsetaUser.Uid, 
       p_email: outsetaUser.Email,
-      p_first_name: outsetaUser.FirstName || '', // Aggiunto nome
-      p_last_name: outsetaUser.LastName || ''   // Aggiunto cognome
+      p_first_name: outsetaUser.FirstName || '',
+      p_last_name: outsetaUser.LastName || ''
     });
 
     if (userError || !userId) {
@@ -60,9 +59,11 @@ export default async function handler(req, res) {
     const companyName = fields.companyName[0] || 'Azienda non specificata';
 
     // 3. Crea o trova l'azienda
+    // ✅ FIX: Aggiunto il parametro `p_vat_number` che la funzione si aspetta.
     const { data: company, error: companyError } = await supabase.rpc('get_or_create_company', {
-      p_user_id: userId, // Ora 'userId' è garantito che sia valido
-      p_company_name: companyName
+      p_user_id: userId,
+      p_company_name: companyName,
+      p_vat_number: '' // Passiamo una stringa vuota dato che non lo chiediamo più nel form
     });
 
     // Controllo di sicurezza sull'azienda (invariato ma ora più efficace)
@@ -76,7 +77,7 @@ export default async function handler(req, res) {
       .from('checkup_sessions')
       .insert({
         user_id: userId,
-        company_id: company.id, // Ora 'company.id' è sicuro da usare
+        company_id: company.id,
         status: 'processing',
         file_name: file.originalFilename,
       })
