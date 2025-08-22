@@ -158,6 +158,8 @@ export default function Home() {
     campaigns: <><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></>,
     competitor: <><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z" /><path d="m9 12 2 2 4-4" /></>,
     zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></> // Icona per HD
+      xbrl: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M12 18v-6"></path><path d="m9 15 3-3 3 3"></path></>,
+    rag: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></>,
   };
 
   // --- Dati per la UI ---
