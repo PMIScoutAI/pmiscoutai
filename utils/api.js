@@ -1,65 +1,105 @@
 // /utils/api.js
-// MODIFICA: Aggiunta funzione startCheckup() per gestire form + upload PDF
-// Mantiene semplicità esistente + nuova funzione per il flusso completo Check-UP AI
+// VERSIONE 1.0: Client API robusto basato su Fetch.
+// - Non richiede librerie esterne come Axios.
+// - Gestisce automaticamente il recupero del token di autenticazione da Outseta.
+// - Mima la struttura di risposta di Axios (`response.data`) per la massima compatibilità.
+// - Esporta un oggetto `api` con metodi `get` e `post`.
 
 /**
-* Chiama la nostra API Vercel per sincronizzare l'utente.
-* @returns {Promise<object>} Il risultato della chiamata API.
-*/
-async function syncUserOnly() {
- // 1. Ottieni il token di accesso di Outseta per l'autenticazione.
- const outsetaToken = await window.Outseta.getAccessToken();
- if (!outsetaToken) {
-   throw new Error('Impossibile ottenere il token di autenticazione. Effettua nuovamente il login.');
- }
-
- // 2. Esegui la chiamata alla nostra API ultra-semplice.
- const response = await fetch('/api/start-checkup', {
-   method: 'POST',
-   headers: {
-     'Authorization': `Bearer ${outsetaToken}`,
-   },
- });
-
- const result = await response.json();
- if (!response.ok) {
-   throw new Error(result.error || `Si è verificato un errore (status: ${response.status})`);
- }
-
- return result;
-}
+ * Recupera il token di autenticazione da Outseta.
+ * @returns {Promise<string|null>} Il token JWT o null.
+ */
+const getAuthToken = async () => {
+  // Assicurati che il codice venga eseguito solo nel browser
+  if (typeof window !== 'undefined' && window.Outseta) {
+    try {
+      // getAccessToken gestisce il refresh del token in automatico
+      const token = await window.Outseta.getAccessToken();
+      return token;
+    } catch (error) {
+      console.error("Errore nel recuperare il token da Outseta:", error);
+      return null;
+    }
+  }
+  return null;
+};
 
 /**
-* NUOVO: Avvia il Check-UP AI completo con form data + upload PDF
-* @param {FormData} formData - Dati del form (companyName, vatNumber, pdfFile)
-* @returns {Promise<object>} Risultato con sessionId per redirect
-*/
-async function startCheckup(formData) {
- // 1. Ottieni il token Outseta
- const outsetaToken = await window.Outseta.getAccessToken();
- if (!outsetaToken) {
-   throw new Error('Impossibile ottenere il token di autenticazione. Effettua nuovamente il login.');
- }
+ * Esegue una richiesta POST all'API interna.
+ * Gestisce sia FormData (per i file) sia oggetti JSON.
+ * @param {string} url - L'endpoint dell'API (es. '/start-checkup').
+ * @param {FormData|object} body - Il corpo della richiesta.
+ * @returns {Promise<object>} Un oggetto che mima la risposta di Axios, con { data }.
+ */
+const post = async (url, body) => {
+  const token = await getAuthToken();
+  const headers = {};
 
- // 2. Chiama API estesa con FormData
- const response = await fetch('/api/start-checkup', {
-   method: 'POST',
-   headers: {
-     'Authorization': `Bearer ${outsetaToken}`,
-     // NON aggiungere Content-Type per FormData - il browser lo gestisce automaticamente
-   },
-   body: formData
- });
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
- const result = await response.json();
- if (!response.ok) {
-   throw new Error(result.error || `Si è verificato un errore (status: ${response.status})`);
- }
+  // Se il body non è FormData, lo trasformiamo in JSON e impostiamo l'header corretto.
+  // Per FormData, il browser imposta l'header 'Content-Type' automaticamente.
+  if (!(body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(body);
+  }
 
- return result;
-}
+  const response = await fetch(`/api${url}`, {
+    method: 'POST',
+    headers,
+    body,
+  });
 
+  const responseData = await response.json();
+
+  if (!response.ok) {
+    // Se la risposta non è positiva, lanciamo un errore.
+    const error = new Error(responseData.error || 'La richiesta API è fallita');
+    error.response = { data: responseData }; // Mimiamo la struttura di errore di Axios
+    throw error;
+  }
+
+  // Ritorna un oggetto compatibile con la sintassi `response.data` usata nel frontend.
+  return { data: responseData };
+};
+
+/**
+ * Esegue una richiesta GET all'API interna.
+ * @param {string} url - L'endpoint dell'API (es. '/get-session-complete?sessionId=...').
+ * @returns {Promise<object>} Un oggetto che mima la risposta di Axios, con { data }.
+ */
+const get = async (url) => {
+    const token = await getAuthToken();
+    const headers = {
+        'Content-Type': 'application/json',
+    };
+
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`/api${url}`, {
+        method: 'GET',
+        headers,
+    });
+
+    const responseData = await response.json();
+
+    if (!response.ok) {
+        const error = new Error(responseData.error || 'La richiesta API è fallita');
+        error.response = { data: responseData };
+        throw error;
+    }
+
+    return { data: responseData };
+};
+
+
+// Esportiamo un oggetto `api` che contiene i metodi,
+// così l'import `import { api } from '...'` nelle tue pagine funziona correttamente.
 export const api = {
- syncUserOnly,
- startCheckup, // NUOVO
+  post,
+  get,
 };
