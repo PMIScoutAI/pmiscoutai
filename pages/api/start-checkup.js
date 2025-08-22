@@ -1,6 +1,6 @@
 // /pages/api/start-checkup.js
-// VERSIONE CON FIX 2.0: Aggiunto controllo di sicurezza su userId e company.
-// - Previene l'errore 'Cannot read properties of null (reading 'id')' in modo più robusto.
+// VERSIONE CON FIX 3.0: Corretto il nome del parametro nella chiamata RPC.
+// - Risolve l'errore 'Could not find the function... in the schema cache'.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -37,9 +37,9 @@ export default async function handler(req, res) {
     
     const outsetaUser = await outsetaResponse.json();
     
-    // ✅ FIX CHIAVE: Aggiunto controllo sull'esito della chiamata RPC per l'utente
+    // ✅ FIX: Corretto il nome del parametro da `p_outseta_uid` a `p_outseta_id` come suggerito dall'errore.
     const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', { 
-      p_outseta_uid: outsetaUser.Uid, 
+      p_outseta_id: outsetaUser.Uid, 
       p_email: outsetaUser.Email 
     });
 
