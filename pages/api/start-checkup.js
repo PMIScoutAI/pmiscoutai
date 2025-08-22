@@ -1,6 +1,6 @@
 // /pages/api/start-checkup.js
-// VERSIONE CON FIX: Aggiunto controllo di sicurezza sulla creazione dell'azienda.
-// - Previene l'errore 'Cannot read properties of null (reading 'id')'.
+// VERSIONE CON FIX 2.0: Aggiunto controllo di sicurezza su userId e company.
+// - Previene l'errore 'Cannot read properties of null (reading 'id')' in modo più robusto.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -36,10 +36,17 @@ export default async function handler(req, res) {
     if (!outsetaResponse.ok) return res.status(401).json({ error: 'Token non valido.' });
     
     const outsetaUser = await outsetaResponse.json();
-    const { data: userId } = await supabase.rpc('get_or_create_user', { 
+    
+    // ✅ FIX CHIAVE: Aggiunto controllo sull'esito della chiamata RPC per l'utente
+    const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', { 
       p_outseta_uid: outsetaUser.Uid, 
       p_email: outsetaUser.Email 
     });
+
+    if (userError || !userId) {
+      console.error(`[start-checkup] Errore RPC 'get_or_create_user':`, userError);
+      throw new Error("Impossibile creare o trovare l'utente nel database.");
+    }
 
     // 2. Gestione del file caricato con formidable (invariato)
     const form = formidable({});
@@ -50,13 +57,13 @@ export default async function handler(req, res) {
 
     const companyName = fields.companyName[0] || 'Azienda non specificata';
 
-    // 3. Crea o trova l'azienda (invariato)
+    // 3. Crea o trova l'azienda
     const { data: company, error: companyError } = await supabase.rpc('get_or_create_company', {
-      p_user_id: userId,
+      p_user_id: userId, // Ora 'userId' è garantito che sia valido
       p_company_name: companyName
     });
 
-    // ✅ FIX: Aggiunto controllo per verificare che l'azienda sia stata creata/trovata correttamente
+    // Controllo di sicurezza sull'azienda (invariato ma ora più efficace)
     if (companyError || !company) {
       console.error(`[start-checkup] Errore RPC 'get_or_create_company':`, companyError);
       throw new Error("Impossibile creare o trovare l'azienda nel database.");
