@@ -1,7 +1,6 @@
 // /pages/api/start-checkup.js
-// VERSIONE AGGIORNATA: Ora chiama la nuova API 'analyze-xbrl'
-// - La logica di upload e gestione della sessione rimane invariata.
-// - L'unica modifica è il puntamento all'endpoint corretto per l'analisi.
+// VERSIONE CON FIX: Aggiunto controllo di sicurezza sulla creazione dell'azienda.
+// - Previene l'errore 'Cannot read properties of null (reading 'id')'.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -52,17 +51,23 @@ export default async function handler(req, res) {
     const companyName = fields.companyName[0] || 'Azienda non specificata';
 
     // 3. Crea o trova l'azienda (invariato)
-    const { data: company } = await supabase.rpc('get_or_create_company', {
+    const { data: company, error: companyError } = await supabase.rpc('get_or_create_company', {
       p_user_id: userId,
       p_company_name: companyName
     });
 
-    // 4. Crea la sessione di checkup (invariato)
+    // ✅ FIX: Aggiunto controllo per verificare che l'azienda sia stata creata/trovata correttamente
+    if (companyError || !company) {
+      console.error(`[start-checkup] Errore RPC 'get_or_create_company':`, companyError);
+      throw new Error("Impossibile creare o trovare l'azienda nel database.");
+    }
+
+    // 4. Crea la sessione di checkup
     const { data: createdSession, error: sessionError } = await supabase
       .from('checkup_sessions')
       .insert({
         user_id: userId,
-        company_id: company.id,
+        company_id: company.id, // Ora 'company.id' è sicuro da usare
         status: 'processing',
         file_name: file.originalFilename,
       })
@@ -90,18 +95,16 @@ export default async function handler(req, res) {
       .update({ file_path: filePath })
       .eq('id', session.id);
     
-    // 6. ✅ MODIFICA CHIAVE: Avvia l'analisi chiamando la nuova API 'analyze-xbrl'
+    // 6. Avvia l'analisi chiamando 'analyze-xbrl' (invariato)
     console.log(`[${session.id}] Sessione creata. Avvio dell'analisi XBRL in background...`);
 
     const host = req.headers.host;
     const protocol = req.headers['x-forwarded-proto'] || (host?.includes('localhost') ? 'http' : 'https');
     
-    // L'URL ora punta al nuovo endpoint
     const analyzeApiUrl = `${protocol}://${host}/api/analyze-xbrl?sessionId=${session.id}`;
 
     console.log(`[${session.id}] Chiamata a: ${analyzeApiUrl}`);
 
-    // Avvia la chiamata senza attenderne la fine (fire-and-forget)
     fetch(analyzeApiUrl, {
       method: 'POST',
     }).catch(fetchError => {
@@ -113,7 +116,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, sessionId: session.id });
 
   } catch (error) {
-    console.error('💥 Errore fatale in start-checkup:', error);
+    console.error('💥 Errore fatale in start-checkup:', error.message);
     
     if (session?.id) {
       await supabase
@@ -125,6 +128,6 @@ export default async function handler(req, res) {
         .eq('id', session.id);
     }
 
-    return res.status(500).json({ error: 'Errore interno del server.' });
+    return res.status(500).json({ error: error.message || 'Errore interno del server.' });
   }
 }
