@@ -1,6 +1,6 @@
 // /pages/api/start-checkup.js
-// VERSIONE CON FIX 5.0: Aggiunto parametro p_vat_number alla chiamata RPC per la company.
-// - Risolve l'errore 'Could not find the function get_or_create_company...'.
+// VERSIONE CON FIX 6.0: Semplificata la chiamata RPC per la company.
+// - Rimosso il parametro p_vat_number, assumendo che la funzione DB sia stata aggiornata.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -59,11 +59,10 @@ export default async function handler(req, res) {
     const companyName = fields.companyName[0] || 'Azienda non specificata';
 
     // 3. Crea o trova l'azienda
-    // ✅ FIX: Aggiunto il parametro `p_vat_number` che la funzione si aspetta.
+    // ✅ FIX: Rimosso il parametro `p_vat_number`.
     const { data: company, error: companyError } = await supabase.rpc('get_or_create_company', {
       p_user_id: userId,
-      p_company_name: companyName,
-      p_vat_number: '' // Passiamo una stringa vuota dato che non lo chiediamo più nel form
+      p_company_name: companyName
     });
 
     // Controllo di sicurezza sull'azienda (invariato ma ora più efficace)
