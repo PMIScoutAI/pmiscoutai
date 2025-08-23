@@ -1,5 +1,6 @@
 // /pages/api/start-checkup.js
-// VERSIONE 8.2: Ripristinati i prefissi 'p_' per la chiamata a get_or_create_user.
+// VERSIONE 9.0 (FIX COERENZA): Applicati i prefissi 'p_' a entrambe le chiamate RPC.
+// - Risolve l'errore PGRST202 rendendo coerente la nomenclatura dei parametri.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -31,7 +32,6 @@ export default async function handler(req, res) {
 
     const outsetaUser = await outsetaResponse.json();
 
-    // ✅ MODIFICA: Ripristinati i prefissi 'p_' come richiesto.
     const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', {
       p_email: outsetaUser.Email,
       p_first_name: outsetaUser.FirstName || '',
@@ -56,10 +56,10 @@ export default async function handler(req, res) {
       (Array.isArray(fields?.companyName) ? fields.companyName[0] : fields?.companyName) || '';
     const companyName = String(companyNameRaw).trim() || 'Azienda non specificata';
 
-    // 3) RPC company con nomi param corretti + fallback id
+    // 3) ✅ FIX CHIAVE: Aggiunti i prefissi 'p_' anche qui per coerenza.
     const { data: company, error: companyError } = await supabase.rpc('get_or_create_company', {
-      user_id: userId,
-      company_name: companyName
+      p_user_id: userId,
+      p_company_name: companyName
     });
     if (companyError || !company) {
       console.error(`[start-checkup] Errore RPC 'get_or_create_company':`, companyError);
