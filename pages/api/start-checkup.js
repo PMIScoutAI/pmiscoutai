@@ -1,5 +1,5 @@
 // /pages/api/start-checkup.js
-// VERSIONE 8.1: env non-public, parse robusto, fallback companyId, contentType default.
+// VERSIONE 8.2: Ripristinati i prefissi 'p_' per la chiamata a get_or_create_user.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -31,12 +31,12 @@ export default async function handler(req, res) {
 
     const outsetaUser = await outsetaResponse.json();
 
-    // Mantieni uno stile coerente con la funzione in DB (qui uso senza prefissi):
+    // ✅ MODIFICA: Ripristinati i prefissi 'p_' come richiesto.
     const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', {
-      outseta_id: outsetaUser.Uid,
-      email: outsetaUser.Email,
-      first_name: outsetaUser.FirstName || '',
-      last_name: outsetaUser.LastName || ''
+      p_email: outsetaUser.Email,
+      p_first_name: outsetaUser.FirstName || '',
+      p_last_name: outsetaUser.LastName || '',
+      p_outseta_id: outsetaUser.Uid
     });
     if (userError || !userId) {
       console.error(`[start-checkup] Errore RPC 'get_or_create_user':`, userError);
