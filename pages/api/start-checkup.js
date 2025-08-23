@@ -1,8 +1,7 @@
 // /pages/api/start-checkup.js
-// VERSIONE 14.0 (DEFINITIVA): Implementata la logica con UPSERT per bypassare le RPC.
-// - Risolve definitivamente gli errori PGRST202.
-// - Utilizza `upsert` per una gestione dei dati robusta e idempotente.
-// - Richiede che gli indici UNIQUE siano impostati correttamente nel database.
+// VERSIONE 14.1 (FIX SCHEMA): Allineato l'inserimento alla struttura reale della tabella.
+// - Risolve l'errore 'Could not find the file_name column'.
+// - Inserisce il nome del file nella colonna 'session_name' esistente.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -86,13 +85,14 @@ export default async function handler(req, res) {
 
     // 4) Crea sessione
     const originalName = fileInput.originalFilename || 'file';
+    // ✅ FIX: Rimosso 'file_name' e usato 'session_name' come da schema del DB.
     const { data: createdSession, error: sessionError } = await supabase
       .from('checkup_sessions')
       .insert({
         user_id: userId,
         company_id: companyId,
         status: 'processing',
-        file_name: originalName
+        session_name: originalName 
       })
       .select()
       .single();
