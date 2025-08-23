@@ -1,6 +1,7 @@
 // /pages/api/start-checkup.js
-// VERSIONE CON FIX 6.0: Semplificata la chiamata RPC per la company.
-// - Rimosso il parametro p_vat_number, assumendo che la funzione DB sia stata aggiornata.
+// VERSIONE 8.0 (FIX DEFINITIVO): Corretti i nomi dei parametri RPC.
+// - Risolve l'errore PGRST202 allineando i nomi dei parametri a quelli del DB (senza prefisso 'p_').
+// - Ripristinata la logica originale di creazione dell'azienda, ora funzionante.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -25,7 +26,7 @@ export default async function handler(req, res) {
   let session;
 
   try {
-    // 1. Autenticazione utente con Outseta (invariata)
+    // 1. Autenticazione utente e recupero userId (UUID)
     const outsetaToken = req.headers.authorization?.split(' ')[1];
     if (!outsetaToken) return res.status(401).json({ error: 'Token mancante.' });
     
@@ -37,6 +38,7 @@ export default async function handler(req, res) {
     
     const outsetaUser = await outsetaResponse.json();
     
+    // Questa chiamata restituisce l'UUID corretto dalla tabella 'users'
     const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', { 
       p_outseta_id: outsetaUser.Uid, 
       p_email: outsetaUser.Email,
@@ -49,7 +51,7 @@ export default async function handler(req, res) {
       throw new Error("Impossibile creare o trovare l'utente nel database.");
     }
 
-    // 2. Gestione del file caricato con formidable (invariato)
+    // 2. Gestione del file caricato (invariato)
     const form = formidable({});
     const [fields, files] = await form.parse(req);
     
@@ -58,14 +60,12 @@ export default async function handler(req, res) {
 
     const companyName = fields.companyName[0] || 'Azienda non specificata';
 
-    // 3. Crea o trova l'azienda
-    // ✅ FIX: Rimosso il parametro `p_vat_number`.
+    // 3. ✅ FIX CHIAVE: Chiama la funzione RPC con i nomi dei parametri corretti (senza 'p_').
     const { data: company, error: companyError } = await supabase.rpc('get_or_create_company', {
-      p_user_id: userId,
-      p_company_name: companyName
+      user_id: userId,          // Nome parametro corretto
+      company_name: companyName // Nome parametro corretto
     });
 
-    // Controllo di sicurezza sull'azienda (invariato ma ora più efficace)
     if (companyError || !company) {
       console.error(`[start-checkup] Errore RPC 'get_or_create_company':`, companyError);
       throw new Error("Impossibile creare o trovare l'azienda nel database.");
@@ -76,7 +76,7 @@ export default async function handler(req, res) {
       .from('checkup_sessions')
       .insert({
         user_id: userId,
-        company_id: company.id,
+        company_id: company.id, // Ora abbiamo un company_id valido
         status: 'processing',
         file_name: file.originalFilename,
       })
@@ -112,13 +112,8 @@ export default async function handler(req, res) {
     
     const analyzeApiUrl = `${protocol}://${host}/api/analyze-xbrl?sessionId=${session.id}`;
 
-    console.log(`[${session.id}] Chiamata a: ${analyzeApiUrl}`);
-
-    fetch(analyzeApiUrl, {
-      method: 'POST',
-    }).catch(fetchError => {
-      console.error(`[${session.id}] Errore avvio chiamata analisi (fire-and-forget):`, fetchError.message);
-    });
+    fetch(analyzeApiUrl, { method: 'POST' })
+      .catch(fetchError => console.error(`[${session.id}] Errore avvio chiamata analisi:`, fetchError.message));
     
     // 7. Restituisce subito la risposta all'utente (invariato)
     console.log(`✅ [${session.id}] Setup completato, restituisco sessionId`);
@@ -130,10 +125,7 @@ export default async function handler(req, res) {
     if (session?.id) {
       await supabase
         .from('checkup_sessions')
-        .update({ 
-          status: 'failed', 
-          error_message: error.message 
-        })
+        .update({ status: 'failed', error_message: error.message })
         .eq('id', session.id);
     }
 
