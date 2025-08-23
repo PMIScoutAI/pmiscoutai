@@ -1,6 +1,6 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 2.1 (FIX SCHEMA): Rimosso 'company_id' dal salvataggio dei risultati.
-// - Risolve l'errore 'Could not find the company_id column of analysis_results'.
+// VERSIONE 2.2 (FIX SCHEMA): Rimosso 'prompt_version' dal salvataggio dei risultati.
+// - Risolve l'errore 'Could not find the prompt_version column of analysis_results'.
 // - Allinea il codice allo schema reale del database.
 
 import { createClient } from '@supabase/supabase-js';
@@ -179,12 +179,11 @@ Metriche Chiave (Anno Corrente N / Anno Precedente N-1):
     console.log(`[${sessionId}] Risposta JSON ricevuta da OpenAI.`);
 
     // 8. Salva i risultati nel database
-    // ✅ FIX: Rimosso 'company_id' perché non esiste nella tabella 'analysis_results'.
+    // ✅ FIX: Rimosso 'prompt_version' perché non esiste nella tabella 'analysis_results'.
     const resultToSave = {
       session_id: sessionId,
       user_id: session.user_id,
       raw_result: analysisResult,
-      prompt_version: 'FINANCIAL_ANALYSIS_V2',
     };
     
     const { data: savedData, error: saveError } = await supabase
