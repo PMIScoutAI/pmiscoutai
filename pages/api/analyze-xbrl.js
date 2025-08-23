@@ -1,7 +1,7 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 3.3 (ROBUSTA): Migliorata la funzione di estrazione dati.
-// - La funzione `findValueInSheet` ora accetta un array di possibili diciture per ogni metrica.
-// - Aumenta drasticamente l'affidabilità dell'estrazione dei dati.
+// VERSIONE 4.0: Aggiunta estrazione dati di contesto (ATECO, Regione).
+// - Estrae il codice ATECO e la regione dai dati anagrafici.
+// - Fornisce questi dati contestuali all'AI per un'analisi più strategica.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -18,22 +18,19 @@ const openai = new OpenAI({
 });
 
 /**
- * ✅ MIGLIORAMENTO: La funzione ora accetta un array di possibili testi da cercare.
- * @param {Array<Array<any>>} sheetData - I dati del foglio come array di array.
+ * Funzione di utilità per cercare un valore finanziario (anno corrente e precedente).
+ * @param {Array<Array<any>>} sheetData - I dati del foglio.
  * @param {string[]} searchTexts - Un array di possibili diciture da cercare.
- * @returns {{ currentYear: number|null, previousYear: number|null }} Un oggetto con i valori.
+ * @returns {{ currentYear: number|null, previousYear: number|null }}
  */
 const findValueInSheet = (sheetData, searchTexts) => {
     const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
     
     for (const row of sheetData) {
         const description = String(row[2] || row[1] || '').toLowerCase().trim();
-
-        // Controlla se la descrizione include una delle diciture cercate
         if (normalizedSearchTexts.some(searchText => description.includes(searchText))) {
             const rawCurrent = row[3];
             const rawPrevious = row[4];
-
             const parseValue = (val) => {
                 if (val === null || val === undefined) return null;
                 if (typeof val === 'number') return val;
@@ -42,14 +39,27 @@ const findValueInSheet = (sheetData, searchTexts) => {
                 }
                 return null;
             };
-            
-            const currentYearValue = parseValue(rawCurrent);
-            const previousYearValue = parseValue(rawPrevious);
-            
-            return { currentYear: currentYearValue, previousYear: previousYearValue };
+            return { currentYear: parseValue(rawCurrent), previousYear: parseValue(rawPrevious) };
         }
     }
     return { currentYear: null, previousYear: null };
+};
+
+/**
+ * Funzione di utilità per cercare un singolo valore testuale (es. Codice ATECO).
+ * @param {Array<Array<any>>} sheetData - I dati del foglio.
+ * @param {string[]} searchTexts - Un array di possibili diciture da cercare.
+ * @returns {string|null}
+ */
+const findSimpleValue = (sheetData, searchTexts) => {
+    const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
+    for (const row of sheetData) {
+        const description = String(row[2] || row[1] || '').toLowerCase().trim();
+        if (normalizedSearchTexts.some(searchText => description.includes(searchText))) {
+            return row[3] || null; // Ritorna il valore nella colonna adiacente
+        }
+    }
+    return null;
 };
 
 
@@ -116,11 +126,20 @@ export default async function handler(req, res) {
         sheetContents[key] = xlsx.utils.sheet_to_json(sheet, { header: 1 });
     }
 
-    // 4. ✅ MIGLIORAMENTO: Usa array di diciture per un'estrazione più robusta
-    console.log(`[${sessionId}] Mappatura dei dati finanziari estesi.`);
+    // 4. Estrai i dati finanziari e di contesto
+    console.log(`[${sessionId}] Mappatura dei dati finanziari e di contesto.`);
     
     const companyNameRow = sheetContents.companyInfo.find(row => String(row[2] || '').toLowerCase().trim().includes('denominazione'));
     const companyName = companyNameRow ? companyNameRow[3] : 'Azienda Analizzata';
+
+    const sedeRow = findSimpleValue(sheetContents.companyInfo, ["sede"]);
+    const regionMatch = sedeRow ? sedeRow.match(/\(([^)]+)\)/) : null;
+    const region = regionMatch ? regionMatch[1] : null;
+
+    const context = {
+        ateco: findSimpleValue(sheetContents.companyInfo, ["codice ateco", "attività prevalente"]),
+        region: region
+    };
 
     const metrics = {
         fatturato: findValueInSheet(sheetContents.incomeStatement, ["ricavi delle vendite e delle prestazioni"]),
@@ -141,6 +160,10 @@ export default async function handler(req, res) {
     // 5. Prepara un testo più ricco per il prompt dell'AI
     const dataForPrompt = `
 Dati Aziendali per ${companyName}:
+
+Contesto Aziendale:
+- Regione: ${context.region || 'N/D'}
+- Codice ATECO (Settore): ${context.ateco || 'N/D'}
 
 Principali Voci di Conto Economico (Anno Corrente N / Anno Precedente N-1):
 - Fatturato: ${metrics.fatturato.currentYear} / ${metrics.fatturato.previousYear}
@@ -200,7 +223,7 @@ Principali Voci di Stato Patrimoniale (Anno Corrente N / Anno Precedente N-1):
       detailed_swot: analysisResult.detailed_swot || null,
       risk_analysis: analysisResult.risk_analysis || null,
       pro_features_teaser: analysisResult.pro_features_teaser || null,
-      raw_parsed_data: metrics
+      raw_parsed_data: { metrics, context } // Salviamo anche il contesto
     };
     
     const { data: savedData, error: saveError } = await supabase
