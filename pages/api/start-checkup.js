@@ -1,7 +1,7 @@
 // /pages/api/start-checkup.js
-// VERSIONE 14.1 (FIX SCHEMA): Allineato l'inserimento alla struttura reale della tabella.
-// - Risolve l'errore 'Could not find the file_name column'.
-// - Inserisce il nome del file nella colonna 'session_name' esistente.
+// VERSIONE 14.2 (FIX BUCKET): Aggiornato il nome del bucket di Supabase Storage.
+// - Risolve l'errore 'Bucket not found'.
+// - Utilizza il nome corretto 'checkup-documents'.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -85,7 +85,6 @@ export default async function handler(req, res) {
 
     // 4) Crea sessione
     const originalName = fileInput.originalFilename || 'file';
-    // ✅ FIX: Rimosso 'file_name' e usato 'session_name' come da schema del DB.
     const { data: createdSession, error: sessionError } = await supabase
       .from('checkup_sessions')
       .insert({
@@ -104,8 +103,9 @@ export default async function handler(req, res) {
     const fileBuffer = fs.readFileSync(fileInput.filepath);
     const contentType = fileInput.mimetype || 'application/octet-stream';
 
+    // ✅ FIX: Aggiornato il nome del bucket a 'checkup-documents'
     const { error: uploadError } = await supabase.storage
-      .from('checkup-files')
+      .from('checkup-documents')
       .upload(filePath, fileBuffer, { contentType, upsert: true });
     if (uploadError) throw uploadError;
 
