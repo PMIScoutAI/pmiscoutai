@@ -1,9 +1,7 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 1.0: Logica per l'analisi di file XBRL (estratti come CSV da un file .xls/.zip)
-// - Sostituisce completamente 'analyze-pdf.js'.
-// - Utilizza jszip per estrarre i CSV dal file caricato.
-// - Utilizza papaparse per leggere i dati tabellari in modo preciso.
-// - Costruisce un prompt pulito e strutturato per OpenAI.
+// VERSIONE 1.1 (FIX BUCKET): Aggiornato il nome del bucket di Supabase Storage.
+// - Risolve l'errore 'StorageUnknownError: Bucket not found' durante il download.
+// - Utilizza il nome corretto 'checkup-documents'.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -12,7 +10,7 @@ import Papa from 'papaparse';
 
 // Inizializzazione client Supabase e OpenAI
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
@@ -77,8 +75,9 @@ export default async function handler(req, res) {
 
     // 2. Scarica il file da Supabase Storage
     console.log(`[${sessionId}] Download del file: ${filePath}`);
+    // ✅ FIX: Aggiornato il nome del bucket a 'checkup-documents'
     const { data: fileBlob, error: downloadError } = await supabase.storage
-      .from('checkup-files') // Assicurati che il nome del bucket sia corretto
+      .from('checkup-documents')
       .download(filePath);
 
     if (downloadError) {
