@@ -1,7 +1,7 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 4.0: Aggiunta estrazione dati di contesto (ATECO, Regione).
-// - Estrae il codice ATECO e la regione dai dati anagrafici.
-// - Fornisce questi dati contestuali all'AI per un'analisi più strategica.
+// VERSIONE 5.0 (GENERICA): Rimuove la dipendenza da nomi di foglio fissi.
+// - Il codice ora scansiona tutti i fogli per identificare Stato Patrimoniale e Conto Economico in base al loro contenuto.
+// - Rende l'analisi compatibile con diversi formati di file XBRL.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -56,10 +56,35 @@ const findSimpleValue = (sheetData, searchTexts) => {
     for (const row of sheetData) {
         const description = String(row[2] || row[1] || '').toLowerCase().trim();
         if (normalizedSearchTexts.some(searchText => description.includes(searchText))) {
-            return row[3] || null; // Ritorna il valore nella colonna adiacente
+            return row[3] || null;
         }
     }
     return null;
+};
+
+/**
+ * ✅ NUOVA FUNZIONE: Trova un foglio di calcolo per nome o contenuto.
+ * @param {object} workbook - L'oggetto workbook di SheetJS.
+ * @param {string[]} keywords - Parole chiave da cercare nel nome del foglio o nel suo contenuto.
+ * @returns {Array<Array<any>>|null} I dati del foglio trovato o null.
+ */
+const findSheetByKeywords = (workbook, keywords) => {
+    const normalizedKeywords = keywords.map(k => k.toLowerCase());
+    for (const sheetName of workbook.SheetNames) {
+        // Cerca prima per nome del foglio
+        if (normalizedKeywords.some(keyword => sheetName.toLowerCase().includes(keyword))) {
+            const sheet = workbook.Sheets[sheetName];
+            return xlsx.utils.sheet_to_json(sheet, { header: 1 });
+        }
+        // Se non trovato, cerca nel contenuto delle prime 10 righe
+        const sheet = workbook.Sheets[sheetName];
+        const sheetData = xlsx.utils.sheet_to_json(sheet, { header: 1 });
+        const contentToCheck = JSON.stringify(sheetData.slice(0, 10)).toLowerCase();
+        if (normalizedKeywords.some(keyword => contentToCheck.includes(keyword))) {
+            return sheetData;
+        }
+    }
+    return null; // Se nessun foglio corrisponde
 };
 
 
@@ -106,55 +131,47 @@ export default async function handler(req, res) {
     
     const fileBuffer = Buffer.from(await fileBlob.arrayBuffer());
 
-    // 3. Parsa il file Excel e estrai i fogli necessari
-    console.log(`[${sessionId}] Parsing del file Excel...`);
+    // 3. ✅ NUOVA LOGICA: Parsa il file e trova i fogli dinamicamente
+    console.log(`[${sessionId}] Parsing del file Excel e ricerca dinamica dei fogli...`);
     const workbook = xlsx.read(fileBuffer);
     
-    const requiredSheets = {
-        companyInfo: 'T0000',
-        balanceSheet: 'T0002',
-        incomeStatement: 'T0006'
-    };
-    
-    let sheetContents = {};
+    const companyInfoSheet = findSheetByKeywords(workbook, ["t0000", "informazioni generali"]);
+    const balanceSheet = findSheetByKeywords(workbook, ["t0002", "stato patrimoniale"]);
+    const incomeStatement = findSheetByKeywords(workbook, ["t0006", "conto economico"]);
 
-    for (const key in requiredSheets) {
-        const sheetName = requiredSheets[key];
-        const sheet = workbook.Sheets[sheetName];
-        if (!sheet) throw new Error(`Foglio di calcolo richiesto non trovato nel file: ${sheetName}`);
-        
-        sheetContents[key] = xlsx.utils.sheet_to_json(sheet, { header: 1 });
-    }
+    if (!companyInfoSheet) throw new Error("Impossibile trovare il foglio con le informazioni aziendali.");
+    if (!balanceSheet) throw new Error("Impossibile trovare il foglio dello Stato Patrimoniale.");
+    if (!incomeStatement) throw new Error("Impossibile trovare il foglio del Conto Economico.");
 
     // 4. Estrai i dati finanziari e di contesto
     console.log(`[${sessionId}] Mappatura dei dati finanziari e di contesto.`);
     
-    const companyNameRow = sheetContents.companyInfo.find(row => String(row[2] || '').toLowerCase().trim().includes('denominazione'));
+    const companyNameRow = companyInfoSheet.find(row => String(row[2] || '').toLowerCase().trim().includes('denominazione'));
     const companyName = companyNameRow ? companyNameRow[3] : 'Azienda Analizzata';
 
-    const sedeRow = findSimpleValue(sheetContents.companyInfo, ["sede"]);
+    const sedeRow = findSimpleValue(companyInfoSheet, ["sede"]);
     const regionMatch = sedeRow ? sedeRow.match(/\(([^)]+)\)/) : null;
     const region = regionMatch ? regionMatch[1] : null;
 
     const context = {
-        ateco: findSimpleValue(sheetContents.companyInfo, ["codice ateco", "attività prevalente"]),
+        ateco: findSimpleValue(companyInfoSheet, ["codice ateco", "attività prevalente"]),
         region: region
     };
 
     const metrics = {
-        fatturato: findValueInSheet(sheetContents.incomeStatement, ["ricavi delle vendite e delle prestazioni"]),
-        utilePerdita: findValueInSheet(sheetContents.balanceSheet, ["utile (perdita) dell'esercizio"]),
-        totaleAttivo: findValueInSheet(sheetContents.balanceSheet, ["totale attivo"]),
-        patrimonioNetto: findValueInSheet(sheetContents.balanceSheet, ["totale patrimonio netto (a)", "patrimonio netto"]),
-        debitiTotali: findValueInSheet(sheetContents.balanceSheet, ["d) debiti", "totale debiti"]),
-        costiProduzione: findValueInSheet(sheetContents.incomeStatement, ["costi della produzione"]),
-        ammortamenti: findValueInSheet(sheetContents.incomeStatement, ["ammortamenti e svalutazioni"]),
-        oneriFinanziari: findValueInSheet(sheetContents.incomeStatement, ["interessi e altri oneri finanziari"]),
-        attivoCircolante: findValueInSheet(sheetContents.balanceSheet, ["c) attivo circolante", "totale attivo circolante"]),
-        debitiBreveTermine: findValueInSheet(sheetContents.balanceSheet, ["debiti esigibili entro l'esercizio successivo"]),
-        creditiClienti: findValueInSheet(sheetContents.balanceSheet, ["crediti verso clienti"]),
-        rimanenze: findValueInSheet(sheetContents.balanceSheet, ["rimanenze"]),
-        disponibilitaLiquide: findValueInSheet(sheetContents.balanceSheet, ["disponibilità liquide"]),
+        fatturato: findValueInSheet(incomeStatement, ["ricavi delle vendite e delle prestazioni"]),
+        utilePerdita: findValueInSheet(balanceSheet, ["utile (perdita) dell'esercizio"]),
+        totaleAttivo: findValueInSheet(balanceSheet, ["totale attivo"]),
+        patrimonioNetto: findValueInSheet(balanceSheet, ["totale patrimonio netto (a)", "patrimonio netto"]),
+        debitiTotali: findValueInSheet(balanceSheet, ["d) debiti", "totale debiti"]),
+        costiProduzione: findValueInSheet(incomeStatement, ["costi della produzione"]),
+        ammortamenti: findValueInSheet(incomeStatement, ["ammortamenti e svalutazioni"]),
+        oneriFinanziari: findValueInSheet(incomeStatement, ["interessi e altri oneri finanziari"]),
+        attivoCircolante: findValueInSheet(balanceSheet, ["c) attivo circolante", "totale attivo circolante"]),
+        debitiBreveTermine: findValueInSheet(balanceSheet, ["debiti esigibili entro l'esercizio successivo"]),
+        creditiClienti: findValueInSheet(balanceSheet, ["crediti verso clienti"]),
+        rimanenze: findValueInSheet(balanceSheet, ["rimanenze"]),
+        disponibilitaLiquide: findValueInSheet(balanceSheet, ["disponibilità liquide"]),
     };
 
     // 5. Prepara un testo più ricco per il prompt dell'AI
