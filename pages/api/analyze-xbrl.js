@@ -1,11 +1,11 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 2.2 (FIX SCHEMA): Rimosso 'prompt_version' dal salvataggio dei risultati.
-// - Risolve l'errore 'Could not find the prompt_version column of analysis_results'.
-// - Allinea il codice allo schema reale del database.
+// VERSIONE 2.4 (FIX SCHEMA DEFINITIVO): Allineato l'oggetto di salvataggio allo schema esatto del DB.
+// - Risolve l'errore 'Could not find the raw_result column'.
+// - Popola correttamente tutte le colonne della tabella 'analysis_results'.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
-import xlsx from 'xlsx'; // SOSTITUISCE jszip e papaparse
+import xlsx from 'xlsx';
 
 // Inizializzazione client Supabase e OpenAI
 const supabase = createClient(
@@ -27,20 +27,16 @@ const findValueInSheet = (sheetData, searchText) => {
     const normalizedSearchText = searchText.toLowerCase().trim();
     
     for (const row of sheetData) {
-        // La descrizione è tipicamente nella seconda o terza colonna (indice 1 o 2)
         const description = String(row[2] || row[1] || '').toLowerCase().trim();
 
         if (description.includes(normalizedSearchText)) {
-            // I valori numerici sono tipicamente nella terza e quarta colonna (indice 3 e 4)
             const rawCurrent = row[3];
             const rawPrevious = row[4];
 
-            // Funzione per parsare in modo sicuro un valore che può essere numero o stringa formattata
             const parseValue = (val) => {
                 if (val === null || val === undefined) return null;
                 if (typeof val === 'number') return val;
                 if (typeof val === 'string') {
-                    // Rimuove i punti delle migliaia, sostituisce la virgola decimale con un punto
                     return parseFloat(val.replace(/\./g, '').replace(',', '.')) || null;
                 }
                 return null;
@@ -179,11 +175,20 @@ Metriche Chiave (Anno Corrente N / Anno Precedente N-1):
     console.log(`[${sessionId}] Risposta JSON ricevuta da OpenAI.`);
 
     // 8. Salva i risultati nel database
-    // ✅ FIX: Rimosso 'prompt_version' perché non esiste nella tabella 'analysis_results'.
+    // ✅ FIX: Aggiornato l'oggetto per corrispondere esattamente allo schema della tabella.
     const resultToSave = {
       session_id: sessionId,
-      user_id: session.user_id,
-      raw_result: analysisResult,
+      health_score: analysisResult.health_score || null,
+      key_metrics: analysisResult.key_metrics || null,
+      swot: analysisResult.detailed_swot || null,
+      recommendations: analysisResult.recommendations || null,
+      charts_data: analysisResult.charts_data || null,
+      summary: analysisResult.summary || null,
+      raw_ai_response: analysisResult, // Nome colonna corretto
+      detailed_swot: analysisResult.detailed_swot || null,
+      risk_analysis: analysisResult.risk_analysis || null,
+      pro_features_teaser: analysisResult.pro_features_teaser || null,
+      raw_parsed_data: metrics
     };
     
     const { data: savedData, error: saveError } = await supabase
@@ -210,7 +215,6 @@ Metriche Chiave (Anno Corrente N / Anno Precedente N-1):
   } catch (error) {
     console.error(`💥 [${sessionId || 'NO_SESSION'}] Errore fatale in analyze-xbrl:`, error.message);
     
-    // Aggiorna lo stato della sessione a 'failed' in caso di errore
     if (sessionId) {
       await supabase
         .from('checkup_sessions')
