@@ -1,9 +1,7 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 7.0 (ROBUSTA): Implementa logiche di parsing e ricerca dati avanzate.
-// - Identifica dinamicamente le colonne degli anni per un'estrazione affidabile.
-// - Utilizza una funzione di parsing dei numeri potenziata.
-// - Cerca le descrizioni delle metriche in un range di colonne più ampio.
-// - Cerca l'utile prima nel Conto Economico.
+// VERSIONE 7.1 (STABILE): Ripristino a una logica di estrazione più semplice e affidabile.
+// - Ritorna all'uso di nomi di foglio fissi (T0000, T0002, T0006) per massima compatibilità.
+// - Mantiene la funzione di ricerca con sinonimi per robustezza.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -19,7 +17,7 @@ const openai = new OpenAI({
 });
 
 /**
- * Funzione di parsing potenziata per gestire vari formati numerici.
+ * Funzione di parsing per gestire vari formati numerici.
  * @param {any} val - Il valore della cella.
  * @returns {number|null}
  */
@@ -32,9 +30,7 @@ const parseValue = (val) => {
         if (isNegative) {
             cleanVal = '-' + cleanVal.substring(1, cleanVal.length - 1);
         }
-        // Gestisce sia il punto come separatore delle migliaia che la virgola
         cleanVal = cleanVal.replace(/\./g, '').replace(',', '.');
-        // Rimuove caratteri non numerici, preservando il punto decimale e il segno meno
         cleanVal = cleanVal.replace(/[^0-9.-]/g, '');
         const num = parseFloat(cleanVal);
         return isNaN(num) ? null : num;
@@ -43,55 +39,27 @@ const parseValue = (val) => {
 };
 
 /**
- * Trova le colonne dell'anno corrente e precedente in un foglio di calcolo.
- * @param {Array<Array<any>>} sheetData - I dati del foglio.
- * @returns {{ currentYearCol: number, previousYearCol: number }}
- */
-const findYearColumns = (sheetData) => {
-    const yearRegex = /^(20\d{2})$/;
-    let years = [];
-    for (let i = 0; i < Math.min(sheetData.length, 15); i++) {
-        const row = sheetData[i];
-        for (let j = 0; j < row.length; j++) {
-            const cell = String(row[j]).trim();
-            if (yearRegex.test(cell)) {
-                years.push({ year: parseInt(cell, 10), col: j });
-            }
-        }
-        if (years.length >= 2) break;
-    }
-    if (years.length < 2) return { currentYearCol: 3, previousYearCol: 4 }; // Fallback
-    
-    years.sort((a, b) => b.year - a.year);
-    return { currentYearCol: years[0].col, previousYearCol: years[1].col };
-};
-
-/**
- * Funzione di ricerca potenziata che usa le colonne degli anni trovate dinamicamente.
+ * Funzione di ricerca che assume che i dati siano nelle colonne 3 (anno N) e 4 (anno N-1).
  * @param {Array<Array<any>>} sheetData - I dati del foglio.
  * @param {string[]} searchTexts - Array di possibili diciture.
- * @param {{ currentYearCol: number, previousYearCol: number }} yearCols - Gli indici delle colonne degli anni.
  * @returns {{ currentYear: number|null, previousYear: number|null }}
  */
-const findValueInSheet = (sheetData, searchTexts, yearCols) => {
+const findValueInSheet = (sheetData, searchTexts) => {
     const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
     
     for (const row of sheetData) {
-        // Cerca la descrizione nelle prime 4 colonne per maggiore flessibilità
-        for (let i = 0; i < 4; i++) {
-            const description = String(row[i] || '').toLowerCase().trim();
-            if (normalizedSearchTexts.some(searchText => description.includes(searchText))) {
-                const rawCurrent = row[yearCols.currentYearCol];
-                const rawPrevious = row[yearCols.previousYearCol];
-                return { currentYear: parseValue(rawCurrent), previousYear: parseValue(rawPrevious) };
-            }
+        const description = String(row[2] || row[1] || '').toLowerCase().trim();
+        if (normalizedSearchTexts.some(searchText => description.includes(searchText))) {
+            const rawCurrent = row[3];
+            const rawPrevious = row[4];
+            return { currentYear: parseValue(rawCurrent), previousYear: parseValue(rawPrevious) };
         }
     }
     return { currentYear: null, previousYear: null };
 };
 
 /**
- * Funzione di ricerca per valori testuali potenziata.
+ * Funzione di ricerca per valori testuali.
  * @param {Array<Array<any>>} sheetData - I dati del foglio.
  * @param {string[]} searchTexts - Array di possibili diciture.
  * @returns {string|null}
@@ -99,35 +67,9 @@ const findValueInSheet = (sheetData, searchTexts, yearCols) => {
 const findSimpleValue = (sheetData, searchTexts) => {
     const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
     for (const row of sheetData) {
-        for (let i = 0; i < 4; i++) {
-            const description = String(row[i] || '').toLowerCase().trim();
-            if (normalizedSearchTexts.some(searchText => description.includes(searchText))) {
-                // Ritorna il primo valore non vuoto nelle colonne successive
-                for (let j = i + 1; j < row.length; j++) {
-                    if (row[j]) return String(row[j]);
-                }
-            }
-        }
-    }
-    return null;
-};
-
-/**
- * Trova un foglio di calcolo per nome o contenuto, cercando in più righe.
- * @param {object} workbook - L'oggetto workbook di SheetJS.
- * @param {string[]} keywords - Parole chiave da cercare.
- * @returns {Array<Array<any>>|null}
- */
-const findSheetByKeywords = (workbook, keywords) => {
-    const normalizedKeywords = keywords.map(k => k.toLowerCase());
-    for (const sheetName of workbook.SheetNames) {
-        if (normalizedKeywords.some(keyword => sheetName.toLowerCase().includes(keyword))) {
-            return xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
-        }
-        const sheetData = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
-        const contentToCheck = JSON.stringify(sheetData.slice(0, 20)).toLowerCase(); // Cerca nelle prime 20 righe
-        if (normalizedKeywords.some(keyword => contentToCheck.includes(keyword))) {
-            return sheetData;
+        const description = String(row[2] || row[1] || '').toLowerCase().trim();
+        if (normalizedSearchTexts.some(searchText => description.includes(searchText))) {
+            return row[3] || null;
         }
     }
     return null;
@@ -144,7 +86,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'SessionId è richiesto' });
   }
   
-  console.log(`[${sessionId}] Avvio analisi XBRL.`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (versione stabile).`);
 
   try {
     const { data: session, error: sessionError } = await supabase
@@ -165,44 +107,45 @@ export default async function handler(req, res) {
     const fileBuffer = Buffer.from(await fileBlob.arrayBuffer());
     const workbook = xlsx.read(fileBuffer);
     
-    const companyInfoSheet = findSheetByKeywords(workbook, ["t0000", "informazioni generali", "anagrafica"]);
-    const balanceSheet = findSheetByKeywords(workbook, ["t0002", "stato patrimoniale"]);
-    const incomeStatement = findSheetByKeywords(workbook, ["t0006", "conto economico"]);
+    // ✅ RIPRISTINO: Usiamo nomi di foglio fissi per maggiore affidabilità
+    const companyInfoSheet = workbook.Sheets['T0000'];
+    const balanceSheet = workbook.Sheets['T0002'];
+    const incomeStatement = workbook.Sheets['T0006'];
 
-    if (!companyInfoSheet) throw new Error("Foglio anagrafica non trovato.");
-    if (!balanceSheet) throw new Error("Stato Patrimoniale non trovato.");
-    if (!incomeStatement) throw new Error("Conto Economico non trovato.");
+    if (!companyInfoSheet || !balanceSheet || !incomeStatement) {
+        throw new Error("Uno o più fogli di lavoro standard (T0000, T0002, T0006) non sono stati trovati.");
+    }
 
-    // Identifica le colonne degli anni una sola volta
-    const yearCols = findYearColumns(balanceSheet);
+    const balanceSheetData = xlsx.utils.sheet_to_json(balanceSheet, { header: 1 });
+    const incomeStatementData = xlsx.utils.sheet_to_json(incomeStatement, { header: 1 });
+    const companyInfoData = xlsx.utils.sheet_to_json(companyInfoSheet, { header: 1 });
 
-    const companyNameRow = companyInfoSheet.find(row => String(row[2] || '').toLowerCase().trim().includes('denominazione'));
+    const companyNameRow = companyInfoData.find(row => String(row[2] || '').toLowerCase().trim().includes('denominazione'));
     const companyName = companyNameRow ? companyNameRow[3] : 'Azienda Analizzata';
 
-    const sedeRow = findSimpleValue(companyInfoSheet, ["sede"]);
+    const sedeRow = findSimpleValue(companyInfoData, ["sede"]);
     const regionMatch = sedeRow ? sedeRow.match(/\(([^)]+)\)/) : null;
     const region = regionMatch ? regionMatch[1] : null;
 
     const context = {
-        ateco: findSimpleValue(companyInfoSheet, ["codice ateco", "attività prevalente"]),
+        ateco: findSimpleValue(companyInfoData, ["codice ateco", "attività prevalente"]),
         region: region
     };
 
     const metrics = {
-        fatturato: findValueInSheet(incomeStatement, ["ricavi delle vendite", "valore della produzione"], yearCols),
-        // Cerca l'utile prima nel CE, poi nello SP come fallback
-        utilePerdita: findValueInSheet(incomeStatement, ["utile (perdita) dell'esercizio", "risultato dell'esercizio"], yearCols) || findValueInSheet(balanceSheet, ["utile (perdita) dell'esercizio"], yearCols),
-        totaleAttivo: findValueInSheet(balanceSheet, ["totale attivo"], yearCols),
-        patrimonioNetto: findValueInSheet(balanceSheet, ["patrimonio netto"], yearCols),
-        debitiTotali: findValueInSheet(balanceSheet, ["debiti"], yearCols),
-        costiProduzione: findValueInSheet(incomeStatement, ["costi della produzione"], yearCols),
-        ammortamenti: findValueInSheet(incomeStatement, ["ammortamenti e svalutazioni"], yearCols),
-        oneriFinanziari: findValueInSheet(incomeStatement, ["interessi e altri oneri finanziari"], yearCols),
-        attivoCircolante: findValueInSheet(balanceSheet, ["attivo circolante"], yearCols),
-        debitiBreveTermine: findValueInSheet(balanceSheet, ["debiti esigibili entro l'esercizio successivo"], yearCols),
-        creditiClienti: findValueInSheet(balanceSheet, ["crediti verso clienti"], yearCols),
-        rimanenze: findValueInSheet(balanceSheet, ["rimanenze"], yearCols),
-        disponibilitaLiquide: findValueInSheet(balanceSheet, ["disponibilità liquide"], yearCols),
+        fatturato: findValueInSheet(incomeStatementData, ["ricavi delle vendite", "valore della produzione"]),
+        utilePerdita: findValueInSheet(balanceSheetData, ["utile (perdita) dell'esercizio", "risultato dell'esercizio"]),
+        totaleAttivo: findValueInSheet(balanceSheetData, ["totale attivo"]),
+        patrimonioNetto: findValueInSheet(balanceSheetData, ["patrimonio netto"]),
+        debitiTotali: findValueInSheet(balanceSheetData, ["debiti"]),
+        costiProduzione: findValueInSheet(incomeStatementData, ["costi della produzione"]),
+        ammortamenti: findValueInSheet(incomeStatementData, ["ammortamenti e svalutazioni"]),
+        oneriFinanziari: findValueInSheet(incomeStatementData, ["interessi e altri oneri finanziari"]),
+        attivoCircolante: findValueInSheet(balanceSheetData, ["attivo circolante"]),
+        debitiBreveTermine: findValueInSheet(balanceSheetData, ["debiti esigibili entro l'esercizio successivo"]),
+        creditiClienti: findValueInSheet(balanceSheetData, ["crediti verso clienti"]),
+        rimanenze: findValueInSheet(balanceSheetData, ["rimanenze"]),
+        disponibilitaLiquide: findValueInSheet(balanceSheetData, ["disponibilità liquide"]),
     };
 
     const dataForPrompt = `
