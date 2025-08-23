@@ -1,13 +1,14 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 6.0 (ESTRAZIONE POTENZIATA): Utilizza una lista di diciture molto più ampia.
-// - Aumenta drasticamente l'affidabilità dell'estrazione dei dati.
-// - Mantiene la logica di ricerca dinamica dei fogli.
+// VERSIONE 7.0 (ROBUSTA): Implementa logiche di parsing e ricerca dati avanzate.
+// - Identifica dinamicamente le colonne degli anni per un'estrazione affidabile.
+// - Utilizza una funzione di parsing dei numeri potenziata.
+// - Cerca le descrizioni delle metriche in un range di colonne più ampio.
+// - Cerca l'utile prima nel Conto Economico.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import xlsx from 'xlsx';
 
-// Inizializzazione client Supabase e OpenAI
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -18,66 +19,113 @@ const openai = new OpenAI({
 });
 
 /**
- * Funzione di utilità per cercare un valore finanziario (anno corrente e precedente).
+ * Funzione di parsing potenziata per gestire vari formati numerici.
+ * @param {any} val - Il valore della cella.
+ * @returns {number|null}
+ */
+const parseValue = (val) => {
+    if (val === null || val === undefined || String(val).trim() === '') return null;
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') {
+        let cleanVal = val.trim();
+        const isNegative = cleanVal.startsWith('(') && cleanVal.endsWith(')');
+        if (isNegative) {
+            cleanVal = '-' + cleanVal.substring(1, cleanVal.length - 1);
+        }
+        // Gestisce sia il punto come separatore delle migliaia che la virgola
+        cleanVal = cleanVal.replace(/\./g, '').replace(',', '.');
+        // Rimuove caratteri non numerici, preservando il punto decimale e il segno meno
+        cleanVal = cleanVal.replace(/[^0-9.-]/g, '');
+        const num = parseFloat(cleanVal);
+        return isNaN(num) ? null : num;
+    }
+    return null;
+};
+
+/**
+ * Trova le colonne dell'anno corrente e precedente in un foglio di calcolo.
  * @param {Array<Array<any>>} sheetData - I dati del foglio.
- * @param {string[]} searchTexts - Un array di possibili diciture da cercare.
+ * @returns {{ currentYearCol: number, previousYearCol: number }}
+ */
+const findYearColumns = (sheetData) => {
+    const yearRegex = /^(20\d{2})$/;
+    let years = [];
+    for (let i = 0; i < Math.min(sheetData.length, 15); i++) {
+        const row = sheetData[i];
+        for (let j = 0; j < row.length; j++) {
+            const cell = String(row[j]).trim();
+            if (yearRegex.test(cell)) {
+                years.push({ year: parseInt(cell, 10), col: j });
+            }
+        }
+        if (years.length >= 2) break;
+    }
+    if (years.length < 2) return { currentYearCol: 3, previousYearCol: 4 }; // Fallback
+    
+    years.sort((a, b) => b.year - a.year);
+    return { currentYearCol: years[0].col, previousYearCol: years[1].col };
+};
+
+/**
+ * Funzione di ricerca potenziata che usa le colonne degli anni trovate dinamicamente.
+ * @param {Array<Array<any>>} sheetData - I dati del foglio.
+ * @param {string[]} searchTexts - Array di possibili diciture.
+ * @param {{ currentYearCol: number, previousYearCol: number }} yearCols - Gli indici delle colonne degli anni.
  * @returns {{ currentYear: number|null, previousYear: number|null }}
  */
-const findValueInSheet = (sheetData, searchTexts) => {
+const findValueInSheet = (sheetData, searchTexts, yearCols) => {
     const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
     
     for (const row of sheetData) {
-        const description = String(row[2] || row[1] || '').toLowerCase().trim();
-        if (normalizedSearchTexts.some(searchText => description.includes(searchText))) {
-            const rawCurrent = row[3];
-            const rawPrevious = row[4];
-            const parseValue = (val) => {
-                if (val === null || val === undefined) return null;
-                if (typeof val === 'number') return val;
-                if (typeof val === 'string') {
-                    return parseFloat(val.replace(/\./g, '').replace(',', '.')) || null;
-                }
-                return null;
-            };
-            return { currentYear: parseValue(rawCurrent), previousYear: parseValue(rawPrevious) };
+        // Cerca la descrizione nelle prime 4 colonne per maggiore flessibilità
+        for (let i = 0; i < 4; i++) {
+            const description = String(row[i] || '').toLowerCase().trim();
+            if (normalizedSearchTexts.some(searchText => description.includes(searchText))) {
+                const rawCurrent = row[yearCols.currentYearCol];
+                const rawPrevious = row[yearCols.previousYearCol];
+                return { currentYear: parseValue(rawCurrent), previousYear: parseValue(rawPrevious) };
+            }
         }
     }
     return { currentYear: null, previousYear: null };
 };
 
 /**
- * Funzione di utilità per cercare un singolo valore testuale (es. Codice ATECO).
+ * Funzione di ricerca per valori testuali potenziata.
  * @param {Array<Array<any>>} sheetData - I dati del foglio.
- * @param {string[]} searchTexts - Un array di possibili diciture da cercare.
+ * @param {string[]} searchTexts - Array di possibili diciture.
  * @returns {string|null}
  */
 const findSimpleValue = (sheetData, searchTexts) => {
     const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
     for (const row of sheetData) {
-        const description = String(row[2] || row[1] || '').toLowerCase().trim();
-        if (normalizedSearchTexts.some(searchText => description.includes(searchText))) {
-            return row[3] || null;
+        for (let i = 0; i < 4; i++) {
+            const description = String(row[i] || '').toLowerCase().trim();
+            if (normalizedSearchTexts.some(searchText => description.includes(searchText))) {
+                // Ritorna il primo valore non vuoto nelle colonne successive
+                for (let j = i + 1; j < row.length; j++) {
+                    if (row[j]) return String(row[j]);
+                }
+            }
         }
     }
     return null;
 };
 
 /**
- * Trova un foglio di calcolo per nome o contenuto.
+ * Trova un foglio di calcolo per nome o contenuto, cercando in più righe.
  * @param {object} workbook - L'oggetto workbook di SheetJS.
  * @param {string[]} keywords - Parole chiave da cercare.
- * @returns {Array<Array<any>>|null} I dati del foglio trovato o null.
+ * @returns {Array<Array<any>>|null}
  */
 const findSheetByKeywords = (workbook, keywords) => {
     const normalizedKeywords = keywords.map(k => k.toLowerCase());
     for (const sheetName of workbook.SheetNames) {
         if (normalizedKeywords.some(keyword => sheetName.toLowerCase().includes(keyword))) {
-            const sheet = workbook.Sheets[sheetName];
-            return xlsx.utils.sheet_to_json(sheet, { header: 1 });
+            return xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
         }
-        const sheet = workbook.Sheets[sheetName];
-        const sheetData = xlsx.utils.sheet_to_json(sheet, { header: 1 });
-        const contentToCheck = JSON.stringify(sheetData.slice(0, 10)).toLowerCase();
+        const sheetData = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
+        const contentToCheck = JSON.stringify(sheetData.slice(0, 20)).toLowerCase(); // Cerca nelle prime 20 righe
         if (normalizedKeywords.some(keyword => contentToCheck.includes(keyword))) {
             return sheetData;
         }
@@ -99,51 +147,35 @@ export default async function handler(req, res) {
   console.log(`[${sessionId}] Avvio analisi XBRL.`);
 
   try {
-    // 1. Recupera la sessione e il percorso del file
     const { data: session, error: sessionError } = await supabase
       .from('checkup_sessions')
       .select('*, companies(*)')
       .eq('id', sessionId)
       .single();
 
-    if (sessionError || !session) {
-      console.error(`[${sessionId}] Errore recupero sessione:`, sessionError);
-      throw new Error('Sessione non trovata.');
-    }
-    
-    const filePath = session.file_path;
-    if (!filePath) {
-        throw new Error('Percorso del file non trovato nella sessione.');
-    }
+    if (sessionError || !session) throw new Error('Sessione non trovata.');
+    if (!session.file_path) throw new Error('Percorso del file non trovato.');
 
-    // 2. Scarica il file da Supabase Storage
-    console.log(`[${sessionId}] Download del file: ${filePath}`);
     const { data: fileBlob, error: downloadError } = await supabase.storage
       .from('checkup-documents')
-      .download(filePath);
+      .download(session.file_path);
 
-    if (downloadError) {
-      console.error(`[${sessionId}] Errore download file:`, downloadError);
-      throw new Error('Impossibile scaricare il file di bilancio.');
-    }
+    if (downloadError) throw new Error('Impossibile scaricare il file di bilancio.');
     
     const fileBuffer = Buffer.from(await fileBlob.arrayBuffer());
-
-    // 3. Parsa il file e trova i fogli dinamicamente
-    console.log(`[${sessionId}] Parsing del file Excel e ricerca dinamica dei fogli...`);
     const workbook = xlsx.read(fileBuffer);
     
     const companyInfoSheet = findSheetByKeywords(workbook, ["t0000", "informazioni generali", "anagrafica"]);
     const balanceSheet = findSheetByKeywords(workbook, ["t0002", "stato patrimoniale"]);
     const incomeStatement = findSheetByKeywords(workbook, ["t0006", "conto economico"]);
 
-    if (!companyInfoSheet) throw new Error("Impossibile trovare il foglio con le informazioni aziendali.");
-    if (!balanceSheet) throw new Error("Impossibile trovare il foglio dello Stato Patrimoniale.");
-    if (!incomeStatement) throw new Error("Impossibile trovare il foglio del Conto Economico.");
+    if (!companyInfoSheet) throw new Error("Foglio anagrafica non trovato.");
+    if (!balanceSheet) throw new Error("Stato Patrimoniale non trovato.");
+    if (!incomeStatement) throw new Error("Conto Economico non trovato.");
 
-    // 4. ✅ MIGLIORAMENTO: Usa una lista di diciture molto più ampia per l'estrazione
-    console.log(`[${sessionId}] Mappatura dei dati finanziari con diciture estese.`);
-    
+    // Identifica le colonne degli anni una sola volta
+    const yearCols = findYearColumns(balanceSheet);
+
     const companyNameRow = companyInfoSheet.find(row => String(row[2] || '').toLowerCase().trim().includes('denominazione'));
     const companyName = companyNameRow ? companyNameRow[3] : 'Azienda Analizzata';
 
@@ -157,22 +189,22 @@ export default async function handler(req, res) {
     };
 
     const metrics = {
-        fatturato: findValueInSheet(incomeStatement, ["ricavi delle vendite e delle prestazioni", "a) valore della produzione"]),
-        utilePerdita: findValueInSheet(balanceSheet, ["utile (perdita) dell'esercizio", "risultato dell'esercizio"]),
-        totaleAttivo: findValueInSheet(balanceSheet, ["totale attivo"]),
-        patrimonioNetto: findValueInSheet(balanceSheet, ["totale patrimonio netto (a)", "patrimonio netto", "totale patrimonio netto"]),
-        debitiTotali: findValueInSheet(balanceSheet, ["d) debiti", "totale debiti", "debiti"]),
-        costiProduzione: findValueInSheet(incomeStatement, ["costi della produzione", "b) costi della produzione"]),
-        ammortamenti: findValueInSheet(incomeStatement, ["ammortamenti e svalutazioni", "ammortamenti delle immobilizzazioni"]),
-        oneriFinanziari: findValueInSheet(incomeStatement, ["interessi e altri oneri finanziari", "oneri finanziari"]),
-        attivoCircolante: findValueInSheet(balanceSheet, ["c) attivo circolante", "totale attivo circolante"]),
-        debitiBreveTermine: findValueInSheet(balanceSheet, ["debiti esigibili entro l'esercizio successivo", "debiti a breve termine"]),
-        creditiClienti: findValueInSheet(balanceSheet, ["crediti verso clienti"]),
-        rimanenze: findValueInSheet(balanceSheet, ["rimanenze"]),
-        disponibilitaLiquide: findValueInSheet(balanceSheet, ["disponibilità liquide"]),
+        fatturato: findValueInSheet(incomeStatement, ["ricavi delle vendite", "valore della produzione"], yearCols),
+        // Cerca l'utile prima nel CE, poi nello SP come fallback
+        utilePerdita: findValueInSheet(incomeStatement, ["utile (perdita) dell'esercizio", "risultato dell'esercizio"], yearCols) || findValueInSheet(balanceSheet, ["utile (perdita) dell'esercizio"], yearCols),
+        totaleAttivo: findValueInSheet(balanceSheet, ["totale attivo"], yearCols),
+        patrimonioNetto: findValueInSheet(balanceSheet, ["patrimonio netto"], yearCols),
+        debitiTotali: findValueInSheet(balanceSheet, ["debiti"], yearCols),
+        costiProduzione: findValueInSheet(incomeStatement, ["costi della produzione"], yearCols),
+        ammortamenti: findValueInSheet(incomeStatement, ["ammortamenti e svalutazioni"], yearCols),
+        oneriFinanziari: findValueInSheet(incomeStatement, ["interessi e altri oneri finanziari"], yearCols),
+        attivoCircolante: findValueInSheet(balanceSheet, ["attivo circolante"], yearCols),
+        debitiBreveTermine: findValueInSheet(balanceSheet, ["debiti esigibili entro l'esercizio successivo"], yearCols),
+        creditiClienti: findValueInSheet(balanceSheet, ["crediti verso clienti"], yearCols),
+        rimanenze: findValueInSheet(balanceSheet, ["rimanenze"], yearCols),
+        disponibilitaLiquide: findValueInSheet(balanceSheet, ["disponibilità liquide"], yearCols),
     };
 
-    // 5. Prepara un testo più ricco per il prompt dell'AI
     const dataForPrompt = `
 Dati Aziendali per ${companyName}:
 
@@ -198,62 +230,43 @@ Principali Voci di Stato Patrimoniale (Anno Corrente N / Anno Precedente N-1):
 - Disponibilità Liquide: ${metrics.disponibilitaLiquide.currentYear} / ${metrics.disponibilitaLiquide.previousYear}
 `;
 
-    // 6. Recupera il template del prompt V2
-    console.log(`[${sessionId}] Recupero prompt template 'FINANCIAL_ANALYSIS_V2'`);
     const { data: promptData, error: promptError } = await supabase
       .from('ai_prompts')
       .select('prompt_template')
       .eq('name', 'FINANCIAL_ANALYSIS_V2')
       .single();
 
-    if (promptError || !promptData) {
-      console.error(`[${sessionId}] Errore recupero prompt:`, promptError);
-      throw new Error("Impossibile trovare il template del prompt 'FINANCIAL_ANALYSIS_V2'.");
-    }
+    if (promptError || !promptData) throw new Error("Prompt 'FINANCIAL_ANALYSIS_V2' non trovato.");
 
-    const finalPrompt = `${promptData.prompt_template}\n\nUsa i seguenti dati strutturati per eseguire la tua analisi. Ignora lo STEP 1 (estrazione) e procedi direttamente con calcoli, analisi e generazione JSON.\n\n${dataForPrompt}`;
+    const finalPrompt = `${promptData.prompt_template}\n\n### DATI ESTRATTI DAL BILANCIO ###\n${dataForPrompt}`;
 
-    // 7. Chiama OpenAI (invariato)
-    console.log(`[${sessionId}] Invio richiesta a OpenAI...`);
     const response = await openai.chat.completions.create({
       model: 'gpt-4-turbo',
       messages: [{ role: 'user', content: finalPrompt }],
       response_format: { type: "json_object" },
-      temperature: 0.2,
+      temperature: 0.1,
     });
 
     const analysisResult = JSON.parse(response.choices[0].message.content);
-    console.log(`[${sessionId}] Risposta JSON ricevuta da OpenAI.`);
-
-    // 8. Salva i risultati nel database
+    
     const resultToSave = {
       session_id: sessionId,
-      health_score: analysisResult.health_score || null,
-      key_metrics: analysisResult.key_metrics || null,
-      swot: analysisResult.detailed_swot || null,
-      recommendations: analysisResult.recommendations || null,
-      charts_data: analysisResult.charts_data || null,
-      summary: analysisResult.summary || null,
+      health_score: analysisResult.health_score,
+      key_metrics: analysisResult.key_metrics,
+      swot: analysisResult.detailed_swot,
+      recommendations: analysisResult.recommendations,
+      charts_data: analysisResult.charts_data,
+      summary: analysisResult.summary,
       raw_ai_response: analysisResult,
-      detailed_swot: analysisResult.detailed_swot || null,
-      risk_analysis: analysisResult.risk_analysis || null,
-      pro_features_teaser: analysisResult.pro_features_teaser || null,
+      detailed_swot: analysisResult.detailed_swot,
+      risk_analysis: analysisResult.risk_analysis,
+      pro_features_teaser: analysisResult.pro_features_teaser,
       raw_parsed_data: { metrics, context }
     };
     
-    const { data: savedData, error: saveError } = await supabase
-      .from('analysis_results')
-      .insert(resultToSave)
-      .select();
+    const { error: saveError } = await supabase.from('analysis_results').insert(resultToSave);
+    if (saveError) throw new Error(`Salvataggio fallito: ${saveError.message}`);
 
-    if (saveError) {
-      console.error(`[${sessionId}] Errore salvataggio risultati:`, saveError);
-      throw new Error(`Errore durante il salvataggio dell'analisi: ${saveError.message}`);
-    }
-
-    console.log(`[${sessionId}] Risultati salvati correttamente (ID: ${savedData[0].id})`);
-
-    // 9. Aggiorna lo stato della sessione a 'completed' (invariato)
     await supabase
       .from('checkup_sessions')
       .update({ status: 'completed', completed_at: new Date().toISOString() })
@@ -264,14 +277,12 @@ Principali Voci di Stato Patrimoniale (Anno Corrente N / Anno Precedente N-1):
 
   } catch (error) {
     console.error(`💥 [${sessionId || 'NO_SESSION'}] Errore fatale in analyze-xbrl:`, error.message);
-    
     if (sessionId) {
       await supabase
         .from('checkup_sessions')
         .update({ status: 'failed', error_message: error.message })
         .eq('id', sessionId);
     }
-    
     return res.status(500).json({ error: error.message });
   }
 }
