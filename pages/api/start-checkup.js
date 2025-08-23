@@ -1,7 +1,7 @@
 // /pages/api/start-checkup.js
-// VERSIONE 10.0 (FIX NOMENCLATURA MISTA): Corretti i parametri RPC in base ai log.
-// - get_or_create_user usa i prefissi 'p_'.
-// - get_or_create_company NON usa i prefissi.
+// VERSIONE 12.0 (DEBUG): Bypassa l'autenticazione Outseta per testare il flusso.
+// - Utilizza un utente fittizio per non richiedere un login reale.
+// - Ideale per lo sviluppo e il debug.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -22,18 +22,17 @@ export default async function handler(req, res) {
   let session;
 
   try {
-    // 1) Auth Outseta -> user UUID
-    const outsetaToken = req.headers.authorization?.split(' ')[1];
-    if (!outsetaToken) return res.status(401).json({ error: 'Token mancante.' });
+    // 1) ✅ MODIFICA: Autenticazione Outseta bypassata con un utente fittizio.
+    console.log("[start-checkup] ATTENZIONE: Autenticazione Outseta bypassata per debug.");
+    
+    const outsetaUser = {
+        Uid: 'fittizio-test-user-001',
+        Email: 'test@example.com',
+        FirstName: 'Test',
+        LastName: 'User'
+    };
 
-    const outsetaResponse = await fetch(`https://pmiscout.outseta.com/api/v1/profile`, {
-      headers: { Authorization: `Bearer ${outsetaToken}` }
-    });
-    if (!outsetaResponse.ok) return res.status(401).json({ error: 'Token non valido.' });
-
-    const outsetaUser = await outsetaResponse.json();
-
-    // Questa funzione richiede i prefissi 'p_'
+    // La chiamata a Supabase ora usa sempre l'utente fittizio
     const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', {
       p_email: outsetaUser.Email,
       p_first_name: outsetaUser.FirstName || '',
@@ -45,7 +44,7 @@ export default async function handler(req, res) {
       throw new Error("Impossibile creare o trovare l'utente nel database.");
     }
 
-    // 2) Parse form robusto
+    // 2) Parse form robusto (invariato)
     const form = formidable();
     const [fields, files] = await new Promise((resolve, reject) => {
       form.parse(req, (err, flds, fls) => (err ? reject(err) : resolve([flds, fls])));
@@ -58,34 +57,26 @@ export default async function handler(req, res) {
       (Array.isArray(fields?.companyName) ? fields.companyName[0] : fields?.companyName) || '';
     const companyName = String(companyNameRaw).trim() || 'Azienda non specificata';
 
-    // 3) ✅ FIX CHIAVE: Questa funzione NON richiede i prefissi, come indicato dal log.
-    const { data: company, error: companyError } = await supabase.rpc('get_or_create_company', {
-      user_id: userId,
-      company_name: companyName
-    });
-    if (companyError || !company) {
-      console.error(`[start-checkup] Errore RPC 'get_or_create_company':`, companyError);
-      throw new Error("Impossibile creare o trovare l'azienda nel database.");
-    }
-    const companyId = company.id ?? company.company_id;
-    if (!companyId) throw new Error("RPC company: risposta senza id");
-
-    // 4) Crea sessione
+    // 3) Rimuoviamo la chiamata a 'get_or_create_company' e creiamo la sessione direttamente.
     const originalName = fileInput.originalFilename || 'file';
     const { data: createdSession, error: sessionError } = await supabase
       .from('checkup_sessions')
       .insert({
         user_id: userId,
-        company_id: companyId,
+        company_name: companyName, // Salviamo il nome direttamente qui
         status: 'processing',
         file_name: originalName
       })
       .select()
       .single();
-    if (sessionError) throw sessionError;
+      
+    if (sessionError) {
+        console.error(`[start-checkup] Errore creazione sessione:`, sessionError);
+        throw sessionError;
+    }
     session = createdSession;
 
-    // 5) Upload su Storage
+    // 4) Upload su Storage (invariato)
     const filePathSafeUser = String(userId);
     const filePath = `${filePathSafeUser}/${session.id}/${originalName}`;
     const fileBuffer = fs.readFileSync(fileInput.filepath);
@@ -98,7 +89,7 @@ export default async function handler(req, res) {
 
     await supabase.from('checkup_sessions').update({ file_path: filePath }).eq('id', session.id);
 
-    // 6) Trigger analisi asincrona
+    // 5) Trigger analisi asincrona (invariato)
     console.log(`[${session.id}] Sessione creata. Avvio analisi XBRL...`);
     const host = req.headers.host;
     const protocol = req.headers['x-forwarded-proto'] || (host?.includes('localhost') ? 'http' : 'https');
@@ -108,7 +99,7 @@ export default async function handler(req, res) {
       console.error(`[${session.id}] Errore avvio analisi:`, e?.message || e)
     );
 
-    // 7) Risposta immediata
+    // 6) Risposta immediata (invariato)
     console.log(`✅ [${session.id}] Setup completato, restituisco sessionId`);
     return res.status(200).json({ success: true, sessionId: session.id });
   } catch (error) {
