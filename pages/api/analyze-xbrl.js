@@ -1,8 +1,7 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 2.0 (FIX DEFINITIVO): Sostituita la logica ZIP con un parser Excel (SheetJS/xlsx).
-// - Risolve l'errore 'Can't find end of central directory'.
-// - Utilizza la libreria 'xlsx' per leggere direttamente i fogli di calcolo dal file .xls.
-// - Rende il processo più robusto e compatibile con vari formati Excel.
+// VERSIONE 2.1 (FIX SCHEMA): Rimosso 'company_id' dal salvataggio dei risultati.
+// - Risolve l'errore 'Could not find the company_id column of analysis_results'.
+// - Allinea il codice allo schema reale del database.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -100,7 +99,7 @@ export default async function handler(req, res) {
     
     const fileBuffer = Buffer.from(await fileBlob.arrayBuffer());
 
-    // 3. ✅ NUOVA LOGICA: Parsa il file Excel e estrai i fogli necessari
+    // 3. Parsa il file Excel e estrai i fogli necessari
     console.log(`[${sessionId}] Parsing del file Excel...`);
     const workbook = xlsx.read(fileBuffer);
     
@@ -117,7 +116,6 @@ export default async function handler(req, res) {
         const sheet = workbook.Sheets[sheetName];
         if (!sheet) throw new Error(`Foglio di calcolo richiesto non trovato nel file: ${sheetName}`);
         
-        // Converte il foglio in un formato JSON (array di array)
         sheetContents[key] = xlsx.utils.sheet_to_json(sheet, { header: 1 });
     }
 
@@ -180,11 +178,11 @@ Metriche Chiave (Anno Corrente N / Anno Precedente N-1):
     const analysisResult = JSON.parse(response.choices[0].message.content);
     console.log(`[${sessionId}] Risposta JSON ricevuta da OpenAI.`);
 
-    // 8. Salva i risultati nel database (invariato)
+    // 8. Salva i risultati nel database
+    // ✅ FIX: Rimosso 'company_id' perché non esiste nella tabella 'analysis_results'.
     const resultToSave = {
       session_id: sessionId,
       user_id: session.user_id,
-      company_id: session.company_id,
       raw_result: analysisResult,
       prompt_version: 'FINANCIAL_ANALYSIS_V2',
     };
