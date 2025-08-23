@@ -1,7 +1,7 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 3.0: Arricchimento dei dati estratti per un'analisi più profonda.
-// - Aggiunta l'estrazione di nuove metriche da Conto Economico e Stato Patrimoniale.
-// - Aggiornato il payload di dati inviato all'AI.
+// VERSIONE 3.3 (ROBUSTA): Migliorata la funzione di estrazione dati.
+// - La funzione `findValueInSheet` ora accetta un array di possibili diciture per ogni metrica.
+// - Aumenta drasticamente l'affidabilità dell'estrazione dei dati.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -18,18 +18,19 @@ const openai = new OpenAI({
 });
 
 /**
- * Funzione di utilità per cercare un valore in dati estratti da un foglio di calcolo.
+ * ✅ MIGLIORAMENTO: La funzione ora accetta un array di possibili testi da cercare.
  * @param {Array<Array<any>>} sheetData - I dati del foglio come array di array.
- * @param {string} searchText - Il testo da cercare.
+ * @param {string[]} searchTexts - Un array di possibili diciture da cercare.
  * @returns {{ currentYear: number|null, previousYear: number|null }} Un oggetto con i valori.
  */
-const findValueInSheet = (sheetData, searchText) => {
-    const normalizedSearchText = searchText.toLowerCase().trim();
+const findValueInSheet = (sheetData, searchTexts) => {
+    const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
     
     for (const row of sheetData) {
         const description = String(row[2] || row[1] || '').toLowerCase().trim();
 
-        if (description.includes(normalizedSearchText)) {
+        // Controlla se la descrizione include una delle diciture cercate
+        if (normalizedSearchTexts.some(searchText => description.includes(searchText))) {
             const rawCurrent = row[3];
             const rawPrevious = row[4];
 
@@ -115,34 +116,29 @@ export default async function handler(req, res) {
         sheetContents[key] = xlsx.utils.sheet_to_json(sheet, { header: 1 });
     }
 
-    // 4. ✅ MIGLIORAMENTO: Estrai un set di dati più ricco
+    // 4. ✅ MIGLIORAMENTO: Usa array di diciture per un'estrazione più robusta
     console.log(`[${sessionId}] Mappatura dei dati finanziari estesi.`);
     
     const companyNameRow = sheetContents.companyInfo.find(row => String(row[2] || '').toLowerCase().trim().includes('denominazione'));
     const companyName = companyNameRow ? companyNameRow[3] : 'Azienda Analizzata';
 
     const metrics = {
-        // Metriche di base
-        fatturato: findValueInSheet(sheetContents.incomeStatement, "ricavi delle vendite e delle prestazioni"),
-        utilePerdita: findValueInSheet(sheetContents.balanceSheet, "utile (perdita) dell'esercizio"),
-        totaleAttivo: findValueInSheet(sheetContents.balanceSheet, "totale attivo"),
-        patrimonioNetto: findValueInSheet(sheetContents.balanceSheet, "totale patrimonio netto (a)"),
-        debitiTotali: findValueInSheet(sheetContents.balanceSheet, "d) debiti"),
-        
-        // Nuove metriche per analisi di marginalità
-        costiProduzione: findValueInSheet(sheetContents.incomeStatement, "costi della produzione"),
-        ammortamenti: findValueInSheet(sheetContents.incomeStatement, "ammortamenti e svalutazioni"),
-        oneriFinanziari: findValueInSheet(sheetContents.incomeStatement, "interessi e altri oneri finanziari"),
-
-        // Nuove metriche per analisi di liquidità e ciclo del circolante
-        attivoCircolante: findValueInSheet(sheetContents.balanceSheet, "c) attivo circolante"),
-        debitiBreveTermine: findValueInSheet(sheetContents.balanceSheet, "debiti esigibili entro l'esercizio successivo"),
-        creditiClienti: findValueInSheet(sheetContents.balanceSheet, "crediti verso clienti"),
-        rimanenze: findValueInSheet(sheetContents.balanceSheet, "rimanenze"),
-        disponibilitaLiquide: findValueInSheet(sheetContents.balanceSheet, "disponibilità liquide"),
+        fatturato: findValueInSheet(sheetContents.incomeStatement, ["ricavi delle vendite e delle prestazioni"]),
+        utilePerdita: findValueInSheet(sheetContents.balanceSheet, ["utile (perdita) dell'esercizio"]),
+        totaleAttivo: findValueInSheet(sheetContents.balanceSheet, ["totale attivo"]),
+        patrimonioNetto: findValueInSheet(sheetContents.balanceSheet, ["totale patrimonio netto (a)", "patrimonio netto"]),
+        debitiTotali: findValueInSheet(sheetContents.balanceSheet, ["d) debiti", "totale debiti"]),
+        costiProduzione: findValueInSheet(sheetContents.incomeStatement, ["costi della produzione"]),
+        ammortamenti: findValueInSheet(sheetContents.incomeStatement, ["ammortamenti e svalutazioni"]),
+        oneriFinanziari: findValueInSheet(sheetContents.incomeStatement, ["interessi e altri oneri finanziari"]),
+        attivoCircolante: findValueInSheet(sheetContents.balanceSheet, ["c) attivo circolante", "totale attivo circolante"]),
+        debitiBreveTermine: findValueInSheet(sheetContents.balanceSheet, ["debiti esigibili entro l'esercizio successivo"]),
+        creditiClienti: findValueInSheet(sheetContents.balanceSheet, ["crediti verso clienti"]),
+        rimanenze: findValueInSheet(sheetContents.balanceSheet, ["rimanenze"]),
+        disponibilitaLiquide: findValueInSheet(sheetContents.balanceSheet, ["disponibilità liquide"]),
     };
 
-    // 5. ✅ MIGLIORAMENTO: Prepara un testo più ricco per il prompt dell'AI
+    // 5. Prepara un testo più ricco per il prompt dell'AI
     const dataForPrompt = `
 Dati Aziendali per ${companyName}:
 
@@ -164,7 +160,7 @@ Principali Voci di Stato Patrimoniale (Anno Corrente N / Anno Precedente N-1):
 - Disponibilità Liquide: ${metrics.disponibilitaLiquide.currentYear} / ${metrics.disponibilitaLiquide.previousYear}
 `;
 
-    // 6. Recupera il template del prompt da Supabase (invariato)
+    // 6. Recupera il template del prompt V2
     console.log(`[${sessionId}] Recupero prompt template 'FINANCIAL_ANALYSIS_V2'`);
     const { data: promptData, error: promptError } = await supabase
       .from('ai_prompts')
@@ -200,7 +196,7 @@ Principali Voci di Stato Patrimoniale (Anno Corrente N / Anno Precedente N-1):
       recommendations: analysisResult.recommendations || null,
       charts_data: analysisResult.charts_data || null,
       summary: analysisResult.summary || null,
-      raw_ai_response: analysisResult, // Nome colonna corretto
+      raw_ai_response: analysisResult,
       detailed_swot: analysisResult.detailed_swot || null,
       risk_analysis: analysisResult.risk_analysis || null,
       pro_features_teaser: analysisResult.pro_features_teaser || null,
