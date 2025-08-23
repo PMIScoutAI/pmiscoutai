@@ -1,6 +1,7 @@
 // /pages/api/start-checkup.js
-// VERSIONE 9.0 (FIX COERENZA): Applicati i prefissi 'p_' a entrambe le chiamate RPC.
-// - Risolve l'errore PGRST202 rendendo coerente la nomenclatura dei parametri.
+// VERSIONE 10.0 (FIX NOMENCLATURA MISTA): Corretti i parametri RPC in base ai log.
+// - get_or_create_user usa i prefissi 'p_'.
+// - get_or_create_company NON usa i prefissi.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -32,6 +33,7 @@ export default async function handler(req, res) {
 
     const outsetaUser = await outsetaResponse.json();
 
+    // Questa funzione richiede i prefissi 'p_'
     const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', {
       p_email: outsetaUser.Email,
       p_first_name: outsetaUser.FirstName || '',
@@ -56,10 +58,10 @@ export default async function handler(req, res) {
       (Array.isArray(fields?.companyName) ? fields.companyName[0] : fields?.companyName) || '';
     const companyName = String(companyNameRaw).trim() || 'Azienda non specificata';
 
-    // 3) ✅ FIX CHIAVE: Aggiunti i prefissi 'p_' anche qui per coerenza.
+    // 3) ✅ FIX CHIAVE: Questa funzione NON richiede i prefissi, come indicato dal log.
     const { data: company, error: companyError } = await supabase.rpc('get_or_create_company', {
-      p_user_id: userId,
-      p_company_name: companyName
+      user_id: userId,
+      company_name: companyName
     });
     if (companyError || !company) {
       console.error(`[start-checkup] Errore RPC 'get_or_create_company':`, companyError);
