@@ -1,7 +1,7 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 5.0 (GENERICA): Rimuove la dipendenza da nomi di foglio fissi.
-// - Il codice ora scansiona tutti i fogli per identificare Stato Patrimoniale e Conto Economico in base al loro contenuto.
-// - Rende l'analisi compatibile con diversi formati di file XBRL.
+// VERSIONE 6.0 (ESTRAZIONE POTENZIATA): Utilizza una lista di diciture molto più ampia.
+// - Aumenta drasticamente l'affidabilità dell'estrazione dei dati.
+// - Mantiene la logica di ricerca dinamica dei fogli.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -63,20 +63,18 @@ const findSimpleValue = (sheetData, searchTexts) => {
 };
 
 /**
- * ✅ NUOVA FUNZIONE: Trova un foglio di calcolo per nome o contenuto.
+ * Trova un foglio di calcolo per nome o contenuto.
  * @param {object} workbook - L'oggetto workbook di SheetJS.
- * @param {string[]} keywords - Parole chiave da cercare nel nome del foglio o nel suo contenuto.
+ * @param {string[]} keywords - Parole chiave da cercare.
  * @returns {Array<Array<any>>|null} I dati del foglio trovato o null.
  */
 const findSheetByKeywords = (workbook, keywords) => {
     const normalizedKeywords = keywords.map(k => k.toLowerCase());
     for (const sheetName of workbook.SheetNames) {
-        // Cerca prima per nome del foglio
         if (normalizedKeywords.some(keyword => sheetName.toLowerCase().includes(keyword))) {
             const sheet = workbook.Sheets[sheetName];
             return xlsx.utils.sheet_to_json(sheet, { header: 1 });
         }
-        // Se non trovato, cerca nel contenuto delle prime 10 righe
         const sheet = workbook.Sheets[sheetName];
         const sheetData = xlsx.utils.sheet_to_json(sheet, { header: 1 });
         const contentToCheck = JSON.stringify(sheetData.slice(0, 10)).toLowerCase();
@@ -84,7 +82,7 @@ const findSheetByKeywords = (workbook, keywords) => {
             return sheetData;
         }
     }
-    return null; // Se nessun foglio corrisponde
+    return null;
 };
 
 
@@ -131,11 +129,11 @@ export default async function handler(req, res) {
     
     const fileBuffer = Buffer.from(await fileBlob.arrayBuffer());
 
-    // 3. ✅ NUOVA LOGICA: Parsa il file e trova i fogli dinamicamente
+    // 3. Parsa il file e trova i fogli dinamicamente
     console.log(`[${sessionId}] Parsing del file Excel e ricerca dinamica dei fogli...`);
     const workbook = xlsx.read(fileBuffer);
     
-    const companyInfoSheet = findSheetByKeywords(workbook, ["t0000", "informazioni generali"]);
+    const companyInfoSheet = findSheetByKeywords(workbook, ["t0000", "informazioni generali", "anagrafica"]);
     const balanceSheet = findSheetByKeywords(workbook, ["t0002", "stato patrimoniale"]);
     const incomeStatement = findSheetByKeywords(workbook, ["t0006", "conto economico"]);
 
@@ -143,8 +141,8 @@ export default async function handler(req, res) {
     if (!balanceSheet) throw new Error("Impossibile trovare il foglio dello Stato Patrimoniale.");
     if (!incomeStatement) throw new Error("Impossibile trovare il foglio del Conto Economico.");
 
-    // 4. Estrai i dati finanziari e di contesto
-    console.log(`[${sessionId}] Mappatura dei dati finanziari e di contesto.`);
+    // 4. ✅ MIGLIORAMENTO: Usa una lista di diciture molto più ampia per l'estrazione
+    console.log(`[${sessionId}] Mappatura dei dati finanziari con diciture estese.`);
     
     const companyNameRow = companyInfoSheet.find(row => String(row[2] || '').toLowerCase().trim().includes('denominazione'));
     const companyName = companyNameRow ? companyNameRow[3] : 'Azienda Analizzata';
@@ -159,16 +157,16 @@ export default async function handler(req, res) {
     };
 
     const metrics = {
-        fatturato: findValueInSheet(incomeStatement, ["ricavi delle vendite e delle prestazioni"]),
-        utilePerdita: findValueInSheet(balanceSheet, ["utile (perdita) dell'esercizio"]),
+        fatturato: findValueInSheet(incomeStatement, ["ricavi delle vendite e delle prestazioni", "a) valore della produzione"]),
+        utilePerdita: findValueInSheet(balanceSheet, ["utile (perdita) dell'esercizio", "risultato dell'esercizio"]),
         totaleAttivo: findValueInSheet(balanceSheet, ["totale attivo"]),
-        patrimonioNetto: findValueInSheet(balanceSheet, ["totale patrimonio netto (a)", "patrimonio netto"]),
-        debitiTotali: findValueInSheet(balanceSheet, ["d) debiti", "totale debiti"]),
-        costiProduzione: findValueInSheet(incomeStatement, ["costi della produzione"]),
-        ammortamenti: findValueInSheet(incomeStatement, ["ammortamenti e svalutazioni"]),
-        oneriFinanziari: findValueInSheet(incomeStatement, ["interessi e altri oneri finanziari"]),
+        patrimonioNetto: findValueInSheet(balanceSheet, ["totale patrimonio netto (a)", "patrimonio netto", "totale patrimonio netto"]),
+        debitiTotali: findValueInSheet(balanceSheet, ["d) debiti", "totale debiti", "debiti"]),
+        costiProduzione: findValueInSheet(incomeStatement, ["costi della produzione", "b) costi della produzione"]),
+        ammortamenti: findValueInSheet(incomeStatement, ["ammortamenti e svalutazioni", "ammortamenti delle immobilizzazioni"]),
+        oneriFinanziari: findValueInSheet(incomeStatement, ["interessi e altri oneri finanziari", "oneri finanziari"]),
         attivoCircolante: findValueInSheet(balanceSheet, ["c) attivo circolante", "totale attivo circolante"]),
-        debitiBreveTermine: findValueInSheet(balanceSheet, ["debiti esigibili entro l'esercizio successivo"]),
+        debitiBreveTermine: findValueInSheet(balanceSheet, ["debiti esigibili entro l'esercizio successivo", "debiti a breve termine"]),
         creditiClienti: findValueInSheet(balanceSheet, ["crediti verso clienti"]),
         rimanenze: findValueInSheet(balanceSheet, ["rimanenze"]),
         disponibilitaLiquide: findValueInSheet(balanceSheet, ["disponibilità liquide"]),
@@ -240,7 +238,7 @@ Principali Voci di Stato Patrimoniale (Anno Corrente N / Anno Precedente N-1):
       detailed_swot: analysisResult.detailed_swot || null,
       risk_analysis: analysisResult.risk_analysis || null,
       pro_features_teaser: analysisResult.pro_features_teaser || null,
-      raw_parsed_data: { metrics, context } // Salviamo anche il contesto
+      raw_parsed_data: { metrics, context }
     };
     
     const { data: savedData, error: saveError } = await supabase
