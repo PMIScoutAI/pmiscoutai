@@ -1,7 +1,7 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 2.4 (FIX SCHEMA DEFINITIVO): Allineato l'oggetto di salvataggio allo schema esatto del DB.
-// - Risolve l'errore 'Could not find the raw_result column'.
-// - Popola correttamente tutte le colonne della tabella 'analysis_results'.
+// VERSIONE 3.0: Arricchimento dei dati estratti per un'analisi più profonda.
+// - Aggiunta l'estrazione di nuove metriche da Conto Economico e Stato Patrimoniale.
+// - Aggiornato il payload di dati inviato all'AI.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -115,36 +115,53 @@ export default async function handler(req, res) {
         sheetContents[key] = xlsx.utils.sheet_to_json(sheet, { header: 1 });
     }
 
-    // 4. Estrai i dati finanziari chiave dai fogli
-    console.log(`[${sessionId}] Mappatura dei dati finanziari.`);
+    // 4. ✅ MIGLIORAMENTO: Estrai un set di dati più ricco
+    console.log(`[${sessionId}] Mappatura dei dati finanziari estesi.`);
     
     const companyNameRow = sheetContents.companyInfo.find(row => String(row[2] || '').toLowerCase().trim().includes('denominazione'));
     const companyName = companyNameRow ? companyNameRow[3] : 'Azienda Analizzata';
 
     const metrics = {
+        // Metriche di base
         fatturato: findValueInSheet(sheetContents.incomeStatement, "ricavi delle vendite e delle prestazioni"),
         utilePerdita: findValueInSheet(sheetContents.balanceSheet, "utile (perdita) dell'esercizio"),
         totaleAttivo: findValueInSheet(sheetContents.balanceSheet, "totale attivo"),
         patrimonioNetto: findValueInSheet(sheetContents.balanceSheet, "totale patrimonio netto (a)"),
         debitiTotali: findValueInSheet(sheetContents.balanceSheet, "d) debiti"),
+        
+        // Nuove metriche per analisi di marginalità
+        costiProduzione: findValueInSheet(sheetContents.incomeStatement, "costi della produzione"),
+        ammortamenti: findValueInSheet(sheetContents.incomeStatement, "ammortamenti e svalutazioni"),
+        oneriFinanziari: findValueInSheet(sheetContents.incomeStatement, "interessi e altri oneri finanziari"),
+
+        // Nuove metriche per analisi di liquidità e ciclo del circolante
         attivoCircolante: findValueInSheet(sheetContents.balanceSheet, "c) attivo circolante"),
         debitiBreveTermine: findValueInSheet(sheetContents.balanceSheet, "debiti esigibili entro l'esercizio successivo"),
+        creditiClienti: findValueInSheet(sheetContents.balanceSheet, "crediti verso clienti"),
+        rimanenze: findValueInSheet(sheetContents.balanceSheet, "rimanenze"),
+        disponibilitaLiquide: findValueInSheet(sheetContents.balanceSheet, "disponibilità liquide"),
     };
 
-    // 5. Prepara il testo strutturato per il prompt dell'AI (invariato)
+    // 5. ✅ MIGLIORAMENTO: Prepara un testo più ricco per il prompt dell'AI
     const dataForPrompt = `
 Dati Aziendali per ${companyName}:
-- Anno Corrente (N): ${metrics.fatturato.currentYear !== null ? metrics.fatturato.currentYear.toLocaleString('it-IT') : 'N/D'} €
-- Anno Precedente (N-1): ${metrics.fatturato.previousYear !== null ? metrics.fatturato.previousYear.toLocaleString('it-IT') : 'N/D'} €
 
-Metriche Chiave (Anno Corrente N / Anno Precedente N-1):
+Principali Voci di Conto Economico (Anno Corrente N / Anno Precedente N-1):
 - Fatturato: ${metrics.fatturato.currentYear} / ${metrics.fatturato.previousYear}
+- Costi della Produzione: ${metrics.costiProduzione.currentYear} / ${metrics.costiProduzione.previousYear}
+- Ammortamenti e Svalutazioni: ${metrics.ammortamenti.currentYear} / ${metrics.ammortamenti.previousYear}
+- Oneri Finanziari: ${metrics.oneriFinanziari.currentYear} / ${metrics.oneriFinanziari.previousYear}
 - Utile/(Perdita) d'esercizio: ${metrics.utilePerdita.currentYear} / ${metrics.utilePerdita.previousYear}
+
+Principali Voci di Stato Patrimoniale (Anno Corrente N / Anno Precedente N-1):
 - Totale Attivo: ${metrics.totaleAttivo.currentYear} / ${metrics.totaleAttivo.previousYear}
 - Patrimonio Netto: ${metrics.patrimonioNetto.currentYear} / ${metrics.patrimonioNetto.previousYear}
 - Debiti Totali: ${metrics.debitiTotali.currentYear} / ${metrics.debitiTotali.previousYear}
 - Attivo Circolante: ${metrics.attivoCircolante.currentYear} / ${metrics.attivoCircolante.previousYear}
 - Debiti a Breve Termine: ${metrics.debitiBreveTermine.currentYear} / ${metrics.debitiBreveTermine.previousYear}
+- Crediti verso Clienti: ${metrics.creditiClienti.currentYear} / ${metrics.creditiClienti.previousYear}
+- Rimanenze: ${metrics.rimanenze.currentYear} / ${metrics.rimanenze.previousYear}
+- Disponibilità Liquide: ${metrics.disponibilitaLiquide.currentYear} / ${metrics.disponibilitaLiquide.previousYear}
 `;
 
     // 6. Recupera il template del prompt da Supabase (invariato)
@@ -175,7 +192,6 @@ Metriche Chiave (Anno Corrente N / Anno Precedente N-1):
     console.log(`[${sessionId}] Risposta JSON ricevuta da OpenAI.`);
 
     // 8. Salva i risultati nel database
-    // ✅ FIX: Aggiornato l'oggetto per corrispondere esattamente allo schema della tabella.
     const resultToSave = {
       session_id: sessionId,
       health_score: analysisResult.health_score || null,
