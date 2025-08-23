@@ -1,7 +1,7 @@
 // /pages/api/start-checkup.js
-// VERSIONE 12.0 (DEBUG): Bypassa l'autenticazione Outseta per testare il flusso.
-// - Utilizza un utente fittizio per non richiedere un login reale.
-// - Ideale per lo sviluppo e il debug.
+// VERSIONE 13.0 (FIX FINALE): Ripristinata la logica company_id per allinearsi allo schema del DB.
+// - Risolve l'errore 'Could not find the company_name column'.
+// - Mantiene il bypass di Outseta per il debug.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -22,7 +22,7 @@ export default async function handler(req, res) {
   let session;
 
   try {
-    // 1) ✅ MODIFICA: Autenticazione Outseta bypassata con un utente fittizio.
+    // 1) Autenticazione Outseta bypassata con un utente fittizio.
     console.log("[start-checkup] ATTENZIONE: Autenticazione Outseta bypassata per debug.");
     
     const outsetaUser = {
@@ -32,7 +32,7 @@ export default async function handler(req, res) {
         LastName: 'User'
     };
 
-    // La chiamata a Supabase ora usa sempre l'utente fittizio
+    // La chiamata a Supabase usa sempre l'utente fittizio
     const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', {
       p_email: outsetaUser.Email,
       p_first_name: outsetaUser.FirstName || '',
@@ -57,13 +57,25 @@ export default async function handler(req, res) {
       (Array.isArray(fields?.companyName) ? fields.companyName[0] : fields?.companyName) || '';
     const companyName = String(companyNameRaw).trim() || 'Azienda non specificata';
 
-    // 3) Rimuoviamo la chiamata a 'get_or_create_company' e creiamo la sessione direttamente.
+    // 3) ✅ FIX: Ripristiniamo la chiamata a 'get_or_create_company'.
+    const { data: company, error: companyError } = await supabase.rpc('get_or_create_company', {
+      user_id: userId,
+      company_name: companyName
+    });
+    if (companyError || !company) {
+      console.error(`[start-checkup] Errore RPC 'get_or_create_company':`, companyError);
+      throw new Error("Impossibile creare o trovare l'azienda nel database.");
+    }
+    const companyId = company.id ?? company.company_id;
+    if (!companyId) throw new Error("La risposta della funzione get_or_create_company non contiene un ID valido.");
+
+    // 4) Creiamo la sessione usando 'company_id', che esiste nella tua tabella.
     const originalName = fileInput.originalFilename || 'file';
     const { data: createdSession, error: sessionError } = await supabase
       .from('checkup_sessions')
       .insert({
         user_id: userId,
-        company_name: companyName, // Salviamo il nome direttamente qui
+        company_id: companyId, // Usiamo company_id
         status: 'processing',
         file_name: originalName
       })
@@ -76,7 +88,7 @@ export default async function handler(req, res) {
     }
     session = createdSession;
 
-    // 4) Upload su Storage (invariato)
+    // 5) Upload su Storage (invariato)
     const filePathSafeUser = String(userId);
     const filePath = `${filePathSafeUser}/${session.id}/${originalName}`;
     const fileBuffer = fs.readFileSync(fileInput.filepath);
@@ -89,7 +101,7 @@ export default async function handler(req, res) {
 
     await supabase.from('checkup_sessions').update({ file_path: filePath }).eq('id', session.id);
 
-    // 5) Trigger analisi asincrona (invariato)
+    // 6) Trigger analisi asincrona (invariato)
     console.log(`[${session.id}] Sessione creata. Avvio analisi XBRL...`);
     const host = req.headers.host;
     const protocol = req.headers['x-forwarded-proto'] || (host?.includes('localhost') ? 'http' : 'https');
@@ -99,7 +111,7 @@ export default async function handler(req, res) {
       console.error(`[${session.id}] Errore avvio analisi:`, e?.message || e)
     );
 
-    // 6) Risposta immediata (invariato)
+    // 7) Risposta immediata (invariato)
     console.log(`✅ [${session.id}] Setup completato, restituisco sessionId`);
     return res.status(200).json({ success: true, sessionId: session.id });
   } catch (error) {
