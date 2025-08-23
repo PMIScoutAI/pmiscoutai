@@ -1,14 +1,15 @@
 // /pages/api/start-checkup.js
-// VERSIONE 13.0 (FIX FINALE): Ripristinata la logica company_id per allinearsi allo schema del DB.
-// - Risolve l'errore 'Could not find the company_name column'.
-// - Mantiene il bypass di Outseta per il debug.
+// VERSIONE 14.0 (DEFINITIVA): Implementata la logica con UPSERT per bypassare le RPC.
+// - Risolve definitivamente gli errori PGRST202.
+// - Utilizza `upsert` per una gestione dei dati robusta e idempotente.
+// - Richiede che gli indici UNIQUE siano impostati correttamente nel database.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
 import fs from 'fs';
 
 const supabase = createClient(
-  process.env.SUPABASE_URL,              // <-- non usare NEXT_PUBLIC_* lato server
+  process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
@@ -22,29 +23,39 @@ export default async function handler(req, res) {
   let session;
 
   try {
-    // 1) Autenticazione Outseta bypassata con un utente fittizio.
-    console.log("[start-checkup] ATTENZIONE: Autenticazione Outseta bypassata per debug.");
-    
-    const outsetaUser = {
-        Uid: 'fittizio-test-user-001',
-        Email: 'test@example.com',
-        FirstName: 'Test',
-        LastName: 'User'
-    };
+    // 1) Auth Outseta
+    const outsetaToken = req.headers.authorization?.split(' ')[1];
+    if (!outsetaToken) return res.status(401).json({ error: 'Token mancante.' });
 
-    // La chiamata a Supabase usa sempre l'utente fittizio
-    const { data: userId, error: userError } = await supabase.rpc('get_or_create_user', {
-      p_email: outsetaUser.Email,
-      p_first_name: outsetaUser.FirstName || '',
-      p_last_name: outsetaUser.LastName || '',
-      p_outseta_id: outsetaUser.Uid
+    const outsetaResponse = await fetch(`https://pmiscout.outseta.com/api/v1/profile`, {
+      headers: { Authorization: `Bearer ${outsetaToken}` }
     });
-    if (userError || !userId) {
-      console.error(`[start-checkup] Errore RPC 'get_or_create_user':`, userError);
-      throw new Error("Impossibile creare o trovare l'utente nel database.");
-    }
+    if (!outsetaResponse.ok) return res.status(401).json({ error: 'Token non valido.' });
 
-    // 2) Parse form robusto (invariato)
+    const outsetaUser = await outsetaResponse.json();
+
+    // ✅ SOLUZIONE B (1): Sostituisci la RPC con UPSERT per l'utente
+    const { data: userRow, error: userErr } = await supabase
+      .from('users')
+      .upsert(
+        { 
+          outseta_user_id: outsetaUser.Uid, 
+          email: outsetaUser.Email, 
+          first_name: outsetaUser.FirstName || '', 
+          last_name: outsetaUser.LastName || '' 
+        },
+        { onConflict: 'outseta_user_id' } // Assicura che esista un indice UNIQUE su 'outseta_user_id'
+      )
+      .select('id')
+      .single();
+
+    if (userErr || !userRow?.id) {
+        console.error("[start-checkup] Errore UPSERT utente:", userErr);
+        throw new Error("Impossibile creare o trovare l'utente.");
+    }
+    const userId = userRow.id; // Questo è l'UUID corretto dal DB
+
+    // 2) Parse form robusto
     const form = formidable();
     const [fields, files] = await new Promise((resolve, reject) => {
       form.parse(req, (err, flds, fls) => (err ? reject(err) : resolve([flds, fls])));
@@ -57,40 +68,39 @@ export default async function handler(req, res) {
       (Array.isArray(fields?.companyName) ? fields.companyName[0] : fields?.companyName) || '';
     const companyName = String(companyNameRaw).trim() || 'Azienda non specificata';
 
-    // 3) ✅ FIX: Ripristiniamo la chiamata a 'get_or_create_company'.
-    const { data: company, error: companyError } = await supabase.rpc('get_or_create_company', {
-      user_id: userId,
-      company_name: companyName
-    });
-    if (companyError || !company) {
-      console.error(`[start-checkup] Errore RPC 'get_or_create_company':`, companyError);
-      throw new Error("Impossibile creare o trovare l'azienda nel database.");
-    }
-    const companyId = company.id ?? company.company_id;
-    if (!companyId) throw new Error("La risposta della funzione get_or_create_company non contiene un ID valido.");
+    // 3) ✅ SOLUZIONE B (2): Sostituisci la RPC con UPSERT per l'azienda
+    const { data: companyRow, error: coErr } = await supabase
+      .from('companies')
+      .upsert(
+        { user_id: userId, company_name: companyName },
+        { onConflict: 'user_id,company_name' } // Assicura che esista un indice UNIQUE su (user_id, company_name)
+      )
+      .select('id')
+      .single();
 
-    // 4) Creiamo la sessione usando 'company_id', che esiste nella tua tabella.
+    if (coErr || !companyRow?.id) {
+        console.error("[start-checkup] Errore UPSERT azienda:", coErr);
+        throw new Error("Impossibile creare o trovare l'azienda.");
+    }
+    const companyId = companyRow.id;
+
+    // 4) Crea sessione
     const originalName = fileInput.originalFilename || 'file';
     const { data: createdSession, error: sessionError } = await supabase
       .from('checkup_sessions')
       .insert({
         user_id: userId,
-        company_id: companyId, // Usiamo company_id
+        company_id: companyId,
         status: 'processing',
         file_name: originalName
       })
       .select()
       .single();
-      
-    if (sessionError) {
-        console.error(`[start-checkup] Errore creazione sessione:`, sessionError);
-        throw sessionError;
-    }
+    if (sessionError) throw sessionError;
     session = createdSession;
 
-    // 5) Upload su Storage (invariato)
-    const filePathSafeUser = String(userId);
-    const filePath = `${filePathSafeUser}/${session.id}/${originalName}`;
+    // 5) Upload su Storage
+    const filePath = `${userId}/${session.id}/${originalName}`;
     const fileBuffer = fs.readFileSync(fileInput.filepath);
     const contentType = fileInput.mimetype || 'application/octet-stream';
 
@@ -101,7 +111,7 @@ export default async function handler(req, res) {
 
     await supabase.from('checkup_sessions').update({ file_path: filePath }).eq('id', session.id);
 
-    // 6) Trigger analisi asincrona (invariato)
+    // 6) Trigger analisi asincrona
     console.log(`[${session.id}] Sessione creata. Avvio analisi XBRL...`);
     const host = req.headers.host;
     const protocol = req.headers['x-forwarded-proto'] || (host?.includes('localhost') ? 'http' : 'https');
@@ -111,7 +121,7 @@ export default async function handler(req, res) {
       console.error(`[${session.id}] Errore avvio analisi:`, e?.message || e)
     );
 
-    // 7) Risposta immediata (invariato)
+    // 7) Risposta immediata
     console.log(`✅ [${session.id}] Setup completato, restituisco sessionId`);
     return res.status(200).json({ success: true, sessionId: session.id });
   } catch (error) {
