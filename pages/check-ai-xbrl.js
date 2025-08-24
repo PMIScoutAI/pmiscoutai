@@ -1,11 +1,10 @@
 // /pages/check-ai-xbrl.js
-// VERSIONE RISTRUTTURATA CON DASHBOARD E AUTH
-// - Struttura della pagina basata sul tuo esempio 'checkup-hd.js'.
-// - Include un layout con sidebar di navigazione.
-// - Integra un sistema di protezione della pagina (ProtectedPage).
-// - Mantiene la logica di upload del file .xlsx e l'avvio dell'analisi.
+// VERSIONE FINALE CON FIX
+// - Aggiunto campo per inserire il nome dell'azienda.
+// - Aggiornato il form per accettare anche file .xls.
+// - Reso il saluto all'utente generico e non personalizzato.
 
-import React, { useState, useEffect } from 'react'; // ✅ CORREZIONE: Aggiunto useEffect
+import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import Script from 'next/script';
@@ -20,7 +19,6 @@ const supabase = createClient(
 );
 
 // --- Componente Wrapper (Punto di ingresso della pagina) ---
-// Gestisce Head, script esterni (Outseta) e protezione della pagina.
 export default function CheckAiXbrlPageWrapper() {
   return (
     <>
@@ -32,14 +30,10 @@ export default function CheckAiXbrlPageWrapper() {
         <script src="https://cdn.tailwindcss.com"></script>
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
       </Head>
-      {/* Script per l'autenticazione con Outseta */}
       <Script id="outseta-options" strategy="beforeInteractive">{`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}</Script>
       <Script id="outseta-script" src="https://cdn.outseta.com/outseta.min.js" strategy="beforeInteractive" />
       
-      {/* Questo componente dovrebbe gestire la logica di Outseta.
-        Qui usiamo un placeholder per simulare un utente loggato.
-        Dovrai sostituirlo con il tuo vero componente 'ProtectedPage'.
-      */}
+      {/* Sostituisci questo con il tuo vero componente 'ProtectedPage' da Outseta */}
       <ProtectedPage>
         {(user) => <CheckAiXbrlPageLayout user={user} />}
       </ProtectedPage>
@@ -48,18 +42,17 @@ export default function CheckAiXbrlPageWrapper() {
 }
 
 // --- Placeholder per ProtectedPage ---
-// Sostituisci questo con il tuo vero componente che gestisce il login.
+// Questo componente simula la protezione della pagina e fornisce un oggetto utente.
 const ProtectedPage = ({ children }) => {
     const [user, setUser] = useState(null);
     useEffect(() => {
-        // Simula il caricamento dell'utente da Outseta
-        setTimeout(() => {
-            setUser({ name: 'Mario Rossi', email: 'mario.rossi@example.com', id: 'user-123-abc' });
-        }, 500);
+        // In un'app reale, qui contatteresti Outseta per ottenere i dati dell'utente.
+        // Per ora, creiamo un utente generico per far funzionare la UI.
+        setUser({ id: 'user-placeholder-id', name: 'Utente', email: 'utente@pmiscout.eu' });
     }, []);
 
     if (!user) {
-        return <div className="flex items-center justify-center min-h-screen">Caricamento utente...</div>;
+        return <div className="flex items-center justify-center min-h-screen">Caricamento...</div>;
     }
     return children(user);
 };
@@ -107,7 +100,8 @@ function CheckAiXbrlPageLayout({ user }) {
           <div className="py-8 mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
             <div className="pb-6 border-b border-slate-200">
               <h1 className="text-2xl font-bold leading-7 text-slate-900 sm:text-3xl sm:truncate flex items-center"><Icon path={icons.checkup} className="w-8 h-8 mr-3 text-blue-600" />Check-UP AI</h1>
-              <p className="mt-2 text-base text-slate-600">Ciao, <span className="font-semibold">{user.name || user.email}</span>. Carica il bilancio per avviare l'analisi.</p>
+              {/* ✅ CORREZIONE: Saluto generico */}
+              <p className="mt-2 text-base text-slate-600">Carica il bilancio per avviare una nuova analisi.</p>
             </div>
             <div className="mt-8"><CheckAiXbrlForm user={user} /></div>
           </div>
@@ -120,6 +114,7 @@ function CheckAiXbrlPageLayout({ user }) {
 // --- Componente del Form di Upload ---
 function CheckAiXbrlForm({ user }) {
   const router = useRouter();
+  const [companyName, setCompanyName] = useState(''); // ✅ NUOVO: Stato per il nome azienda
   const [selectedFile, setSelectedFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -152,8 +147,9 @@ function CheckAiXbrlForm({ user }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedFile) {
-      setError('Per favore, seleziona un file prima di procedere.');
+    // ✅ NUOVO: Validazione per nome azienda e file
+    if (!companyName.trim() || !selectedFile) {
+      setError('Nome azienda e file sono obbligatori.');
       return;
     }
     setIsLoading(true);
@@ -173,9 +169,10 @@ function CheckAiXbrlForm({ user }) {
         .from('checkup_sessions')
         .insert({
           id: sessionId,
+          company_name: companyName, // ✅ NUOVO: Salva il nome dell'azienda
           file_path: filePath,
           status: 'pending',
-          user_id: user.id, // Associa la sessione all'utente loggato
+          user_id: user.id,
         });
       if (sessionError) throw sessionError;
 
@@ -201,6 +198,20 @@ function CheckAiXbrlForm({ user }) {
   return (
     <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* ✅ NUOVO: Campo di input per il nome dell'azienda */}
+        <div>
+          <label htmlFor="company-name" className="block text-sm font-medium text-slate-700 mb-1">Nome Azienda *</label>
+          <input
+            type="text"
+            id="company-name"
+            value={companyName}
+            onChange={(e) => setCompanyName(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+            placeholder="Es. Mario Rossi S.r.l."
+            required
+          />
+        </div>
+
         <label 
           htmlFor="file-upload" 
           className={`relative flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${dragActive ? 'border-blue-600 bg-blue-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}
@@ -209,9 +220,10 @@ function CheckAiXbrlForm({ user }) {
           <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center">
             <Icon path={icons.uploadCloud} className="w-10 h-10 mb-4 text-slate-500" />
             <p className="mb-2 text-sm text-slate-500"><span className="font-semibold text-blue-600">Clicca per caricare</span> o trascina il file</p>
-            <p className="text-xs text-slate-500">File XBRL in formato .xlsx</p>
+            <p className="text-xs text-slate-500">File XBRL in formato .xls o .xlsx</p>
           </div>
-          <input id="file-upload" type="file" className="hidden" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={handleFileChange} />
+          {/* ✅ CORREZIONE: Aggiunto .xls e il suo MIME type */}
+          <input id="file-upload" type="file" className="hidden" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xls,application/vnd.ms-excel" onChange={handleFileChange} />
         </label>
 
         {selectedFile && (
@@ -230,7 +242,7 @@ function CheckAiXbrlForm({ user }) {
 
         <button 
           type="submit" 
-          disabled={isLoading || !selectedFile}
+          disabled={isLoading || !selectedFile || !companyName}
           className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
         >
           {isLoading ? (
