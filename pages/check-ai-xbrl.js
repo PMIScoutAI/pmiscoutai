@@ -5,7 +5,7 @@
 // - Integra un sistema di protezione della pagina (ProtectedPage).
 // - Mantiene la logica di upload del file .xlsx e l'avvio dell'analisi.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // ✅ CORREZIONE: Aggiunto useEffect
 import Head from 'next/head';
 import Link from 'next/link';
 import Script from 'next/script';
