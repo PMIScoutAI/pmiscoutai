@@ -1,6 +1,6 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 10.0 (Dashboard Strategica e Corretta)
-// - FIX: Correzione automatica della scala dei dati (migliaia/unità) lato client.
+// VERSIONE 11.0 (UI Strategica e Corretta)
+// - FIX: Correzione automatica della scala dei dati (migliaia/unità) lato client per numeri e grafici.
 // - FIX: I grafici ora funzionano e sono integrati in nuove card di confronto.
 // - NUOVO: UI ridisegnata per visualizzare l'analisi strategica narrativa.
 // - NUOVO: "Card di Confronto" per fatturato e utile con valori, % e grafico.
@@ -46,14 +46,10 @@ const icons = {
   support: <><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
   menu: <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>,
   print: <><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></>,
-  lightbulb: <><path d="M9 18h6" /><path d="M10 22h4" /><path d="M12 2a7 7 0 0 0-7 7c0 3 2 5 2 7h10c0-2 2-4 2-7a7 7 0 0 0-7-7z" /></>,
   alertTriangle: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
   award: <><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 22 12 17 17 22 15.79 13.88"></polyline></>,
-  trendingUp: <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></>,
   dollarSign: <><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></>,
   shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></>,
-  zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></>,
-  briefcase: <><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></>,
   globe: <><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></>
 };
 
@@ -117,26 +113,12 @@ function AnalisiReportPage({ user }) {
           if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
           
           if (data.status === 'completed' && data.analysisData) {
-            // Parse dei campi JSON
             const parsedData = Object.keys(data.analysisData).reduce((acc, key) => {
               try {
                 acc[key] = typeof data.analysisData[key] === 'string' ? JSON.parse(data.analysisData[key]) : data.analysisData[key];
               } catch (e) { acc[key] = data.analysisData[key]; }
               return acc;
             }, {});
-
-            // ✅ FIX: Correzione della scala dei dati per i grafici
-            const scale = parsedData.raw_parsed_data?.scale || 1;
-            if (scale > 1 && parsedData.charts_data) {
-                const { revenue_trend, profit_trend } = parsedData.charts_data;
-                if (revenue_trend && Math.abs(revenue_trend.current_year) < 20000) {
-                    console.log(`Applicazione scala x${scale} ai dati dei grafici.`);
-                    revenue_trend.current_year *= scale;
-                    revenue_trend.previous_year *= scale;
-                    profit_trend.current_year *= scale;
-                    profit_trend.previous_year *= scale;
-                }
-            }
             setAnalysisData(parsedData);
           } else if (data.status === 'failed') {
             setError(data.error_message || 'Si è verificato un errore durante l\'analisi.');
@@ -166,15 +148,16 @@ function AnalisiReportPage({ user }) {
     if (error) return <ErrorState message={error} />;
     if (!analysisData) return <ErrorState message="Nessun dato di analisi trovato." />;
 
-    const companyName = analysisData.raw_parsed_data?.metrics?.companyName || 'Azienda Analizzata';
-
-    // Estrazione delle analisi narrative
+    const companyName = analysisData.raw_parsed_data?.companyName || 'Azienda Analizzata';
     const strategicAnalysis = analysisData.raw_ai_response || {};
     const { revenueAnalysis, profitAnalysis, debtAnalysis, marketOutlook } = strategicAnalysis;
 
     return (
       <div className="space-y-8">
-        <ReportHeader companyName={companyName} summary={analysisData.summary} />
+        <ReportHeader 
+            companyName={companyName} 
+            summary={analysisData.summary}
+        />
         
         <ComparisonSection chartsData={analysisData.charts_data} />
 
@@ -230,7 +213,6 @@ const formatCurrency = (value) => {
     return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value);
 };
 
-// ✅ NUOVO: Componente unificato per confronto e grafico
 const ComparisonCard = ({ title, data, dataKey, icon, color }) => {
     if (!data || data.current_year === null || data.previous_year === null) {
         return (
@@ -294,7 +276,6 @@ const ComparisonSection = ({ chartsData }) => {
     );
 };
 
-// ✅ NUOVO: Componente per visualizzare le analisi narrative
 const AnalysisCard = ({ title, text, icon }) => (
     <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
         <div className="flex items-center text-lg font-bold text-slate-800">
