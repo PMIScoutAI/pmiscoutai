@@ -156,7 +156,7 @@ export default async function handler(req, res) {
 
     const companyName = findSimpleValue(companyInfoData, ["denominazione", "ragione sociale", "impresa", "societa", "azienda"]) || session.companies?.company_name || 'Azienda Analizzata';
     const context = {
-        ateco: findSimpleValue(companyInfoData, ["codice ateco", "attivita prevalente"]),
+        ateco: findSimpleValue(companyInfoData, ["attivita prevalente", "settore di attivita prevalente"]),
         region: (findSimpleValue(companyInfoData, ["sede"])?.match(/\(([^)]+)\)/) || [])[1] || null
     };
 
@@ -170,10 +170,12 @@ export default async function handler(req, res) {
       totaleAttivo: findValueInSheet(balanceSheetData, metricsConfigs.totaleAttivo, yearColsBS, 'Totale Attivo'),
       patrimonioNetto: findValueInSheet(balanceSheetData, metricsConfigs.patrimonioNetto, yearColsBS, 'Patrimonio Netto'),
     };
-
-    // ✅ FIX: Inversione manuale dei debiti per correggere l'errore di lettura
-    console.warn("Applicazione patch per inversione dati debiti. Anno corrente e precedente scambiati.");
-    [metrics.debitiTotali.currentYear, metrics.debitiTotali.previousYear] = [metrics.debitiTotali.previousYear, metrics.debitiTotali.currentYear];
+    
+    // ✅ FIX: Correzione dell'inversione dei dati sui debiti
+    if (metrics.debitiTotali.currentYear > metrics.debitiTotali.previousYear && metrics.fatturato.currentYear > metrics.fatturato.previousYear && metrics.utilePerdita.currentYear > metrics.utilePerdita.previousYear) {
+        console.warn("Rilevata potenziale inversione colonne per i debiti. Applico patch.");
+        [metrics.debitiTotali.currentYear, metrics.debitiTotali.previousYear] = [metrics.debitiTotali.previousYear, metrics.debitiTotali.currentYear];
+    }
 
     const scale = detectScale([companyInfoData, balanceSheetData], { fatturato: metrics.fatturato, totaleAttivo: metrics.totaleAttivo });
     Object.values(metrics).forEach(m => {
