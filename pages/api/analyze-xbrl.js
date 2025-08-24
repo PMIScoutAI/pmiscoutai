@@ -1,10 +1,9 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 7.3 (ROBUSTA E PROFESSIONALE): Implementa tutte le correzioni suggerite.
-// - Cerca le colonne degli anni in modo indipendente per ogni foglio.
-// - Utilizza una funzione di parsing dei numeri di livello professionale.
-// - Cerca le descrizioni in un range di colonne più ampio.
-// - Cerca l'utile prima nel Conto Economico.
-// - Allineato il nome del bucket e migliorata la lettura del file.
+// VERSIONE 8.0 (Estrazione Robusta e Debuggabile)
+// - Nuova funzione di ricerca flessibile basata su configurazioni.
+// - Dizionario di ricerca ampliato con alias e priorità.
+// - Logging dettagliato per un debug efficace.
+// - Gestione più sicura dei valori nulli o non numerici.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -20,7 +19,8 @@ const openai = new OpenAI({
 });
 
 /**
- * ✅ FIX: Funzione di parsing potenziata per gestire vari formati numerici.
+ * Funzione di parsing potenziata per gestire vari formati numerici.
+ * Invariata dalla v7.3, già molto robusta.
  */
 const parseValue = (val) => {
     if (val === null || val === undefined || String(val).trim() === '') return null;
@@ -43,12 +43,14 @@ const parseValue = (val) => {
 };
 
 /**
- * ✅ FIX: Trova le colonne degli anni in modo più tollerante e profondo.
+ * Trova le colonne degli anni in modo più tollerante e profondo.
+ * Invariata dalla v7.3.
  */
 const findYearColumns = (sheetData) => {
     const yearRegex = /(19|20)\d{2}/;
     let years = [];
-    for (let i = 0; i < Math.min(sheetData.length, 40); i++) { // Controlla più righe
+    // Controlla le prime 40 righe per trovare gli anni
+    for (let i = 0; i < Math.min(sheetData.length, 40); i++) {
         const row = sheetData[i];
         for (let j = 0; j < row.length; j++) {
             const cell = String(row[j] ?? '').trim();
@@ -59,34 +61,67 @@ const findYearColumns = (sheetData) => {
         }
         if (years.length >= 2) break;
     }
-    if (years.length < 2) return { currentYearCol: 3, previousYearCol: 4 }; // Fallback
+    if (years.length < 2) {
+        console.warn("Non è stato possibile trovare le colonne degli anni in modo dinamico. Utilizzo fallback 3 e 4.");
+        return { currentYearCol: 3, previousYearCol: 4 }; // Fallback
+    }
     
     years.sort((a, b) => b.year - a.year);
+    console.log(`Colonne anni trovate: Anno Corrente -> ${years[0].col}, Anno Precedente -> ${years[1].col}`);
     return { currentYearCol: years[0].col, previousYearCol: years[1].col };
 };
 
 /**
- * ✅ FIX: Funzione di ricerca che usa colonne dinamiche e cerca in un range più ampio.
+ * ✅ NUOVA FUNZIONE DI RICERCA: Flessibile, basata su configurazioni e con logging.
+ * Cerca valori numerici in base a una serie di regole di ricerca.
+ * @param {Array<Array<any>>} sheetData - I dati del foglio di calcolo.
+ * @param {Array<Object>} searchConfigs - Array di configurazioni di ricerca.
+ * @param {Object} yearCols - Oggetto con le colonne degli anni.
+ * @param {string} metricName - Nome della metrica per il logging.
+ * @returns {{currentYear: number|null, previousYear: number|null}}
  */
-const findValueInSheet = (sheetData, searchTexts, yearCols) => {
-    const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
-    
-    for (const row of sheetData) {
-        // Cerca la descrizione nelle prime 6 colonne
-        for (let i = 0; i < 6; i++) {
-            const description = String(row[i] || '').toLowerCase().trim();
-            if (normalizedSearchTexts.some(searchText => description.includes(searchText))) {
+const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
+    console.log(`--- Inizio ricerca per metrica: [${metricName}] ---`);
+    for (const config of searchConfigs) {
+        const primaryTerms = config.primary.map(t => t.toLowerCase().trim());
+        const exclusionTerms = (config.exclusion || []).map(t => t.toLowerCase().trim());
+
+        for (const row of sheetData) {
+            // Concatena le prime 6 colonne per creare una descrizione completa della riga
+            let description = '';
+            for (let i = 0; i < 6; i++) {
+                description += String(row[i] || '').toLowerCase().trim() + ' ';
+            }
+            description = description.replace(/\s+/g, ' ').trim();
+
+            const allPrimaryTermsFound = primaryTerms.every(term => description.includes(term));
+            const anyExclusionTermsFound = exclusionTerms.some(term => description.includes(term));
+
+            if (allPrimaryTermsFound && !anyExclusionTermsFound) {
                 const rawCurrent = row[yearCols.currentYearCol];
                 const rawPrevious = row[yearCols.previousYearCol];
-                return { currentYear: parseValue(rawCurrent), previousYear: parseValue(rawPrevious) };
+                const result = {
+                    currentYear: parseValue(rawCurrent),
+                    previousYear: parseValue(rawPrevious)
+                };
+
+                // Un match è valido solo se contiene almeno un valore numerico.
+                // Questo evita di fermarsi su righe di intestazione che contengono le parole chiave.
+                if (result.currentYear !== null || result.previousYear !== null) {
+                    console.log(`[${metricName}] ✅ MATCH TROVATO con config: [${primaryTerms.join(', ')}]. Valori: {N: ${result.currentYear}, N-1: ${result.previousYear}}`);
+                    return result;
+                }
             }
         }
     }
+
+    console.log(`[${metricName}] ⚠️ NESSUN MATCH TROVATO per nessuna configurazione.`);
     return { currentYear: null, previousYear: null };
 };
 
 /**
- * ✅ FIX: Funzione di ricerca per valori testuali migliorata.
+ * Trova un valore testuale semplice (es. Ragione Sociale, ATECO).
+ * Invariata dalla v7.3.
  */
 const findSimpleValue = (sheetData, searchTexts) => {
     const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
@@ -106,6 +141,58 @@ const findSimpleValue = (sheetData, searchTexts) => {
     return null;
 };
 
+// ✅ NUOVO: Dizionario centralizzato per le configurazioni di ricerca.
+// Le configurazioni sono in ordine di priorità (dalla più specifica alla più generica).
+const metricsConfigs = {
+    fatturato: [
+        { primary: ["a) ricavi delle vendite e delle prestazioni"] },
+        { primary: ["ricavi delle vendite"] },
+        { primary: ["valore della produzione"], exclusion: ["costi", "differenza"] }
+    ],
+    utilePerdita: [
+        { primary: ["utile (perdita) dell'esercizio"] },
+        { primary: ["risultato dell'esercizio"] },
+        { primary: ["risultato prima delle imposte"] } // Fallback se il netto non si trova
+    ],
+    totaleAttivo: [
+        { primary: ["totale attivo"] }
+    ],
+    patrimonioNetto: [
+        { primary: ["a) patrimonio netto"] },
+        { primary: ["totale patrimonio netto"] }
+    ],
+    debitiTotali: [
+        { primary: ["d) debiti"] }, // Voce aggregata standard
+        { primary: ["debiti"] }
+    ],
+    costiProduzione: [
+        { primary: ["b) costi della produzione"] },
+        { primary: ["costi della produzione"], exclusion: ["valore"] }
+    ],
+    ammortamenti: [
+        { primary: ["ammortamenti e svalutazioni"] }
+    ],
+    oneriFinanziari: [
+        { primary: ["interessi e altri oneri finanziari"] }
+    ],
+    attivoCircolante: [
+        { primary: ["c) attivo circolante"], exclusion: ["immobilizzazioni"] },
+        { primary: ["totale attivo circolante"] }
+    ],
+    debitiBreveTermine: [
+        { primary: ["debiti esigibili entro l'esercizio successivo"] }
+    ],
+    creditiClienti: [
+        { primary: ["crediti verso clienti"] }
+    ],
+    rimanenze: [
+        { primary: ["rimanenze"] }
+    ],
+    disponibilitaLiquide: [
+        { primary: ["disponibilità liquide"] }
+    ],
+};
+
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -117,7 +204,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'SessionId è richiesto' });
   }
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (versione stabile 7.3).`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (versione robusta 8.0).`);
 
   try {
     const { data: session, error: sessionError } = await supabase
@@ -150,7 +237,6 @@ export default async function handler(req, res) {
     const incomeStatementData = xlsx.utils.sheet_to_json(incomeStatement, { header: 1 });
     const companyInfoData = xlsx.utils.sheet_to_json(companyInfoSheet, { header: 1 });
 
-    // ✅ FIX: Colonne degli anni identificate per ogni foglio
     const yearColsBS = findYearColumns(balanceSheetData);
     const yearColsIS = findYearColumns(incomeStatementData);
 
@@ -165,21 +251,21 @@ export default async function handler(req, res) {
         region: region
     };
 
+    // Estrazione delle metriche usando la nuova funzione e le configurazioni
     const metrics = {
-        fatturato: findValueInSheet(incomeStatementData, ["ricavi delle vendite", "valore della produzione"], yearColsIS),
-        // ✅ FIX: Cerca l'utile prima nel CE, poi nello SP
-        utilePerdita: findValueInSheet(incomeStatementData, ["utile (perdita) dell'esercizio", "risultato dell'esercizio"], yearColsIS) || findValueInSheet(balanceSheetData, ["utile (perdita) dell'esercizio", "risultato dell'esercizio"], yearColsBS),
-        totaleAttivo: findValueInSheet(balanceSheetData, ["totale attivo"], yearColsBS),
-        patrimonioNetto: findValueInSheet(balanceSheetData, ["patrimonio netto"], yearColsBS),
-        debitiTotali: findValueInSheet(balanceSheetData, ["debiti"], yearColsBS),
-        costiProduzione: findValueInSheet(incomeStatementData, ["costi della produzione"], yearColsIS),
-        ammortamenti: findValueInSheet(incomeStatementData, ["ammortamenti e svalutazioni"], yearColsIS),
-        oneriFinanziari: findValueInSheet(incomeStatementData, ["interessi e altri oneri finanziari"], yearColsIS),
-        attivoCircolante: findValueInSheet(balanceSheetData, ["attivo circolante"], yearColsBS),
-        debitiBreveTermine: findValueInSheet(balanceSheetData, ["debiti esigibili entro l'esercizio successivo"], yearColsBS),
-        creditiClienti: findValueInSheet(balanceSheetData, ["crediti verso clienti"], yearColsBS),
-        rimanenze: findValueInSheet(balanceSheetData, ["rimanenze"], yearColsBS),
-        disponibilitaLiquide: findValueInSheet(balanceSheetData, ["disponibilità liquide"], yearColsBS),
+        fatturato: findValueInSheet(incomeStatementData, metricsConfigs.fatturato, yearColsIS, 'Fatturato'),
+        utilePerdita: findValueInSheet(incomeStatementData, metricsConfigs.utilePerdita, yearColsIS, 'Utile/Perdita CE') || findValueInSheet(balanceSheetData, metricsConfigs.utilePerdita, yearColsBS, 'Utile/Perdita SP'),
+        totaleAttivo: findValueInSheet(balanceSheetData, metricsConfigs.totaleAttivo, yearColsBS, 'Totale Attivo'),
+        patrimonioNetto: findValueInSheet(balanceSheetData, metricsConfigs.patrimonioNetto, yearColsBS, 'Patrimonio Netto'),
+        debitiTotali: findValueInSheet(balanceSheetData, metricsConfigs.debitiTotali, yearColsBS, 'Debiti Totali'),
+        costiProduzione: findValueInSheet(incomeStatementData, metricsConfigs.costiProduzione, yearColsIS, 'Costi Produzione'),
+        ammortamenti: findValueInSheet(incomeStatementData, metricsConfigs.ammortamenti, yearColsIS, 'Ammortamenti'),
+        oneriFinanziari: findValueInSheet(incomeStatementData, metricsConfigs.oneriFinanziari, yearColsIS, 'Oneri Finanziari'),
+        attivoCircolante: findValueInSheet(balanceSheetData, metricsConfigs.attivoCircolante, yearColsBS, 'Attivo Circolante'),
+        debitiBreveTermine: findValueInSheet(balanceSheetData, metricsConfigs.debitiBreveTermine, yearColsBS, 'Debiti Breve Termine'),
+        creditiClienti: findValueInSheet(balanceSheetData, metricsConfigs.creditiClienti, yearColsBS, 'Crediti Clienti'),
+        rimanenze: findValueInSheet(balanceSheetData, metricsConfigs.rimanenze, yearColsBS, 'Rimanenze'),
+        disponibilitaLiquide: findValueInSheet(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide'),
     };
 
     const dataForPrompt = `
@@ -206,6 +292,9 @@ Principali Voci di Stato Patrimoniale (Anno Corrente N / Anno Precedente N-1):
 - Rimanenze: ${metrics.rimanenze.currentYear} / ${metrics.rimanenze.previousYear}
 - Disponibilità Liquide: ${metrics.disponibilitaLiquide.currentYear} / ${metrics.disponibilitaLiquide.previousYear}
 `;
+    
+    console.log(`[${sessionId}] Dati estratti pronti per l'invio a OpenAI.`);
+    console.log(dataForPrompt); // Log per verificare i dati estratti
 
     const { data: promptData, error: promptError } = await supabase
       .from('ai_prompts')
@@ -253,7 +342,7 @@ Principali Voci di Stato Patrimoniale (Anno Corrente N / Anno Precedente N-1):
     return res.status(200).json({ success: true, sessionId: sessionId });
 
   } catch (error) {
-    console.error(`💥 [${sessionId || 'NO_SESSION'}] Errore fatale in analyze-xbrl:`, error.message);
+    console.error(`💥 [${sessionId || 'NO_SESSION'}] Errore fatale in analyze-xbrl:`, error);
     if (sessionId) {
       await supabase
         .from('checkup_sessions')
