@@ -1,9 +1,9 @@
 // /pages/check-ai-xbrl.js
-// VERSIONE FINALE CON FIX DI SICUREZZA
-// - Replicata la logica di autenticazione del widget checkup-hd.js.
-// - Il token di accesso di Outseta viene passato fino al form.
-// - La sessione Supabase viene autenticata con il token prima di qualsiasi operazione sul DB,
-//   risolvendo l'errore "violates row-level security policy".
+// VERSIONE CON LOGICA BETA
+// - Rimuove la dipendenza dal token di Outseta per la fase beta.
+// - Gestisce l'autenticazione direttamente all'interno del form.
+// - Se l'utente non è loggato, crea una sessione anonima ("utente fittizio") su Supabase
+//   per permettere l'upload e risolvere l'errore di sicurezza.
 
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -12,11 +12,6 @@ import Script from 'next/script';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
-
-// --- IMPORTA IL TUO VERO COMPONENTE DI PROTEZIONE PAGINA ---
-// Sostituisci questa riga con l'importazione corretta dal tuo progetto
-import { ProtectedPage as YourProtectedPage } from '../utils/ProtectedPage'; 
-
 
 // --- Inizializzazione del Client Supabase (lato client) ---
 const supabase = createClient(
@@ -36,13 +31,11 @@ export default function CheckAiXbrlPageWrapper() {
         <script src="https://cdn.tailwindcss.com"></script>
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
       </Head>
+      {/* Script per l'autenticazione con Outseta (mantenuto per futuro utilizzo) */}
       <Script id="outseta-options" strategy="beforeInteractive">{`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}</Script>
       <Script id="outseta-script" src="https://cdn.outseta.com/outseta.min.js" strategy="beforeInteractive" />
       
-      {/* ✅ CORREZIONE: Usa il tuo vero componente ProtectedPage e ricevi il token */}
-      <YourProtectedPage>
-        {(user, token) => <CheckAiXbrlPageLayout user={user} token={token} />}
-      </YourProtectedPage>
+      <CheckAiXbrlPageLayout />
     </>
   );
 }
@@ -60,7 +53,7 @@ const icons = {
 };
 
 // --- Layout della Pagina con Dashboard ---
-function CheckAiXbrlPageLayout({ user, token }) { // ✅ CORREZIONE: Riceve il token
+function CheckAiXbrlPageLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navLinks = [
     { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
@@ -91,7 +84,7 @@ function CheckAiXbrlPageLayout({ user, token }) { // ✅ CORREZIONE: Riceve il t
               <h1 className="text-2xl font-bold leading-7 text-slate-900 sm:text-3xl sm:truncate flex items-center"><Icon path={icons.checkup} className="w-8 h-8 mr-3 text-blue-600" />Check-UP AI</h1>
               <p className="mt-2 text-base text-slate-600">Carica il bilancio per avviare una nuova analisi.</p>
             </div>
-            <div className="mt-8"><CheckAiXbrlForm user={user} token={token} /></div> {/* ✅ CORREZIONE: Passa il token al form */}
+            <div className="mt-8"><CheckAiXbrlForm /></div>
           </div>
         </main>
       </div>
@@ -100,7 +93,7 @@ function CheckAiXbrlPageLayout({ user, token }) { // ✅ CORREZIONE: Riceve il t
 }
 
 // --- Componente del Form di Upload ---
-function CheckAiXbrlForm({ user, token }) { // ✅ CORREZIONE: Riceve il token
+function CheckAiXbrlForm() {
   const router = useRouter();
   const [companyName, setCompanyName] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
@@ -143,10 +136,24 @@ function CheckAiXbrlForm({ user, token }) { // ✅ CORREZIONE: Riceve il token
     setError('');
 
     try {
-      // ✅ CORREZIONE DI SICUREZZA: Autentica la sessione Supabase con il token dell'utente
-      // prima di eseguire qualsiasi operazione. Questo risolve l'errore della Row Level Security.
-      await supabase.auth.setSession({ access_token: token });
+      // =======================================================================================
+      // == LOGICA DI AUTENTICAZIONE BETA ==
+      // =======================================================================================
+      // 1. Controlliamo se c'è già una sessione utente (da Outseta o precedente).
+      let { data: { session } } = await supabase.auth.getSession();
+      let user = session?.user;
 
+      // 2. Se non c'è una sessione, creiamo un utente anonimo "fittizio" per la fase beta.
+      if (!user) {
+        console.log("Nessun utente loggato, creo una sessione anonima per la beta.");
+        const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously();
+        if (anonError) throw anonError;
+        user = anonData.user;
+      }
+      
+      if (!user) throw new Error("Impossibile ottenere una sessione utente per procedere.");
+
+      // Da qui in poi, usiamo l'ID dell'utente (reale o fittizio) per le operazioni.
       const sessionId = uuidv4();
       const fileExt = selectedFile.name.split('.').pop();
       const filePath = `public/${sessionId}.${fileExt}`;
@@ -163,7 +170,7 @@ function CheckAiXbrlForm({ user, token }) { // ✅ CORREZIONE: Riceve il token
           session_name: companyName, 
           file_path: filePath,
           status: 'pending',
-          user_id: user.id,
+          user_id: user.id, // Questo ID ora è sempre valido
         });
       if (sessionError) throw sessionError;
 
