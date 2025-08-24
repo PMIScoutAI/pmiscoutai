@@ -1,9 +1,9 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 12.0 (Hardened - Qualità e Coerenza dei Dati)
-// - Mantenuto parser numerico v8, efficace e semplice.
-// - Aggiunti controlli di coerenza e sanity check più stringenti (N e N-1).
-// - Migliorata la ricerca di label, scale e anni con fallback più robusti.
-// - Aggiunto logging di coerenza di bilancio e parsing JSON sicuro.
+// VERSIONE 13.0 (Scala Intelligente e Coerenza Rafforzata)
+// - NUOVO: Rilevamento scala euristico che analizza la grandezza dei valori.
+// - MANTENUTO: Parser numerico v8, efficace e semplice.
+// - AGGIORNATO: Sanity check più stringenti su dati core e outlier.
+// - AGGIORNATO: Prompt per l'AI più dettagliato su scala e anni.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -31,9 +31,6 @@ const norm = (s) =>
 const isEmptyResult = (r) =>
   !r || (r.currentYear === null && r.previousYear === null);
 
-/**
- * ✅ MANTENUTA: Funzione di parsing della v8.0, confermata come la più efficace.
- */
 const parseValue = (val) => {
     if (val === null || val === undefined || String(val).trim() === '') return null;
     if (typeof val === 'number') return val;
@@ -43,17 +40,16 @@ const parseValue = (val) => {
         if (isNegative) {
             cleanVal = '-' + cleanVal.substring(1, cleanVal.length - 1);
         }
-        cleanVal = cleanVal.replace(/\u00A0/g, '');   // NBSP
-        cleanVal = cleanVal.replace(/['\s]/g, '');    // spazi/apostrofi
-        cleanVal = cleanVal.replace(/\u2212/g, '-');  // minus unicode
-        cleanVal = cleanVal.replace(/\./g, '').replace(',', '.'); // migliaia/decimali EU
-        cleanVal = cleanVal.replace(/[^\d.-]/g, '');  // togli simboli (es. %)
+        cleanVal = cleanVal.replace(/\u00A0/g, '');
+        cleanVal = cleanVal.replace(/['\s]/g, '');
+        cleanVal = cleanVal.replace(/\u2212/g, '-');
+        cleanVal = cleanVal.replace(/\./g, '').replace(',', '.');
+        cleanVal = cleanVal.replace(/[^\d.-]/g, '');
         
         if (cleanVal.replace(/[^0-9]/g, '').length > 12) {
             console.warn(`Valore scartato perché troppo lungo (potenziale codice): ${val}`);
             return null;
         }
-
         const num = parseFloat(cleanVal);
         return isNaN(num) ? null : num;
     }
@@ -63,9 +59,6 @@ const parseValue = (val) => {
 
 // --- FUNZIONI DI ESTRAZIONE DATI ---
 
-/**
- * ✅ AGGIORNATO: Trova colonne anno con fallback numerico e guardia per colonne uguali.
- */
 const findYearColumns = (sheetData) => {
   const yearRe = /^(19|20)\d{2}$/;
   const candidates = [];
@@ -98,7 +91,6 @@ const findYearColumns = (sheetData) => {
   const ranked = [...score.entries()].sort((a,b)=>b[1]-a[1]).map(([c])=>c).slice(0,4).sort((a,b)=>a-b);
   const rightMost = ranked.slice(-2);
   if (rightMost.length === 2) {
-    // Guardia: se le due colonne più dense sono la stessa, prendi la successiva migliore
     if (rightMost[0] === rightMost[1] && ranked.length > 2) {
         rightMost[0] = ranked[ranked.length - 3];
         rightMost.sort((a,b) => a-b);
@@ -117,7 +109,6 @@ const extractTwoYearsFromRow = (row, yearCols) => {
   const b = parseValue(row[yearCols.previousYearCol]);
   if (a !== null || b !== null) return { currentYear: a, previousYear: b };
 
-  // Fallback di riga: prendi i due numeri più a destra
   const nums = row.map(cell => parseValue(cell)).filter(v => v !== null);
   if (nums.length >= 2) {
     const twoRightMost = nums.slice(-2);
@@ -146,7 +137,7 @@ const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
       }
     }
   }
-  console.log(`[${metricName}] ⚠️ Nessun match`);
+  console.log(`[${metricName}] ⚠️ Nessun match per ${metricName}`);
   return { currentYear: null, previousYear: null };
 };
 
@@ -166,13 +157,34 @@ const findSimpleValue = (sheetData, searchTexts) => {
     return null;
 };
 
-const scaleInfo = (data) => {
-  const rx = /unit[aà]\s*di\s*misura.*(migliaia|euro)/i;
-  for (const row of data) for (const cell of row) {
-    const m = String(cell||'').match(rx);
-    if (m) return m[1].toLowerCase() === 'migliaia' ? 1000 : 1;
-  }
-  return null;
+/**
+ * ✅ NUOVO: Rilevamento scala con euristica sulla grandezza dei valori.
+ */
+const detectScale = (sheets, coreMetrics) => {
+    // 1. Cerca esplicitamente la dicitura
+    for (const sheetData of sheets) {
+        const rx = /unit[aà]\s*di\s*misura.*(migliaia|euro)/i;
+        for (const row of sheetData) for (const cell of row) {
+            const m = String(cell||'').match(rx);
+            if (m) {
+                const scale = m[1].toLowerCase() === 'migliaia' ? 1000 : 1;
+                console.log(`✅ Scala rilevata da testo: ${scale === 1000 ? 'Migliaia di Euro' : 'Euro'}`);
+                return scale;
+            }
+        }
+    }
+
+    // 2. Euristica: se non trova la dicitura, controlla la grandezza dei valori core
+    const { fatturato, totaleAttivo } = coreMetrics;
+    if (fatturato?.currentYear && totaleAttivo?.currentYear) {
+        if (fatturato.currentYear < 20000 && totaleAttivo.currentYear < 20000) {
+            console.warn('⚠️ Scala non trovata, ma valori core < 20.000. Assumo "Migliaia di Euro" (fattore 1000).');
+            return 1000;
+        }
+    }
+    
+    console.warn('⚠️ Nessuna scala rilevata: assumo Euro (fattore 1)');
+    return 1;
 };
 
 // --- CONFIGURAZIONI E HANDLER PRINCIPALE ---
@@ -198,7 +210,7 @@ export default async function handler(req, res) {
   const { sessionId } = req.query;
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (v12.0 - Hardened).`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (v13.0 - Scala Intelligente).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -220,13 +232,6 @@ export default async function handler(req, res) {
     const incomeStatementData = xlsx.utils.sheet_to_json(incomeStatement, { header: 1, defval: '', raw: false });
     const companyInfoData = xlsx.utils.sheet_to_json(companyInfoSheet, { header: 1, defval: '', raw: false });
 
-    let scale = scaleInfo(companyInfoData);
-    if (scale == null) scale = scaleInfo(balanceSheetData);
-    if (scale == null) {
-      console.warn('⚠️ Nessuna scala rilevata: assumo Euro (fattore 1)');
-      scale = 1;
-    }
-    
     const yearColsBS = findYearColumns(balanceSheetData);
     const yearColsIS = findYearColumns(incomeStatementData);
 
@@ -239,7 +244,7 @@ export default async function handler(req, res) {
     const utileCE = findValueInSheet(incomeStatementData, metricsConfigs.utilePerdita, yearColsIS, 'Utile/Perdita CE');
     const utileSP = findValueInSheet(balanceSheetData, metricsConfigs.utilePerdita, yearColsBS, 'Utile/Perdita SP');
     
-    const metrics = {
+    let metrics = {
       fatturato:        findValueInSheet(incomeStatementData, metricsConfigs.fatturato,        yearColsIS, 'Fatturato'),
       costiProduzione:  findValueInSheet(incomeStatementData, metricsConfigs.costiProduzione,  yearColsIS, 'Costi Produzione'),
       ammortamenti:     findValueInSheet(incomeStatementData, metricsConfigs.ammortamenti,     yearColsIS, 'Ammortamenti'),
@@ -255,20 +260,17 @@ export default async function handler(req, res) {
       disponibilitaLiquide: findValueInSheet(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide'),
     };
 
+    const scale = detectScale([companyInfoData, balanceSheetData], { fatturato: metrics.fatturato, totaleAttivo: metrics.totaleAttivo });
+
     Object.values(metrics).forEach(m => {
       if (!m) return;
       if (m.currentYear != null)  m.currentYear  = m.currentYear  * scale;
       if (m.previousYear != null) m.previousYear = m.previousYear * scale;
     });
 
-    // ✅ Sanity Check più robusto
+    // Sanity Check
     console.log("Eseguo sanity check sui dati estratti...");
-    const coreMetricsCheck = [
-        metrics.fatturato,
-        metrics.totaleAttivo,
-        metrics.patrimonioNetto,
-        metrics.utilePerdita
-    ];
+    const coreMetricsCheck = [ metrics.fatturato, metrics.totaleAttivo, metrics.patrimonioNetto, metrics.utilePerdita ];
     const validCoreMetricsCount = coreMetricsCheck.filter(m => m && m.currentYear != null && m.previousYear != null).length;
     if (validCoreMetricsCount < 2) {
       throw new Error(`Dati estratti insufficienti per un'analisi affidabile. Trovate solo ${validCoreMetricsCount}/4 metriche core con dati per entrambi gli anni.`);
@@ -281,7 +283,7 @@ export default async function handler(req, res) {
     }
     console.log("✅ Sanity check superato.");
 
-    // ✅ Logging di coerenza di bilancio (opzionale)
+    // Logging di coerenza di bilancio
     const { totaleAttivo, patrimonioNetto, debitiTotali } = metrics;
     if (totaleAttivo?.currentYear && patrimonioNetto?.currentYear && debitiTotali?.currentYear) {
         if (totaleAttivo.currentYear < patrimonioNetto.currentYear) console.warn('⚠️ Coerenza sospetta: Totale Attivo < Patrimonio Netto.');
@@ -292,18 +294,18 @@ export default async function handler(req, res) {
 
     // Preparazione del prompt
     const getYearLabel = (yc) => {
-        let label = '(N / N-1)';
+        let label = '(Anno Corrente / Anno Precedente)';
         if (yc.currentYear != null && yc.previousYear != null) {
             label = `(${yc.currentYear} / ${yc.previousYear})`;
         }
         if (yc.usedFallback) {
-            label += ' [colonne identificate via fallback]';
+            label += ' [Nota: anni non trovati negli header, colonne identificate tramite analisi numerica]';
         }
         return label;
     };
     
     const dataForPrompt = `
-Dati Aziendali per ${companyName} (Valori in Euro):
+Dati Aziendali per ${companyName} (Valori in Euro, scala ${scale === 1000 ? 'migliaia' : 'unità'} rilevata e applicata):
 Contesto Aziendale:
 - Regione: ${context.region || 'N/D'}
 - Codice ATECO (Settore): ${context.ateco || 'N/D'}
