@@ -1,7 +1,10 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 7.0: Implementazione del Polling per l'aggiornamento automatico
-// - La pagina ora controlla lo stato dell'analisi ogni 3 secondi.
-// - L'utente vede il report finale automaticamente senza bisogno di ricaricare la pagina.
+// VERSIONE 8.0: Implementazione della nuova Dashboard Finanziaria
+// - Riorganizzazione della UI secondo la proposta "financial-dashboard-proposal".
+// - Aggiunta card "Crescita Fatturato" in primo piano.
+// - Creazione di una griglia dinamica per i KPI.
+// - Aggiunta sezione "Avvisi e Qualità Dati".
+// - Miglioramenti grafici e di leggibilità.
 
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -55,6 +58,7 @@ const icons = {
   dollarSign: <><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></>,
   shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></>,
   zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></>,
+  checkCircle: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></>
 };
 
 // --- Layout della Pagina Report (invariato) ---
@@ -95,7 +99,7 @@ function ReportPageLayout({ user }) {
   );
 }
 
-// --- Componente Pagina Analisi (Logica di fetch AGGIORNATA CON POLLING) ---
+// --- Componente Pagina Analisi (Logica di fetch invariata, rendering AGGIORNATO) ---
 function AnalisiReportPage({ user }) {
   const router = useRouter();
   const { sessionId } = router.query;
@@ -104,77 +108,63 @@ function AnalisiReportPage({ user }) {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   
-  // Usiamo useRef per tenere traccia dell'intervallo senza causare ri-render
   const pollingIntervalRef = useRef(null);
 
   useEffect(() => {
-    // Funzione per recuperare i dati e controllare lo stato
     const fetchAndCheckStatus = async () => {
-      if (!sessionId || !user) {
-        return;
-      }
-
+      if (!sessionId || !user) return;
       try {
         console.log('🔄 Polling: controllo stato sessione...');
         const response = await fetch(`/api/get-session-complete?sessionId=${sessionId}&userId=${user.id}`);
-
-        if (!response.ok) {
-          // Se il server risponde con un errore, fermiamo il polling
-          throw new Error('Errore nel recupero dello stato dell\'analisi.');
-        }
-
+        if (!response.ok) throw new Error('Errore nel recupero dello stato dell\'analisi.');
         const data = await response.json();
-        setSessionData(data); // Aggiorna i dati della sessione
+        setSessionData(data);
 
-        // Controlla se lo stato è finale (completato o fallito)
         if (data.status === 'completed' || data.status === 'failed') {
           console.log(`✅ Polling terminato. Stato finale: ${data.status}`);
-          // Ferma il polling
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-          }
+          if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
           
           if (data.status === 'completed' && data.analysisData) {
-            setAnalysisData(data.analysisData);
+            // Parse JSON strings into objects
+            const parsedData = {
+              ...data.analysisData,
+              key_metrics: typeof data.analysisData.key_metrics === 'string' ? JSON.parse(data.analysisData.key_metrics) : data.analysisData.key_metrics,
+              charts_data: typeof data.analysisData.charts_data === 'string' ? JSON.parse(data.analysisData.charts_data) : data.analysisData.charts_data,
+              detailed_swot: typeof data.analysisData.detailed_swot === 'string' ? JSON.parse(data.analysisData.detailed_swot) : data.analysisData.detailed_swot,
+              recommendations: typeof data.analysisData.recommendations === 'string' ? JSON.parse(data.analysisData.recommendations) : data.analysisData.recommendations,
+              risk_analysis: typeof data.analysisData.risk_analysis === 'string' ? JSON.parse(data.analysisData.risk_analysis) : data.analysisData.risk_analysis,
+              pro_features_teaser: typeof data.analysisData.pro_features_teaser === 'string' ? JSON.parse(data.analysisData.pro_features_teaser) : data.analysisData.pro_features_teaser,
+              raw_ai_response: typeof data.analysisData.raw_ai_response === 'string' ? JSON.parse(data.analysisData.raw_ai_response) : data.analysisData.raw_ai_response,
+            };
+            setAnalysisData(parsedData);
           } else if (data.status === 'failed') {
             setError(data.error_message || 'Si è verificato un errore durante l\'analisi.');
           }
-          setIsLoading(false); // Abbiamo un risultato finale, smettiamo di caricare
+          setIsLoading(false);
         }
-        
       } catch (err) {
         console.error('❌ Errore durante il polling:', err);
         setError(err.message);
         setIsLoading(false);
-        // Ferma il polling anche in caso di errore di rete
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-        }
+        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
       }
     };
 
-    // Avvia il polling solo se abbiamo sessionId e user
     if (sessionId && user) {
-        // Esegui subito la prima chiamata
-        fetchAndCheckStatus();
-        // Imposta l'intervallo per le chiamate successive ogni 3 secondi
-        pollingIntervalRef.current = setInterval(fetchAndCheckStatus, 3000);
+      fetchAndCheckStatus();
+      pollingIntervalRef.current = setInterval(fetchAndCheckStatus, 3000);
     }
 
-    // Funzione di pulizia: viene eseguita quando il componente viene smontato
     return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-      }
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
     };
-  }, [sessionId, user]); 
+  }, [sessionId, user]);  
 
   const renderContent = () => {
     if (isLoading) return <LoadingState text="Caricamento del report in corso..." />;
     if (error) return <ErrorState message={error} />;
     if (!sessionData) return <ErrorState message="Nessun dato trovato per questa sessione." />;
     
-    // Se l'analisi non è ancora completata, mostra lo stato di attesa
     if (sessionData.status !== 'completed' && sessionData.status !== 'failed') {
         return <LoadingState text="L'analisi è in coda di elaborazione..." status={sessionData.status} />;
     }
@@ -182,22 +172,30 @@ function AnalisiReportPage({ user }) {
     if (!analysisData) return <ErrorState message="Analisi completata, ma non è stato possibile recuperare i risultati." />;
 
     const companyName = analysisData.raw_ai_response?.company_name || sessionData.companies?.company_name;
-    const healthScore = analysisData.health_score || 0;
+    
+    // Estrai avvisi e dati mancanti
+    const warnings = analysisData.raw_ai_response?.warnings || [];
+    const missingDataReasons = Object.values(analysisData.key_metrics || {})
+      .map(metric => metric.reason_if_null)
+      .filter(Boolean); // Filtra i valori null/undefined
+    const allWarnings = [...new Set([...warnings, ...missingDataReasons])]; // Unisci e rimuovi duplicati
 
     return (
       <div className="space-y-8">
-        <ReportHeader companyName={companyName} healthScore={healthScore} summary={analysisData.summary} />
-        
-        <KeyMetricsAndChartsSection 
-            metrics={analysisData.key_metrics} 
+        <ReportHeader 
+            companyName={companyName} 
+            healthScore={analysisData.health_score} 
+            summary={analysisData.summary}
             chartsData={analysisData.charts_data}
-            isLoading={false} 
         />
+        
+        {allWarnings.length > 0 && <DataQualitySection warnings={allWarnings} />}
+        
+        <KeyMetricsSection metrics={analysisData.key_metrics} />
 
-        {analysisData.detailed_swot ? 
-            <DetailedSwotSection swot={analysisData.detailed_swot} /> : 
-            (analysisData.raw_ai_response?.swot && <SwotSection swot={analysisData.raw_ai_response.swot} />)
-        }
+        <TrendChartsSection chartsData={analysisData.charts_data} />
+        
+        {analysisData.detailed_swot && <DetailedSwotSection swot={analysisData.detailed_swot} />}
         
         {analysisData.risk_analysis && analysisData.risk_analysis.length > 0 && <RiskAnalysisSection risks={analysisData.risk_analysis} />}
 
@@ -224,55 +222,37 @@ function AnalisiReportPage({ user }) {
   );
 }
 
-// --- Componenti di Stato e UI ---
-
+// --- Componenti di Stato (invariati) ---
 const LoadingState = ({ text, status }) => (
-    <div className="flex items-center justify-center h-full p-10">
-        <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <h2 className="text-2xl font-bold text-slate-800">{text}</h2>
-            {status && <p className="text-sm text-slate-500 mt-4">Stato attuale: <strong className="uppercase">{status}</strong></p>}
-        </div>
-    </div>
+    <div className="flex items-center justify-center h-full p-10"><div className="text-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div><h2 className="text-2xl font-bold text-slate-800">{text}</h2>{status && <p className="text-sm text-slate-500 mt-4">Stato attuale: <strong className="uppercase">{status}</strong></p>}</div></div>
+);
+const ErrorState = ({ message }) => (
+    <div className="flex items-center justify-center h-full p-10"><div className="text-center p-10 bg-white rounded-xl shadow-lg border-l-4 border-red-500"><Icon path={icons.alertTriangle} className="w-12 h-12 text-red-500 mx-auto mb-4" /><h2 className="text-2xl font-bold text-red-700">Si è verificato un errore</h2><p className="text-slate-600 mt-2">{message}</p></div></div>
 );
 
-const ErrorState = ({ message }) => (
-    <div className="flex items-center justify-center h-full p-10">
-        <div className="text-center p-10 bg-white rounded-xl shadow-lg border-l-4 border-red-500">
-            <Icon path={icons.alertTriangle} className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-red-700">Si è verificato un errore</h2>
-            <p className="text-slate-600 mt-2">{message}</p>
-        </div>
-    </div>
-);
+// --- NUOVI Componenti della Dashboard ---
 
 const HealthScoreGauge = ({ score }) => {
+    if (score === null || score === undefined) {
+        return (
+            <div className="flex flex-col items-center justify-center w-40 h-40 bg-slate-50 rounded-full border">
+                <Icon path={icons.alertTriangle} className="w-8 h-8 text-slate-400 mb-2" />
+                <p className="text-xs text-slate-500 text-center">Dati non sufficienti</p>
+            </div>
+        );
+    }
     const getScoreColor = (s) => {
-        if (s >= 81) return 'text-green-500';
-        if (s >= 61) return 'text-blue-500';
-        if (s >= 41) return 'text-yellow-500';
+        if (s >= 75) return 'text-green-500';
+        if (s >= 50) return 'text-yellow-500';
         return 'text-red-500';
     };
     const circumference = 2 * Math.PI * 52;
     const offset = circumference - (score / 100) * circumference;
-
     return (
         <div className="relative w-40 h-40">
             <svg className="w-full h-full" viewBox="0 0 120 120">
                 <circle className="text-slate-200" strokeWidth="10" stroke="currentColor" fill="transparent" r="52" cx="60" cy="60" />
-                <circle
-                    className={`${getScoreColor(score)} transition-all duration-1000 ease-out`}
-                    strokeWidth="10"
-                    strokeDasharray={circumference}
-                    strokeDashoffset={offset}
-                    strokeLinecap="round"
-                    stroke="currentColor"
-                    fill="transparent"
-                    r="52"
-                    cx="60"
-                    cy="60"
-                    transform="rotate(-90 60 60)"
-                />
+                <circle className={`${getScoreColor(score)} transition-all duration-1000 ease-out`} strokeWidth="10" strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" stroke="currentColor" fill="transparent" r="52" cx="60" cy="60" transform="rotate(-90 60 60)" />
             </svg>
             <div className={`absolute inset-0 flex flex-col items-center justify-center ${getScoreColor(score)}`}>
                 <span className="text-4xl font-bold">{score}</span>
@@ -282,23 +262,144 @@ const HealthScoreGauge = ({ score }) => {
     );
 };
 
-const ReportHeader = ({ companyName, healthScore, summary }) => (
-    <div className="p-8 bg-white rounded-xl shadow-sm border border-slate-200">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-8">
-            <div className="flex-1">
-                <p className="text-sm font-medium text-blue-600">Report di Analisi AI</p>
-                <h1 className="text-3xl font-bold text-slate-900 mt-1">{companyName}</h1>
-                <p className="mt-4 text-slate-600 leading-relaxed">{summary || 'Nessun sommario disponibile.'}</p>
-            </div>
-            <div className="flex-shrink-0">
-                <HealthScoreGauge score={healthScore} />
+const RevenueGrowthCard = ({ chartsData }) => {
+    const { current_year: current, previous_year: previous } = chartsData?.revenue_trend || {};
+    if (current === null || previous === null || previous === 0) {
+        return null; // Non mostrare la card se i dati non sono validi
+    }
+    const growth = ((current - previous) / Math.abs(previous)) * 100;
+    const isPositive = growth >= 0;
+    const colorClasses = isPositive ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100';
+
+    return (
+        <div className="p-4 bg-white rounded-xl shadow-sm border border-slate-200 flex-1">
+            <p className="text-sm font-medium text-slate-500">Crescita Fatturato</p>
+            <div className={`flex items-center gap-2 mt-2 ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                <Icon path={icons.trendingUp} className="w-7 h-7" />
+                <p className="text-3xl font-bold">{growth.toFixed(1)}%</p>
             </div>
         </div>
+    );
+};
+
+const ReportHeader = ({ companyName, healthScore, summary, chartsData }) => (
+  <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
+    <div className="flex flex-col md:flex-row items-start justify-between gap-6">
+      <div className="flex-1">
+        <p className="text-sm font-medium text-blue-600">Report di Analisi AI</p>
+        <h1 className="text-3xl font-bold text-slate-900 mt-1">{companyName}</h1>
+        <p className="mt-4 text-slate-600 leading-relaxed max-w-prose">{summary || 'Nessun sommario disponibile.'}</p>
+      </div>
+      <div className="flex flex-col sm:flex-row md:flex-col gap-4 w-full md:w-auto">
+        <div className="flex-shrink-0 mx-auto md:mx-0">
+          <HealthScoreGauge score={healthScore} />
+        </div>
+        <RevenueGrowthCard chartsData={chartsData} />
+      </div>
     </div>
+  </div>
 );
 
-// --- Componenti del Report ---
+const DataQualitySection = ({ warnings }) => (
+    <section className="p-6 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg">
+        <div className="flex">
+            <div className="flex-shrink-0">
+                <Icon path={icons.alertTriangle} className="h-5 w-5 text-yellow-400" />
+            </div>
+            <div className="ml-3">
+                <h3 className="text-sm font-medium text-yellow-800">Avvisi sulla qualità dei dati</h3>
+                <div className="mt-2 text-sm text-yellow-700">
+                    <ul className="list-disc space-y-1 pl-5">
+                        {warnings.map((warning, i) => <li key={i}>{warning}</li>)}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+);
 
+const KeyMetricsSection = ({ metrics }) => {
+    const metricDetails = {
+        roe: { label: 'ROE', icon: icons.award },
+        roi: { label: 'ROI', icon: icons.target },
+        debt_equity: { label: 'Debt/Equity', icon: icons.shield },
+        current_ratio: { label: 'Current Ratio', icon: icons.dollarSign },
+        ebitda_margin: { label: 'EBITDA Margin', icon: icons.zap },
+    };
+
+    if (!metrics || Object.keys(metrics).length === 0) return null;
+
+    return (
+        <section>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Indicatori Chiave (KPIs)</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {Object.entries(metrics).map(([key, metric]) => {
+                    const detail = metricDetails[key];
+                    if (!detail) return null;
+
+                    const isOk = metric.value !== null;
+                    const valueDisplay = isOk ? (key === 'roe' || key === 'roi' || key === 'ebitda_margin' ? `${metric.value.toFixed(2)}%` : metric.value.toFixed(2)) : 'N/D';
+                    
+                    return (
+                        <div key={key} className="p-4 bg-white rounded-xl shadow-sm border border-slate-200">
+                            <div className="flex items-center text-sm font-medium text-slate-500">
+                                <Icon path={detail.icon} className="w-4 h-4 mr-2" />
+                                {detail.label}
+                            </div>
+                            <p className={`text-3xl font-bold mt-2 ${isOk ? 'text-slate-900' : 'text-slate-400'}`}>{valueDisplay}</p>
+                            <p className="text-xs text-slate-400 mt-1 truncate" title={metric.benchmark}>{metric.benchmark}</p>
+                        </div>
+                    );
+                })}
+            </div>
+        </section>
+    );
+};
+
+const TrendChartsSection = ({ chartsData }) => {
+    if (!chartsData) return null;
+    const { revenue_trend, profit_trend } = chartsData;
+
+    return (
+        <section>
+             <h2 className="text-xl font-bold text-slate-800 mb-4">Andamento Economico</h2>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {revenue_trend && <TrendChart data={revenue_trend} dataKey="val" name="Fatturato" color="#3b82f6" title="Andamento Fatturato (€)" />}
+                {profit_trend && <TrendChart data={profit_trend} dataKey="val" name="Utile" color="#10b981" title="Andamento Utile (€)" />}
+             </div>
+        </section>
+    );
+};
+
+const TrendChart = ({ data, dataKey, name, color, title }) => {
+    if (typeof window === 'undefined' || !window.Recharts) {
+        return <div className="flex items-center justify-center h-64 text-sm text-slate-500">Caricamento grafico...</div>;
+    }
+    const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
+    const chartData = [
+        { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 },
+        { name: 'Anno Corr.', [dataKey]: data.current_year || 0 },
+    ];
+    const formatYAxis = (tick) => tick >= 1000000 ? `${(tick/1000000).toFixed(1)}M` : (tick >= 1000 ? `${(tick/1000).toFixed(0)}K` : tick);
+    return (
+        <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
+            <h3 className="text-base font-semibold text-slate-800">{title}</h3>
+            <div className="h-64 mt-4">
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={formatYAxis} axisLine={false} tickLine={false} />
+                        <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} contentStyle={{ fontSize: 12, borderRadius: '0.75rem', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)', border: '1px solid #e2e8f0', padding: '8px 12px' }} formatter={(value) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value)} />
+                        <Bar dataKey={dataKey} name={name} fill={color} barSize={40} radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
+};
+
+// --- Sezioni Esistenti (Stile Aggiornato) ---
 const RecommendationsSection = ({ recommendations }) => (
     <section>
         <h2 className="text-xl font-bold text-slate-800 mb-4">Raccomandazioni Strategiche</h2>
@@ -315,186 +416,12 @@ const RecommendationsSection = ({ recommendations }) => (
     </section>
 );
 
-const SwotSection = ({ swot }) => {
-    const swotDetails = {
-        strengths: { label: 'Punti di Forza', icon: icons.thumbsUp, color: 'green' },
-        weaknesses: { label: 'Punti di Debolezza', icon: icons.thumbsDown, color: 'red' },
-        opportunities: { label: 'Opportunità', icon: icons.target, color: 'blue' },
-        threats: { label: 'Minacce', icon: icons.alertTriangle, color: 'orange' },
-    };
-    return (
-        <section>
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi SWOT</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {Object.keys(swotDetails).map(key => {
-                    const detail = swotDetails[key];
-                    const items = swot[key] || [];
-                    return (
-                        <div key={key} className={`p-6 bg-white rounded-xl shadow-sm border-l-4 border-${detail.color}-500`}>
-                            <div className={`flex items-center text-lg font-bold text-${detail.color}-600`}>
-                                <Icon path={detail.icon} className="w-6 h-6 mr-3" />
-                                {detail.label}
-                            </div>
-                            <ul className="mt-4 space-y-2 list-disc list-inside text-slate-600 text-sm">
-                                {items.length > 0 ? items.map((item, idx) => <li key={idx}>{item}</li>) : <li>Nessun dato disponibile.</li>}
-                            </ul>
-                        </div>
-                    );
-                })}
-            </div>
-        </section>
-    );
-};
-
-const TrendChart = ({ data, dataKey, name, color }) => {
-    if (typeof window === 'undefined' || !window.Recharts) {
-        return <div className="flex items-center justify-center h-64 text-sm text-slate-500">Caricamento grafico...</div>;
-    }
-    const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
-    
-    const chartData = [
-        { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 },
-        { name: 'Anno Corr.', [dataKey]: data.current_year || 0 },
-    ];
-
-    const formatYAxis = (tickItem) => {
-        if (tickItem >= 1000000) return `${(tickItem / 1000000).toFixed(1)}M`;
-        if (tickItem >= 1000) return `${(tickItem / 1000).toFixed(0)}K`;
-        return tickItem;
-    }
-
-    return (
-        <div className="h-64 mt-4">
-            <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={formatYAxis} axisLine={false} tickLine={false} />
-                    <Tooltip 
-                        cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }}
-                        contentStyle={{ 
-                            fontSize: 12, 
-                            borderRadius: '0.75rem', 
-                            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
-                            border: '1px solid #e2e8f0',
-                            padding: '8px 12px'
-                        }} 
-                        formatter={(value) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value)}
-                    />
-                    <Bar dataKey={dataKey} name={name} fill={color} barSize={40} radius={[8, 8, 0, 0]} />
-                </BarChart>
-            </ResponsiveContainer>
-        </div>
-    );
-};
-
-const ChartSkeleton = () => (
-    <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-3">
-        <div className="animate-pulse flex flex-col space-y-4">
-            <div className="h-4 bg-slate-200 rounded w-1/3"></div>
-            <div className="h-64 bg-slate-200 rounded-lg"></div>
-        </div>
-    </div>
-);
-
-const ChartEmptyState = ({ title, message }) => (
-    <div className="flex flex-col items-center justify-center text-center h-full bg-slate-50 rounded-lg p-6 lg:col-span-3">
-        <Icon path={icons.alertTriangle} className="w-10 h-10 text-slate-400 mb-3" />
-        <h4 className="font-semibold text-slate-700">{title}</h4>
-        <p className="text-sm text-slate-500 mt-1">{message}</p>
-    </div>
-);
-
-const KeyMetricsAndChartsSection = ({ metrics, chartsData, isLoading }) => {
-    const metricDetails = {
-        current_ratio: { label: 'Current Ratio', icon: icons.dollarSign, color: 'text-blue-600', bgColor: 'bg-blue-50' },
-        revenue_growth: { label: 'Crescita Fatturato (%)', icon: icons.trendingUp, color: 'text-green-600', bgColor: 'bg-green-50' },
-        debt_equity: { label: 'Debt/Equity', icon: icons.alertTriangle, color: 'text-orange-600', bgColor: 'bg-orange-50' },
-    };
-
-    const getChartConfig = () => {
-        if (!chartsData) return null;
-        
-        if (chartsData.revenue_trend && (chartsData.revenue_trend.current_year != null || chartsData.revenue_trend.previous_year != null)) {
-            return {
-                data: chartsData.revenue_trend,
-                title: 'Andamento Fatturato (€)',
-                dataKey: 'revenue',
-                name: 'Fatturato',
-                color: '#3b82f6'
-            };
-        }
-        
-        if (chartsData.total_assets_trend && (chartsData.total_assets_trend.current_year != null || chartsData.total_assets_trend.previous_year != null)) {
-            return {
-                data: chartsData.total_assets_trend,
-                title: 'Andamento Totale Attività (€)',
-                dataKey: 'total_assets',
-                name: 'Totale Attività',
-                color: '#8b5cf6'
-            };
-        }
-        
-        return null;
-    };
-
-    const chartConfig = getChartConfig();
-
-    return (
-        <section>
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Panoramica Finanziaria</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                
-                {metrics && Object.keys(metricDetails).map(key => {
-                    const detail = metricDetails[key];
-                    if (!detail || !metrics[key]) return null;
-                    
-                    const value = key === 'revenue_growth' ? `${metrics[key].value}%` : metrics[key].value;
-
-                    return (
-                        <div key={key} className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
-                             <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${detail.bgColor}`}>
-                                 <Icon path={detail.icon} className={`w-6 h-6 ${detail.color}`} />
-                             </div>
-                             <p className="text-sm text-slate-500 mt-4">{detail.label}</p>
-                             <p className="text-3xl font-bold text-slate-900">{value}</p>
-                             <p className="text-xs text-slate-400 mt-1">Benchmark: {metrics[key].benchmark}</p>
-                        </div>
-                    );
-                })}
-                
-                {isLoading && <ChartSkeleton />}
-
-                {!isLoading && chartConfig && (
-                    <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-3">
-                        <h3 className="text-base font-semibold text-slate-800">{chartConfig.title}</h3>
-                        <TrendChart 
-                            data={chartConfig.data} 
-                            dataKey={chartConfig.dataKey} 
-                            name={chartConfig.name} 
-                            color={chartConfig.color} 
-                        />
-                    </div>
-                )}
-
-                {!isLoading && !chartConfig && (
-                       <ChartEmptyState
-                            title="Dati per il grafico non disponibili"
-                            message="Non è stato possibile recuperare i dati storici per generare un'analisi visuale dell'andamento."
-                       />
-                )}
-            </div>
-        </section>
-    );
-};
-
-
 const DetailedSwotSection = ({ swot }) => {
     const swotDetails = {
-        strengths: { label: 'Punti di Forza', icon: icons.thumbsUp, classes: 'border-green-500 bg-green-100 text-green-600' },
-        weaknesses: { label: 'Punti di Debolezza', icon: icons.thumbsDown, classes: 'border-red-500 bg-red-100 text-red-600' },
-        opportunities: { label: 'Opportunità', icon: icons.target, classes: 'border-blue-500 bg-blue-100 text-blue-600' },
-        threats: { label: 'Minacce', icon: icons.alertTriangle, classes: 'border-orange-500 bg-orange-100 text-orange-600' },
+        strengths: { label: 'Punti di Forza', icon: icons.thumbsUp, classes: 'border-green-500 bg-green-50 text-green-700' },
+        weaknesses: { label: 'Punti di Debolezza', icon: icons.thumbsDown, classes: 'border-red-500 bg-red-50 text-red-700' },
+        opportunities: { label: 'Opportunità', icon: icons.target, classes: 'border-blue-500 bg-blue-50 text-blue-700' },
+        threats: { label: 'Minacce', icon: icons.alertTriangle, classes: 'border-yellow-500 bg-yellow-50 text-yellow-700' },
     };
     return (
         <section>
@@ -502,8 +429,7 @@ const DetailedSwotSection = ({ swot }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {swot && Object.keys(swot).map(key => {
                     const detail = swotDetails[key];
-                    if (!detail) return null;
-                    const items = swot[key] || [];
+                    if (!detail || !swot[key] || swot[key].length === 0) return null;
                     return (
                         <div key={key} className={`p-6 bg-white rounded-xl shadow-sm border-t-4 ${detail.classes.split(' ')[0]}`}>
                             <div className="flex items-center text-lg font-bold text-slate-800">
@@ -513,12 +439,12 @@ const DetailedSwotSection = ({ swot }) => {
                                 {detail.label}
                             </div>
                             <div className="mt-4 space-y-3 text-sm">
-                                {items.length > 0 ? items.map((item, idx) => (
+                                {swot[key].map((item, idx) => (
                                     <div key={idx}>
                                         <p className="font-semibold text-slate-700">{item.point}</p>
                                         <p className="text-slate-500">{item.explanation}</p>
                                     </div>
-                                )) : <p className="text-slate-500">Nessun dato disponibile.</p>}
+                                ))}
                             </div>
                         </div>
                     );
@@ -546,24 +472,16 @@ const RiskAnalysisSection = ({ risks }) => (
 );
 
 const ProTeaserSection = ({ teaser }) => (
-    <section>
-        <h2 className="text-xl font-bold text-slate-800 mb-4">Sblocca il Tuo Potenziale con Pro</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="p-6 bg-gradient-to-br from-blue-50 to-indigo-100 text-slate-800 rounded-xl shadow-sm text-center">
-                <Icon path={icons.zap} className="w-10 h-10 mx-auto text-blue-500" />
-                <h3 className="mt-2 font-bold">Analisi Competitor</h3>
-                <p className="mt-1 text-sm text-slate-600">{teaser.competitor_analysis}</p>
+    <section className="mt-12">
+        <div className="p-8 bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl shadow-lg text-center">
+             <Icon path={icons.zap} className="w-10 h-10 mx-auto text-white opacity-80" />
+             <h2 className="text-2xl font-bold mt-4">Sblocca il Tuo Potenziale con Pro</h2>
+             <p className="mt-2 max-w-2xl mx-auto opacity-90">Ottieni analisi dei competitor, previsioni di cash flow e scenari futuri per prendere decisioni ancora più strategiche.</p>
+             <div className="text-center mt-6">
+                <a href="/pro" className="inline-block px-8 py-3 font-semibold bg-white text-blue-600 rounded-lg shadow-md hover:bg-slate-100 transition-transform transform hover:scale-105">
+                    Scopri PMIScout Pro
+                </a>
             </div>
-             <div className="p-6 bg-gradient-to-br from-green-50 to-emerald-100 text-slate-800 rounded-xl shadow-sm text-center">
-                <Icon path={icons.trendingUp} className="w-10 h-10 mx-auto text-green-500" />
-                <h3 className="mt-2 font-bold">Previsione Cash Flow</h3>
-                <p className="mt-1 text-sm text-slate-600">{teaser.cash_flow_forecast}</p>
-            </div>
-        </div>
-        <div className="text-center mt-6">
-            <a href="/pro" className="inline-block px-6 py-2 font-semibold bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-colors">
-                Scopri PMIScout Pro
-            </a>
         </div>
     </section>
 );
