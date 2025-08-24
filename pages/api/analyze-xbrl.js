@@ -1,9 +1,8 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 13.0 (Scala Intelligente e Coerenza Rafforzata)
-// - NUOVO: Rilevamento scala euristico che analizza la grandezza dei valori.
-// - MANTENUTO: Parser numerico v8, efficace e semplice.
-// - AGGIORNATO: Sanity check più stringenti su dati core e outlier.
-// - AGGIORNATO: Prompt per l'AI più dettagliato su scala e anni.
+// VERSIONE 14.0 (Analisi Strategica per Imprenditori)
+// - NUOVO: Prompt AI completamente riscritto per un output narrativo e di business.
+// - NUOVO: L'output JSON è ora semplice e contiene analisi testuali su fatturato, utili, debiti e mercato.
+// - OBIETTIVO: Fornire un'analisi chiara e immediatamente comprensibile, non un report tecnico.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -18,13 +17,13 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// --- UTILITY DI PARSING E NORMALIZZAZIONE ---
+// --- UTILITY DI PARSING E NORMALIZZAZIONE (INVARIATE) ---
 
 const norm = (s) =>
   String(s ?? '')
     .toLowerCase()
-    .normalize('NFD').replace(/[\u00A0-\u036f]/g, '') // rimuovi accenti
-    .replace(/[^\p{Letter}\p{Number}\s]/gu, '')      // rimuovi punteggiatura
+    .normalize('NFD').replace(/[\u00A0-\u036f]/g, '')
+    .replace(/[^\p{Letter}\p{Number}\s]/gu, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -57,7 +56,7 @@ const parseValue = (val) => {
 };
 
 
-// --- FUNZIONI DI ESTRAZIONE DATI ---
+// --- FUNZIONI DI ESTRAZIONE DATI (INVARIATE) ---
 
 const findYearColumns = (sheetData) => {
   const yearRe = /^(19|20)\d{2}$/;
@@ -121,13 +120,11 @@ const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
   for (const config of searchConfigs) {
     const primary = (config.primary || []).map(norm);
     const exclusion = (config.exclusion || []).map(norm);
-
     for (const row of sheetData) {
       const desc = norm((row.slice(0,6) || []).join(' '));
       const okPrimary = primary.every(t => desc.includes(t));
       const bad = exclusion.some(t => desc.includes(t));
       const primaryOrTotale = okPrimary || primary.every(t => desc.includes(`totale ${t}`));
-
       if (primaryOrTotale && !bad) {
         const result = extractTwoYearsFromRow(row, yearCols);
         if (!isEmptyResult(result)) {
@@ -157,11 +154,7 @@ const findSimpleValue = (sheetData, searchTexts) => {
     return null;
 };
 
-/**
- * ✅ NUOVO: Rilevamento scala con euristica sulla grandezza dei valori.
- */
 const detectScale = (sheets, coreMetrics) => {
-    // 1. Cerca esplicitamente la dicitura
     for (const sheetData of sheets) {
         const rx = /unit[aà]\s*di\s*misura.*(migliaia|euro)/i;
         for (const row of sheetData) for (const cell of row) {
@@ -173,8 +166,6 @@ const detectScale = (sheets, coreMetrics) => {
             }
         }
     }
-
-    // 2. Euristica: se non trova la dicitura, controlla la grandezza dei valori core
     const { fatturato, totaleAttivo } = coreMetrics;
     if (fatturato?.currentYear && totaleAttivo?.currentYear) {
         if (fatturato.currentYear < 20000 && totaleAttivo.currentYear < 20000) {
@@ -182,7 +173,6 @@ const detectScale = (sheets, coreMetrics) => {
             return 1000;
         }
     }
-    
     console.warn('⚠️ Nessuna scala rilevata: assumo Euro (fattore 1)');
     return 1;
 };
@@ -210,7 +200,7 @@ export default async function handler(req, res) {
   const { sessionId } = req.query;
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (v13.0 - Scala Intelligente).`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (v14.0 - Analisi Strategica).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -246,18 +236,10 @@ export default async function handler(req, res) {
     
     let metrics = {
       fatturato:        findValueInSheet(incomeStatementData, metricsConfigs.fatturato,        yearColsIS, 'Fatturato'),
-      costiProduzione:  findValueInSheet(incomeStatementData, metricsConfigs.costiProduzione,  yearColsIS, 'Costi Produzione'),
-      ammortamenti:     findValueInSheet(incomeStatementData, metricsConfigs.ammortamenti,     yearColsIS, 'Ammortamenti'),
-      oneriFinanziari:  findValueInSheet(incomeStatementData, metricsConfigs.oneriFinanziari,  yearColsIS, 'Oneri Finanziari'),
       utilePerdita:     !isEmptyResult(utileCE) ? utileCE : utileSP,
-      totaleAttivo:       findValueInSheet(balanceSheetData, metricsConfigs.totaleAttivo,       yearColsBS, 'Totale Attivo'),
-      patrimonioNetto:    findValueInSheet(balanceSheetData, metricsConfigs.patrimonioNetto,    yearColsBS, 'Patrimonio Netto'),
-      debitiTotali:       findValueInSheet(balanceSheetData, metricsConfigs.debitiTotali,       yearColsBS, 'Debiti Totali'),
-      attivoCircolante:   findValueInSheet(balanceSheetData, metricsConfigs.attivoCircolante,   yearColsBS, 'Attivo Circolante'),
-      debitiBreveTermine: findValueInSheet(balanceSheetData, metricsConfigs.debitiBreveTermine, yearColsBS, 'Debiti Breve Termine'),
-      creditiClienti:     findValueInSheet(balanceSheetData, metricsConfigs.creditiClienti,     yearColsBS, 'Crediti Clienti'),
-      rimanenze:          findValueInSheet(balanceSheetData, metricsConfigs.rimanenze,          yearColsBS, 'Rimanenze'),
-      disponibilitaLiquide: findValueInSheet(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide'),
+      debitiTotali:     findValueInSheet(balanceSheetData, metricsConfigs.debitiTotali,       yearColsBS, 'Debiti Totali'),
+      totaleAttivo:     findValueInSheet(balanceSheetData, metricsConfigs.totaleAttivo,       yearColsBS, 'Totale Attivo'),
+      patrimonioNetto:  findValueInSheet(balanceSheetData, metricsConfigs.patrimonioNetto,    yearColsBS, 'Patrimonio Netto'),
     };
 
     const scale = detectScale([companyInfoData, balanceSheetData], { fatturato: metrics.fatturato, totaleAttivo: metrics.totaleAttivo });
@@ -275,66 +257,50 @@ export default async function handler(req, res) {
     if (validCoreMetricsCount < 2) {
       throw new Error(`Dati estratti insufficienti per un'analisi affidabile. Trovate solo ${validCoreMetricsCount}/4 metriche core con dati per entrambi gli anni.`);
     }
-    const hasOutliers = Object.values(metrics).some(m =>
-      m && [m?.currentYear, m?.previousYear].some(v => typeof v === 'number' && Math.abs(v) > 1e12)
-    );
-    if (hasOutliers) {
-      throw new Error("Valori anomali o irrealistici rilevati (> 1.000 miliardi). L'analisi è stata interrotta.");
-    }
-    console.log("✅ Sanity check superato.");
-
-    // Logging di coerenza di bilancio
-    const { totaleAttivo, patrimonioNetto, debitiTotali } = metrics;
-    if (totaleAttivo?.currentYear && patrimonioNetto?.currentYear && debitiTotali?.currentYear) {
-        if (totaleAttivo.currentYear < patrimonioNetto.currentYear) console.warn('⚠️ Coerenza sospetta: Totale Attivo < Patrimonio Netto.');
-        const balanceCheck = Math.abs(totaleAttivo.currentYear - (patrimonioNetto.currentYear + debitiTotali.currentYear));
-        const tolerance = Math.abs(totaleAttivo.currentYear * 0.15);
-        if (balanceCheck > tolerance) console.warn(`⚠️ Coerenza sospetta: L'equazione di bilancio non torna entro il 15%. Delta: ${balanceCheck}`);
-    }
-
-    // Preparazione del prompt
-    const getYearLabel = (yc) => {
-        let label = '(Anno Corrente / Anno Precedente)';
-        if (yc.currentYear != null && yc.previousYear != null) {
-            label = `(${yc.currentYear} / ${yc.previousYear})`;
-        }
-        if (yc.usedFallback) {
-            label += ' [Nota: anni non trovati negli header, colonne identificate tramite analisi numerica]';
-        }
-        return label;
-    };
     
+    // ✅ NUOVO: Calcolo % fatturato per il prompt
+    const revCurrent = metrics.fatturato.currentYear;
+    const revPrevious = metrics.fatturato.previousYear;
+    let revenueChangePercentage = "N/D";
+    if (revCurrent != null && revPrevious != null && revPrevious !== 0) {
+        revenueChangePercentage = (((revCurrent - revPrevious) / Math.abs(revPrevious)) * 100).toFixed(1) + '%';
+    }
+
+    // ✅ NUOVO: Prompt strategico e semplice
     const dataForPrompt = `
-Dati Aziendali per ${companyName} (Valori in Euro, scala ${scale === 1000 ? 'migliaia' : 'unità'} rilevata e applicata):
-Contesto Aziendale:
+- Nome Azienda: ${companyName}
+- Anno Corrente: ${yearColsIS.currentYear || 'N'}
+- Anno Precedente: ${yearColsIS.previousYear || 'N-1'}
 - Regione: ${context.region || 'N/D'}
-- Codice ATECO (Settore): ${context.ateco || 'N/D'}
+- Codice ATECO: ${context.ateco || 'N/D'}
+- Fatturato Anno Corrente: ${revCurrent} Euro
+- Fatturato Anno Precedente: ${revPrevious} Euro
+- Variazione % Fatturato: ${revenueChangePercentage}
+- Utile/Perdita Anno Corrente: ${metrics.utilePerdita.currentYear} Euro
+- Utile/Perdita Anno Precedente: ${metrics.utilePerdita.previousYear} Euro
+- Debiti Totali Anno Corrente: ${metrics.debitiTotali.currentYear} Euro
+- Debiti Totali Anno Precedente: ${metrics.debitiTotali.previousYear} Euro
+`;
+    
+    const finalPrompt = `
+Sei un analista finanziario esperto che si rivolge a un imprenditore italiano in modo chiaro, semplice e diretto.
+Basandoti sui dati forniti, genera un'analisi concisa. Evita il gergo tecnico.
 
-Principali Voci di Conto Economico ${getYearLabel(yearColsIS)}:
-- Fatturato: ${metrics.fatturato.currentYear} / ${metrics.fatturato.previousYear}
-- Costi della Produzione: ${metrics.costiProduzione.currentYear} / ${metrics.costiProduzione.previousYear}
-- Ammortamenti e Svalutazioni: ${metrics.ammortamenti.currentYear} / ${metrics.ammortamenti.previousYear}
-- Oneri Finanziari: ${metrics.oneriFinanziari.currentYear} / ${metrics.oneriFinanziari.previousYear}
-- Utile/(Perdita) d'esercizio: ${metrics.utilePerdita.currentYear} / ${metrics.utilePerdita.previousYear}
+Dati:
+${dataForPrompt}
 
-Principali Voci di Stato Patrimoniale ${getYearLabel(yearColsBS)}:
-- Totale Attivo: ${metrics.totaleAttivo.currentYear} / ${metrics.totaleAttivo.previousYear}
-- Patrimonio Netto: ${metrics.patrimonioNetto.currentYear} / ${metrics.patrimonioNetto.previousYear}
-- Debiti Totali: ${metrics.debitiTotali.currentYear} / ${metrics.debitiTotali.previousYear}
-- Attivo Circolante: ${metrics.attivoCircolante.currentYear} / ${metrics.attivoCircolante.previousYear}
-- Debiti a Breve Termine: ${metrics.debitiBreveTermine.currentYear} / ${metrics.debitiBreveTermine.previousYear}
-- Crediti verso Clienti: ${metrics.creditiClienti.currentYear} / ${metrics.creditiClienti.previousYear}
-- Rimanenze: ${metrics.rimanenze.currentYear} / ${metrics.rimanenze.previousYear}
-- Disponibilità Liquide: ${metrics.disponibilitaLiquide.currentYear} / ${metrics.disponibilitaLiquide.previousYear}
+Fornisci la tua analisi ESCLUSIVAMENTE come oggetto JSON con la seguente struttura:
+{
+  "revenueAnalysis": "Un commento di 1-2 frasi sulla crescita del fatturato. Inizia menzionando la percentuale di variazione.",
+  "profitAnalysis": "Un commento di 1-2 frasi sull'andamento dell'utile/perdita.",
+  "debtAnalysis": "Un commento di 1-2 frasi sull'andamento dei debiti totali, indicando se la situazione è migliorata o peggiorata.",
+  "marketOutlook": "Un commento di 2-3 frasi sull'andamento generale del mercato per il settore (basato su ATECO) e la regione indicati. Sii prudente e basati su conoscenze generali se non hai dati specifici.",
+  "summary": "Un riassunto esecutivo di 2 frasi che lega insieme i punti principali."
+}
 `;
     
     console.log(`[${sessionId}] Dati validati pronti per l'invio a OpenAI.`);
 
-    // Chiamata AI e salvataggio
-    const { data: promptData } = await supabase.from('ai_prompts').select('prompt_template').eq('name', 'FINANCIAL_ANALYSIS_V2').single();
-    if (!promptData) throw new Error("Prompt 'FINANCIAL_ANALYSIS_V2' non trovato.");
-
-    const finalPrompt = `${promptData.prompt_template}\n\n### DATI ESTRATTI DAL BILANCIO ###\n${dataForPrompt}`;
     const response = await openai.chat.completions.create({
       model: 'gpt-4-turbo',
       messages: [{ role: 'user', content: finalPrompt }],
@@ -350,18 +316,13 @@ Principali Voci di Stato Patrimoniale ${getYearLabel(yearColsBS)}:
         throw new Error("La risposta dell'AI non è in un formato JSON valido.");
     }
     
+    // ✅ NUOVO: Salvataggio della nuova struttura di output
     const resultToSave = {
       session_id: sessionId,
-      health_score: analysisResult.health_score,
-      key_metrics: analysisResult.key_metrics,
-      swot: analysisResult.detailed_swot,
-      recommendations: analysisResult.recommendations,
-      charts_data: analysisResult.charts_data,
       summary: analysisResult.summary,
+      // Salva la nuova analisi in un campo dedicato. Il frontend andrà adattato.
+      strategic_analysis: analysisResult, 
       raw_ai_response: analysisResult,
-      detailed_swot: analysisResult.detailed_swot,
-      risk_analysis: analysisResult.risk_analysis,
-      pro_features_teaser: analysisResult.pro_features_teaser,
       raw_parsed_data: { metrics, context, scale }
     };
     
