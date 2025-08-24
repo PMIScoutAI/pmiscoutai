@@ -1,8 +1,9 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 14.0 (Analisi Strategica per Imprenditori)
-// - NUOVO: Prompt AI completamente riscritto per un output narrativo e di business.
-// - NUOVO: L'output JSON è ora semplice e contiene analisi testuali su fatturato, utili, debiti e mercato.
-// - OBIETTIVO: Fornire un'analisi chiara e immediatamente comprensibile, non un report tecnico.
+// VERSIONE 15.0 (Logica Strategica Corretta)
+// - FIX: Corretto l'errore di salvataggio "strategic_analysis column not found".
+// - FIX: Ripristinata la generazione dei dati per i grafici (`charts_data`).
+// - AGGIORNATO: Utilizza un prompt AI strategico per un output narrativo.
+// - MANTIENE: Tutta la logica di parsing e validazione robusta delle versioni precedenti.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -17,7 +18,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// --- UTILITY DI PARSING E NORMALIZZAZIONE (INVARIATE) ---
+// --- UTILITY DI PARSING E NORMALIZZAZIONE ---
 
 const norm = (s) =>
   String(s ?? '')
@@ -56,7 +57,7 @@ const parseValue = (val) => {
 };
 
 
-// --- FUNZIONI DI ESTRAZIONE DATI (INVARIATE) ---
+// --- FUNZIONI DI ESTRAZIONE DATI ---
 
 const findYearColumns = (sheetData) => {
   const yearRe = /^(19|20)\d{2}$/;
@@ -185,6 +186,7 @@ const metricsConfigs = {
   totaleAttivo: [ { primary: ["totale attivo"] } ],
   patrimonioNetto: [ { primary: ["a) patrimonio netto"] }, { primary: ["totale patrimonio netto"] } ],
   debitiTotali: [ { primary: ["d) debiti"] }, { primary: ["debiti"] } ],
+  // Aggiungiamo le altre metriche per completezza dei dati grezzi
   costiProduzione: [ { primary: ["b) costi della produzione"] }, { primary: ["costi della produzione"], exclusion: ["valore"] } ],
   ammortamenti: [ { primary: ["ammortamenti e svalutazioni"] } ],
   oneriFinanziari: [ { primary: ["interessi e altri oneri finanziari"] } ],
@@ -200,7 +202,7 @@ export default async function handler(req, res) {
   const { sessionId } = req.query;
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (v14.0 - Analisi Strategica).`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (v15.0 - Logica Strategica Corretta).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -234,13 +236,17 @@ export default async function handler(req, res) {
     const utileCE = findValueInSheet(incomeStatementData, metricsConfigs.utilePerdita, yearColsIS, 'Utile/Perdita CE');
     const utileSP = findValueInSheet(balanceSheetData, metricsConfigs.utilePerdita, yearColsBS, 'Utile/Perdita SP');
     
-    let metrics = {
-      fatturato:        findValueInSheet(incomeStatementData, metricsConfigs.fatturato,        yearColsIS, 'Fatturato'),
-      utilePerdita:     !isEmptyResult(utileCE) ? utileCE : utileSP,
-      debitiTotali:     findValueInSheet(balanceSheetData, metricsConfigs.debitiTotali,       yearColsBS, 'Debiti Totali'),
-      totaleAttivo:     findValueInSheet(balanceSheetData, metricsConfigs.totaleAttivo,       yearColsBS, 'Totale Attivo'),
-      patrimonioNetto:  findValueInSheet(balanceSheetData, metricsConfigs.patrimonioNetto,    yearColsBS, 'Patrimonio Netto'),
-    };
+    // Estrazione completa di tutte le metriche
+    let metrics = {};
+    for (const key in metricsConfigs) {
+        const sheet = ['fatturato', 'costiProduzione', 'ammortamenti', 'oneriFinanziari', 'utilePerdita'].includes(key) ? incomeStatementData : balanceSheetData;
+        const years = ['fatturato', 'costiProduzione', 'ammortamenti', 'oneriFinanziari', 'utilePerdita'].includes(key) ? yearColsIS : yearColsBS;
+        if (key === 'utilePerdita') {
+            metrics[key] = !isEmptyResult(utileCE) ? utileCE : utileSP;
+        } else {
+            metrics[key] = findValueInSheet(sheet, metricsConfigs[key], years, key);
+        }
+    }
 
     const scale = detectScale([companyInfoData, balanceSheetData], { fatturato: metrics.fatturato, totaleAttivo: metrics.totaleAttivo });
 
@@ -258,7 +264,6 @@ export default async function handler(req, res) {
       throw new Error(`Dati estratti insufficienti per un'analisi affidabile. Trovate solo ${validCoreMetricsCount}/4 metriche core con dati per entrambi gli anni.`);
     }
     
-    // ✅ NUOVO: Calcolo % fatturato per il prompt
     const revCurrent = metrics.fatturato.currentYear;
     const revPrevious = metrics.fatturato.previousYear;
     let revenueChangePercentage = "N/D";
@@ -266,7 +271,7 @@ export default async function handler(req, res) {
         revenueChangePercentage = (((revCurrent - revPrevious) / Math.abs(revPrevious)) * 100).toFixed(1) + '%';
     }
 
-    // ✅ NUOVO: Prompt strategico e semplice
+    // ✅ PROMPT STRATEGICO AGGIORNATO
     const dataForPrompt = `
 - Nome Azienda: ${companyName}
 - Anno Corrente: ${yearColsIS.currentYear || 'N'}
@@ -282,6 +287,7 @@ export default async function handler(req, res) {
 - Debiti Totali Anno Precedente: ${metrics.debitiTotali.previousYear} Euro
 `;
     
+    // Questo è il nuovo prompt che sostituisce "financial_analysis_V2"
     const finalPrompt = `
 Sei un analista finanziario esperto che si rivolge a un imprenditore italiano in modo chiaro, semplice e diretto.
 Basandoti sui dati forniti, genera un'analisi concisa. Evita il gergo tecnico.
@@ -316,18 +322,40 @@ Fornisci la tua analisi ESCLUSIVAMENTE come oggetto JSON con la seguente struttu
         throw new Error("La risposta dell'AI non è in un formato JSON valido.");
     }
     
-    // ✅ NUOVO: Salvataggio della nuova struttura di output
+    // ✅ FIX: Costruzione dell'oggetto da salvare per essere compatibile con lo schema DB
+    // e per fornire i dati ai grafici.
     const resultToSave = {
       session_id: sessionId,
       summary: analysisResult.summary,
-      // Salva la nuova analisi in un campo dedicato. Il frontend andrà adattato.
-      strategic_analysis: analysisResult, 
+      // Usiamo le colonne esistenti per salvare la nuova analisi narrativa
+      key_metrics: JSON.stringify({
+          revenue: { text: analysisResult.revenueAnalysis },
+          profit: { text: analysisResult.profitAnalysis },
+      }),
+      recommendations: JSON.stringify([analysisResult.debtAnalysis]),
+      swot: JSON.stringify({
+          opportunities: [{ point: "Contesto di Mercato", explanation: analysisResult.marketOutlook }]
+      }),
+      // ✅ FIX: Assicura che i dati per i grafici siano sempre presenti
+      charts_data: JSON.stringify({
+          revenue_trend: { 
+              current_year: metrics.fatturato.currentYear, 
+              previous_year: metrics.fatturato.previousYear 
+          },
+          profit_trend: { 
+              current_year: metrics.utilePerdita.currentYear, 
+              previous_year: metrics.utilePerdita.previousYear 
+          }
+      }),
       raw_ai_response: analysisResult,
       raw_parsed_data: { metrics, context, scale }
     };
     
     const { error: saveError } = await supabase.from('analysis_results').insert(resultToSave);
-    if (saveError) throw new Error(`Salvataggio fallito: ${saveError.message}`);
+    if (saveError) {
+        console.error("Errore di salvataggio in Supabase:", saveError);
+        throw new Error(`Salvataggio fallito: ${saveError.message}`);
+    }
 
     await supabase.from('checkup_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
 
