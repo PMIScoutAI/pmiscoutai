@@ -1,8 +1,9 @@
 // /pages/check-ai-xbrl.js
-// VERSIONE CON LOGICA BETA FINALE
-// - Se un utente è loggato (es. con Outseta), usa il suo ID.
-// - Se nessun utente è loggato, usa un ID "fittizio" predefinito per la fase beta,
-//   evitando di creare nuovi utenti anonimi e risolvendo gli errori di sicurezza.
+// VERSIONE CON LOGICA DI AUTORIZZAZIONE CORRETTA
+// - L'utente deve essere loggato tramite Outseta.
+// - Prima dell'upload, il codice verifica che l'email dell'utente esista nella tabella 'users' di Supabase.
+// - Se l'utente non è presente, viene mostrato un errore e l'upload viene bloccato.
+// - Se l'utente è presente, si procede usando il suo user_id (UUID).
 
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -11,6 +12,12 @@ import Script from 'next/script';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
+
+// --- IMPORTA IL TUO VERO COMPONENTE DI PROTEZIONE PAGINA ---
+// Assicurati che questo sia il percorso corretto per il tuo componente
+// che gestisce l'autenticazione con Outseta e fornisce l'oggetto 'user'.
+import { ProtectedPage } from '../utils/ProtectedPage'; 
+
 
 // --- Inizializzazione del Client Supabase (lato client) ---
 const supabase = createClient(
@@ -30,11 +37,12 @@ export default function CheckAiXbrlPageWrapper() {
         <script src="https://cdn.tailwindcss.com"></script>
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
       </Head>
-      {/* Script per l'autenticazione con Outseta (mantenuto per futuro utilizzo) */}
       <Script id="outseta-options" strategy="beforeInteractive">{`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}</Script>
       <Script id="outseta-script" src="https://cdn.outseta.com/outseta.min.js" strategy="beforeInteractive" />
       
-      <CheckAiXbrlPageLayout />
+      <ProtectedPage>
+        {(user) => <CheckAiXbrlPageLayout user={user} />}
+      </ProtectedPage>
     </>
   );
 }
@@ -52,7 +60,7 @@ const icons = {
 };
 
 // --- Layout della Pagina con Dashboard ---
-function CheckAiXbrlPageLayout() {
+function CheckAiXbrlPageLayout({ user }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navLinks = [
     { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
@@ -83,7 +91,7 @@ function CheckAiXbrlPageLayout() {
               <h1 className="text-2xl font-bold leading-7 text-slate-900 sm:text-3xl sm:truncate flex items-center"><Icon path={icons.checkup} className="w-8 h-8 mr-3 text-blue-600" />Check-UP AI</h1>
               <p className="mt-2 text-base text-slate-600">Carica il bilancio per avviare una nuova analisi.</p>
             </div>
-            <div className="mt-8"><CheckAiXbrlForm /></div>
+            <div className="mt-8"><CheckAiXbrlForm user={user} /></div>
           </div>
         </main>
       </div>
@@ -92,7 +100,7 @@ function CheckAiXbrlPageLayout() {
 }
 
 // --- Componente del Form di Upload ---
-function CheckAiXbrlForm() {
+function CheckAiXbrlForm({ user }) {
   const router = useRouter();
   const [companyName, setCompanyName] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
@@ -136,21 +144,27 @@ function CheckAiXbrlForm() {
 
     try {
       // =======================================================================================
-      // == LOGICA DI AUTENTICAZIONE BETA ==
+      // == LOGICA DI AUTORIZZAZIONE ==
       // =======================================================================================
-      // 1. Controlliamo se c'è già una sessione utente attiva (da Outseta).
-      let { data: { session } } = await supabase.auth.getSession();
-      let userId;
-
-      // 2. Se c'è una sessione, usiamo l'ID dell'utente reale.
-      if (session?.user) {
-        userId = session.user.id;
-        console.log("Utente loggato trovato:", userId);
-      } else {
-        // 3. Se non c'è sessione, usiamo l'ID fittizio per la fase beta.
-        userId = "11111111-1111-1111-1111-111111111111";
-        console.log("Nessun utente loggato, utilizzo l'ID beta:", userId);
+      // 1. Ottieni l'email dell'utente loggato da Outseta.
+      const loggedInUserEmail = user.email;
+      if (!loggedInUserEmail) {
+        throw new Error("Impossibile recuperare l'email dell'utente. Assicurati di essere loggato.");
       }
+
+      // 2. Verifica se l'email esiste nella tua tabella 'users' di Supabase.
+      const { data: dbUser, error: userError } = await supabase
+        .from('users')
+        .select('id') // Selezioniamo solo l'ID (UUID)
+        .eq('email', loggedInUserEmail)
+        .single();
+
+      if (userError || !dbUser) {
+        throw new Error("Non sei autorizzato a eseguire questa operazione. Contatta il supporto.");
+      }
+      
+      // 3. Se l'utente esiste, usa il suo UUID per continuare.
+      const supabaseUserId = dbUser.id;
       
       const sessionId = uuidv4();
       const fileExt = selectedFile.name.split('.').pop();
@@ -168,7 +182,7 @@ function CheckAiXbrlForm() {
           session_name: companyName, 
           file_path: filePath,
           status: 'pending',
-          user_id: userId, // Questo ID ora è sempre valido (reale o fittizio)
+          user_id: supabaseUserId, // Usa l'UUID verificato
         });
       if (sessionError) throw sessionError;
 
