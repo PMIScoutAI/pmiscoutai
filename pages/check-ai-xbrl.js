@@ -4,6 +4,7 @@
 // - Aggiornato il form per accettare anche file .xls.
 // - Reso il saluto all'utente generico e non personalizzato.
 // - Corretto il salvataggio del nome azienda nella colonna 'session_name' come da schema DB.
+// - Corretto l'errore UUID nel componente di esempio ProtectedPage.
 
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -48,8 +49,9 @@ const ProtectedPage = ({ children }) => {
     const [user, setUser] = useState(null);
     useEffect(() => {
         // In un'app reale, qui contatteresti Outseta per ottenere i dati dell'utente.
-        // Per ora, creiamo un utente generico per far funzionare la UI.
-        setUser({ id: 'user-placeholder-id', name: 'Utente', email: 'utente@pmiscout.eu' });
+        // ✅ CORREZIONE: Generiamo un UUID valido per il placeholder per evitare errori con il DB.
+        // Quando integrerai Outseta, questo ID verrà sostituito con quello reale dell'utente.
+        setUser({ id: uuidv4(), name: 'Utente', email: 'utente@pmiscout.eu' });
     }, []);
 
     if (!user) {
@@ -168,7 +170,6 @@ function CheckAiXbrlForm({ user }) {
         .from('checkup_sessions')
         .insert({
           id: sessionId,
-          // ✅ CORREZIONE: Salva il nome dell'azienda nella colonna 'session_name'
           session_name: companyName, 
           file_path: filePath,
           status: 'pending',
