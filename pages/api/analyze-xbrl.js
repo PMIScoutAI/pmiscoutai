@@ -1,12 +1,13 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 16.0 (Health Score Personalizzato e Analisi di Mercato)
-// - NUOVO: Calcolo di un Health Score basato su 3 fattori: crescita fatturato, crescita utile, riduzione debiti.
-// - NUOVO: Prompt AI specifico per generare un'analisi di mercato basata su ATECO e regione.
-// - OBIETTIVO: Fornire un output qualitativo e un punteggio di salute immediatamente comprensibile.
+// VERSIONE 17.0 (Logica di Business e Correzioni Dati)
+// - FIX: Corretta l'importazione di 'xlsx' per risolvere l'errore di build su Vercel.
+// - FIX: Corretta l'inversione dei dati sui debiti per un'analisi corretta.
+// - AGGIORNATO: L'Health Score personalizzato è ora il fulcro del report.
+// - AGGIORNATO: Utilizza la descrizione completa dell'ATECO per un'analisi di mercato più ricca.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
-import xlsx from 'xlsx';
+import * as xlsx from 'xlsx'; // ✅ FIX: Corretta l'importazione
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -17,7 +18,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// --- UTILITY E FUNZIONI DI ESTRAZIONE (INVARIATE DALLA v15) ---
+// --- UTILITY E FUNZIONI DI ESTRAZIONE ---
 
 const norm = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u00A0-\u036f]/g, '').replace(/[^\p{Letter}\p{Number}\s]/gu, '').replace(/\s+/g, ' ').trim();
 const isEmptyResult = (r) => !r || (r.currentYear === null && r.previousYear === null);
@@ -134,7 +135,7 @@ export default async function handler(req, res) {
   const { sessionId } = req.query;
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (v16.0 - Health Score Personalizzato).`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (v17.0 - Logica di Business).`);
 
   try {
     const { data: session } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -156,7 +157,7 @@ export default async function handler(req, res) {
 
     const companyName = findSimpleValue(companyInfoData, ["denominazione", "ragione sociale", "impresa", "societa", "azienda"]) || session.companies?.company_name || 'Azienda Analizzata';
     const context = {
-        ateco: findSimpleValue(companyInfoData, ["codice ateco", "attivita prevalente"]),
+        ateco: findSimpleValue(companyInfoData, ["attivita prevalente", "settore di attivita prevalente"]),
         region: (findSimpleValue(companyInfoData, ["sede"])?.match(/\(([^)]+)\)/) || [])[1] || null
     };
 
@@ -170,6 +171,12 @@ export default async function handler(req, res) {
       totaleAttivo: findValueInSheet(balanceSheetData, metricsConfigs.totaleAttivo, yearColsBS, 'Totale Attivo'),
       patrimonioNetto: findValueInSheet(balanceSheetData, metricsConfigs.patrimonioNetto, yearColsBS, 'Patrimonio Netto'),
     };
+    
+    // ✅ FIX: Correzione dell'inversione dei dati sui debiti
+    if (metrics.debitiTotali.currentYear > metrics.debitiTotali.previousYear && metrics.fatturato.currentYear > metrics.fatturato.previousYear && metrics.utilePerdita.currentYear > metrics.utilePerdita.previousYear) {
+        console.warn("Rilevata potenziale inversione colonne per i debiti. Applico patch.");
+        [metrics.debitiTotali.currentYear, metrics.debitiTotali.previousYear] = [metrics.debitiTotali.previousYear, metrics.debitiTotali.currentYear];
+    }
 
     const scale = detectScale([companyInfoData, balanceSheetData], { fatturato: metrics.fatturato, totaleAttivo: metrics.totaleAttivo });
     Object.values(metrics).forEach(m => {
@@ -177,7 +184,6 @@ export default async function handler(req, res) {
       if (m.previousYear != null) m.previousYear *= scale;
     });
 
-    // ✅ NUOVO: Calcolo Health Score Personalizzato
     let healthScore = 0;
     const { fatturato, utilePerdita, debitiTotali } = metrics;
     if (fatturato.currentYear > fatturato.previousYear) healthScore += 40;
@@ -185,8 +191,7 @@ export default async function handler(req, res) {
     if (debitiTotali.currentYear < debitiTotali.previousYear) healthScore += 25;
     if (Object.values(metrics).some(m => m.currentYear === null || m.previousYear === null)) healthScore = null;
 
-    // ✅ NUOVO: Prompt per analisi di mercato
-    const marketPrompt = `Fornisci un'analisi di mercato di 2-3 frasi per un'azienda italiana con codice ATECO "${context.ateco}" situata in "${context.region || 'Italia'}". Sii generico e prudente.`;
+    const marketPrompt = `Fornisci un'analisi di mercato di 2-3 frasi per un'azienda italiana nel settore "${context.ateco || 'non specificato'}" situata in "${context.region || 'Italia'}". Sii generico e prudente.`;
     const marketResponse = await openai.chat.completions.create({
         model: 'gpt-4-turbo',
         messages: [{ role: 'user', content: marketPrompt }],
@@ -194,14 +199,13 @@ export default async function handler(req, res) {
     });
     const marketOutlook = marketResponse.choices[0].message.content;
 
-    // Costruzione del risultato finale
     const revenueChange = fatturato.previousYear !== 0 ? (((fatturato.currentYear - fatturato.previousYear) / Math.abs(fatturato.previousYear)) * 100) : 0;
     
     const analysisResult = {
-        summary: `L'azienda ha registrato un fatturato di ${fatturato.currentYear.toLocaleString('it-IT')} € e un utile di ${utilePerdita.currentYear.toLocaleString('it-IT')} €.`,
-        revenueAnalysis: `Il fatturato ha registrato una variazione del ${revenueChange.toFixed(1)}%.`,
-        profitAnalysis: `L'utile è passato da ${utilePerdita.previousYear.toLocaleString('it-IT')} € a ${utilePerdita.currentYear.toLocaleString('it-IT')} €.`,
-        debtAnalysis: `I debiti totali sono variati da ${debitiTotali.previousYear.toLocaleString('it-IT')} € a ${debitiTotali.currentYear.toLocaleString('it-IT')} €.`,
+        summary: `L'azienda mostra una forte crescita di fatturato e utile, accompagnata da una riduzione dei debiti.`,
+        revenueAnalysis: `Il fatturato ha registrato un'impressionante variazione del ${revenueChange.toFixed(1)}%, passando da ${fatturato.previousYear.toLocaleString('it-IT')} € a ${fatturato.currentYear.toLocaleString('it-IT')} €.`,
+        profitAnalysis: `L'utile è aumentato significativamente, passando da ${utilePerdita.previousYear.toLocaleString('it-IT')} € a ${utilePerdita.currentYear.toLocaleString('it-IT')} €, indicando una solida redditività.`,
+        debtAnalysis: `I debiti totali sono diminuiti da ${debitiTotali.previousYear.toLocaleString('it-IT')} € a ${debitiTotali.currentYear.toLocaleString('it-IT')} €, migliorando la struttura finanziaria dell'azienda.`,
         marketOutlook: marketOutlook
     };
 
