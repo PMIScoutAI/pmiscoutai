@@ -1,10 +1,9 @@
 // /pages/check-ai-xbrl.js
-// VERSIONE FINALE CON FIX
-// - Aggiunto campo per inserire il nome dell'azienda.
-// - Aggiornato il form per accettare anche file .xls.
-// - Reso il saluto all'utente generico e non personalizzato.
-// - Corretto il salvataggio del nome azienda nella colonna 'session_name' come da schema DB.
-// - Corretto l'errore UUID nel componente di esempio ProtectedPage.
+// VERSIONE FINALE CON FIX DI SICUREZZA
+// - Replicata la logica di autenticazione del widget checkup-hd.js.
+// - Il token di accesso di Outseta viene passato fino al form.
+// - La sessione Supabase viene autenticata con il token prima di qualsiasi operazione sul DB,
+//   risolvendo l'errore "violates row-level security policy".
 
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -13,6 +12,11 @@ import Script from 'next/script';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
+
+// --- IMPORTA IL TUO VERO COMPONENTE DI PROTEZIONE PAGINA ---
+// Sostituisci questa riga con l'importazione corretta dal tuo progetto
+import { ProtectedPage as YourProtectedPage } from '../utils/ProtectedPage'; 
+
 
 // --- Inizializzazione del Client Supabase (lato client) ---
 const supabase = createClient(
@@ -35,31 +39,13 @@ export default function CheckAiXbrlPageWrapper() {
       <Script id="outseta-options" strategy="beforeInteractive">{`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}</Script>
       <Script id="outseta-script" src="https://cdn.outseta.com/outseta.min.js" strategy="beforeInteractive" />
       
-      {/* Sostituisci questo con il tuo vero componente 'ProtectedPage' da Outseta */}
-      <ProtectedPage>
-        {(user) => <CheckAiXbrlPageLayout user={user} />}
-      </ProtectedPage>
+      {/* ✅ CORREZIONE: Usa il tuo vero componente ProtectedPage e ricevi il token */}
+      <YourProtectedPage>
+        {(user, token) => <CheckAiXbrlPageLayout user={user} token={token} />}
+      </YourProtectedPage>
     </>
   );
 }
-
-// --- Placeholder per ProtectedPage ---
-// Questo componente simula la protezione della pagina e fornisce un oggetto utente.
-const ProtectedPage = ({ children }) => {
-    const [user, setUser] = useState(null);
-    useEffect(() => {
-        // In un'app reale, qui contatteresti Outseta per ottenere i dati dell'utente.
-        // ✅ CORREZIONE: Generiamo un UUID valido per il placeholder per evitare errori con il DB.
-        // Quando integrerai Outseta, questo ID verrà sostituito con quello reale dell'utente.
-        setUser({ id: uuidv4(), name: 'Utente', email: 'utente@pmiscout.eu' });
-    }, []);
-
-    if (!user) {
-        return <div className="flex items-center justify-center min-h-screen">Caricamento...</div>;
-    }
-    return children(user);
-};
-
 
 // --- Componenti UI (Icone) ---
 const Icon = ({ path, className = 'w-6 h-6' }) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{path}</svg> );
@@ -74,7 +60,7 @@ const icons = {
 };
 
 // --- Layout della Pagina con Dashboard ---
-function CheckAiXbrlPageLayout({ user }) {
+function CheckAiXbrlPageLayout({ user, token }) { // ✅ CORREZIONE: Riceve il token
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navLinks = [
     { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
@@ -105,7 +91,7 @@ function CheckAiXbrlPageLayout({ user }) {
               <h1 className="text-2xl font-bold leading-7 text-slate-900 sm:text-3xl sm:truncate flex items-center"><Icon path={icons.checkup} className="w-8 h-8 mr-3 text-blue-600" />Check-UP AI</h1>
               <p className="mt-2 text-base text-slate-600">Carica il bilancio per avviare una nuova analisi.</p>
             </div>
-            <div className="mt-8"><CheckAiXbrlForm user={user} /></div>
+            <div className="mt-8"><CheckAiXbrlForm user={user} token={token} /></div> {/* ✅ CORREZIONE: Passa il token al form */}
           </div>
         </main>
       </div>
@@ -114,7 +100,7 @@ function CheckAiXbrlPageLayout({ user }) {
 }
 
 // --- Componente del Form di Upload ---
-function CheckAiXbrlForm({ user }) {
+function CheckAiXbrlForm({ user, token }) { // ✅ CORREZIONE: Riceve il token
   const router = useRouter();
   const [companyName, setCompanyName] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
@@ -157,6 +143,10 @@ function CheckAiXbrlForm({ user }) {
     setError('');
 
     try {
+      // ✅ CORREZIONE DI SICUREZZA: Autentica la sessione Supabase con il token dell'utente
+      // prima di eseguire qualsiasi operazione. Questo risolve l'errore della Row Level Security.
+      await supabase.auth.setSession({ access_token: token });
+
       const sessionId = uuidv4();
       const fileExt = selectedFile.name.split('.').pop();
       const filePath = `public/${sessionId}.${fileExt}`;
