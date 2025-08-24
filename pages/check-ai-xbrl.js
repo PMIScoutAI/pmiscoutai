@@ -3,6 +3,7 @@
 // - Aggiunto campo per inserire il nome dell'azienda.
 // - Aggiornato il form per accettare anche file .xls.
 // - Reso il saluto all'utente generico e non personalizzato.
+// - Corretto il salvataggio del nome azienda nella colonna 'session_name' come da schema DB.
 
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -100,7 +101,6 @@ function CheckAiXbrlPageLayout({ user }) {
           <div className="py-8 mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
             <div className="pb-6 border-b border-slate-200">
               <h1 className="text-2xl font-bold leading-7 text-slate-900 sm:text-3xl sm:truncate flex items-center"><Icon path={icons.checkup} className="w-8 h-8 mr-3 text-blue-600" />Check-UP AI</h1>
-              {/* ✅ CORREZIONE: Saluto generico */}
               <p className="mt-2 text-base text-slate-600">Carica il bilancio per avviare una nuova analisi.</p>
             </div>
             <div className="mt-8"><CheckAiXbrlForm user={user} /></div>
@@ -114,7 +114,7 @@ function CheckAiXbrlPageLayout({ user }) {
 // --- Componente del Form di Upload ---
 function CheckAiXbrlForm({ user }) {
   const router = useRouter();
-  const [companyName, setCompanyName] = useState(''); // ✅ NUOVO: Stato per il nome azienda
+  const [companyName, setCompanyName] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -147,7 +147,6 @@ function CheckAiXbrlForm({ user }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    // ✅ NUOVO: Validazione per nome azienda e file
     if (!companyName.trim() || !selectedFile) {
       setError('Nome azienda e file sono obbligatori.');
       return;
@@ -169,7 +168,8 @@ function CheckAiXbrlForm({ user }) {
         .from('checkup_sessions')
         .insert({
           id: sessionId,
-          company_name: companyName, // ✅ NUOVO: Salva il nome dell'azienda
+          // ✅ CORREZIONE: Salva il nome dell'azienda nella colonna 'session_name'
+          session_name: companyName, 
           file_path: filePath,
           status: 'pending',
           user_id: user.id,
@@ -198,7 +198,6 @@ function CheckAiXbrlForm({ user }) {
   return (
     <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* ✅ NUOVO: Campo di input per il nome dell'azienda */}
         <div>
           <label htmlFor="company-name" className="block text-sm font-medium text-slate-700 mb-1">Nome Azienda *</label>
           <input
@@ -222,7 +221,6 @@ function CheckAiXbrlForm({ user }) {
             <p className="mb-2 text-sm text-slate-500"><span className="font-semibold text-blue-600">Clicca per caricare</span> o trascina il file</p>
             <p className="text-xs text-slate-500">File XBRL in formato .xls o .xlsx</p>
           </div>
-          {/* ✅ CORREZIONE: Aggiunto .xls e il suo MIME type */}
           <input id="file-upload" type="file" className="hidden" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xls,application/vnd.ms-excel" onChange={handleFileChange} />
         </label>
 
