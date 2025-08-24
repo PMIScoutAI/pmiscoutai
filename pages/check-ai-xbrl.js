@@ -1,9 +1,10 @@
 // /pages/check-ai-xbrl.js
-// VERSIONE CON LOGICA DI DEBUG INTEGRATA
+// VERSIONE CON LOGICA DI DEBUG INTEGRATA E FIX PER USER UNDEFINED
 // - Corretta la destrutturazione del componente ProtectedPage.
 // - Aggiunti log per verificare il passaggio di user e token.
 // - Commentata la riga supabase.auth.setSession per i test.
 // - Aggiunti log per verificare il file selezionato e gli errori di upload.
+// - Aggiunto un controllo per attendere il caricamento dell'utente prima di renderizzare il form.
 
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -72,6 +73,19 @@ function CheckAiXbrlPageLayout({ user, token }) {
     { href: '/check-ai-xbrl', text: 'Check-UP AI', icon: icons.checkup, active: true },
     { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
   ];
+
+  // ✅ CORREZIONE: Aggiunto controllo per attendere il caricamento dell'utente
+  if (!user) {
+    return (
+        <div className="flex items-center justify-center min-h-screen">
+            <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-600 mx-auto"></div>
+                <p className="mt-4 text-slate-500">Caricamento dati utente...</p>
+            </div>
+        </div>
+    );
+  }
+
   return (
     <div className="relative flex min-h-screen bg-slate-50 text-slate-800">
       <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
