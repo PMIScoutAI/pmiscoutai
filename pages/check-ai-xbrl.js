@@ -1,15 +1,23 @@
 // /pages/check-ai-xbrl.js
-// VERSIONE 2.0 (UI Strategica e Cruscotto Dati)
-// - UI completamente ridisegnata con Tailwind CSS per un aspetto professionale.
-// - Reintrodotto l'Health Score in una posizione prominente.
-// - Nuovo cruscotto "Semrush-style" per Fatturato, Utile e Debiti.
-// - Visualizzazione chiara delle analisi narrative generate dall'AI.
+// VERSIONE 3.0 (Dinamica con Aggiornamenti in Tempo Reale)
+// - Rimosso 'getServerSideProps' per trasformare la pagina in un componente client-side dinamico.
+// - Utilizza React Hooks (useState, useEffect) per gestire lo stato di caricamento e i dati.
+// - Si iscrive a Supabase Realtime per 'ascoltare' l'inserimento di nuovi risultati.
+// - La pagina si aggiorna automaticamente non appena l'analisi è completa, senza bisogno di refresh manuale.
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
+import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 
-// --- Componenti Icone ---
+// --- Inizializzazione del Client Supabase (lato client) ---
+// Assicurati che queste variabili d'ambiente siano esposte al browser (NEXT_PUBLIC_)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
+// --- Componenti Icone (invariati) ---
 const Icon = ({ path, className = 'w-6 h-6' }) => ( <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{path}</svg> );
 const icons = {
   alertTriangle: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
@@ -21,11 +29,121 @@ const icons = {
   arrowDown: <><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></>
 };
 
-// --- Componente Pagina Principale ---
-export default function CheckAiXbrlPage({ analysis, sessionId, error }) {
-  const companyName = analysis?.raw_parsed_data?.companyName || 'Azienda Analizzata';
-  const strategicAnalysis = analysis?.raw_ai_response || {};
-  const metrics = analysis?.raw_parsed_data?.metrics || {};
+// --- Componente Pagina Principale (Logica Client-Side) ---
+export default function CheckAiXbrlPage() {
+  const router = useRouter();
+  const { sessionId } = router.query;
+
+  const [analysis, setAnalysis] = useState(null);
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!sessionId) {
+      if(router.isReady) { // Esegui solo quando il router ha caricato i query params
+        setIsLoading(false);
+        setError("Nessun sessionId fornito nell'URL.");
+      }
+      return;
+    }
+
+    // 1. Controlla subito se esiste già un risultato
+    const getInitialData = async () => {
+      const { data, error } = await supabase
+        .from('analysis_results')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (data) {
+        setAnalysis(data);
+        setIsLoading(false);
+      } else if (error) {
+        setError(error.message);
+        setIsLoading(false);
+      }
+    };
+
+    getInitialData();
+
+    // 2. Iscriviti al canale Realtime per ricevere il risultato quando viene inserito
+    const channel = supabase
+      .channel(`analysis-results-check:${sessionId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'analysis_results',
+          filter: `session_id=eq.${sessionId}`,
+        },
+        (payload) => {
+          console.log('✅ Nuovo risultato di analisi ricevuto via Realtime!', payload.new);
+          setAnalysis(payload.new);
+          setIsLoading(false);
+          setError(''); // Pulisce eventuali errori precedenti
+        }
+      )
+      .subscribe();
+
+    // 3. Funzione di pulizia per disiscriversi quando si lascia la pagina
+    return () => {
+      supabase.removeChannel(channel);
+    };
+
+  }, [sessionId, router.isReady]);
+
+  const companyName = analysis?.raw_ai_response?.company_name || 'Azienda';
+
+  const renderContent = () => {
+    if (isLoading) {
+      return (
+        <div className="text-center p-10 bg-white rounded-xl shadow-lg">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <h1 className="text-2xl font-bold text-slate-800">Caricamento analisi...</h1>
+          <p className="text-slate-600 mt-2">Sessione: <strong>{sessionId}</strong></p>
+        </div>
+      );
+    }
+
+    if (error) return <ErrorState message={error} />;
+
+    if (!analysis) {
+      return (
+        <div className="text-center p-10 bg-white rounded-xl shadow-lg">
+          <h1 className="text-2xl font-bold text-slate-800">In attesa dei risultati...</h1>
+          <p className="text-slate-600 mt-2">Sessione: <strong>{sessionId}</strong></p>
+          <p className="mt-4">Questa pagina si aggiornerà automaticamente non appena l'analisi sarà completata.</p>
+        </div>
+      );
+    }
+
+    // Se l'analisi è presente, mostra il report completo
+    const strategicAnalysis = analysis.raw_ai_response || {};
+    const metrics = analysis.raw_parsed_data?.metrics || {};
+    
+    return (
+      <div className="space-y-8">
+        <ReportHeader 
+            companyName={companyName} 
+            summary={analysis.summary}
+            healthScore={analysis.health_score}
+        />
+        <KeyIndicatorsGrid metrics={metrics} />
+        <section>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi Strategica</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <AnalysisCard title="Analisi Fatturato" text={strategicAnalysis.revenueAnalysis} icon={icons.dollarSign} />
+                <AnalysisCard title="Analisi Utili" text={strategicAnalysis.profitAnalysis} icon={icons.award} />
+                <AnalysisCard title="Analisi Debiti" text={strategicAnalysis.debtAnalysis} icon={icons.shield} />
+                <AnalysisCard title="Contesto di Mercato" text={strategicAnalysis.marketOutlook} icon={icons.globe} />
+            </div>
+        </section>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -33,47 +151,18 @@ export default function CheckAiXbrlPage({ analysis, sessionId, error }) {
         <title>Report di Analisi per {companyName}</title>
         <meta name="robots" content="noindex" />
         <script src="https://cdn.tailwindcss.com"></script>
+        <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
         <style>{` body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; } `}</style>
       </Head>
-
       <main className="max-w-5xl mx-auto p-4 md:p-8">
-        {!analysis && !error && (
-            <div className="text-center p-10 bg-white rounded-xl shadow-lg">
-                <h1 className="text-2xl font-bold text-slate-800">In attesa di analisi...</h1>
-                <p className="text-slate-600 mt-2">Sessione: <strong>{sessionId}</strong></p>
-                <p className="mt-4">Avvia l’analisi tramite l’endpoint <code>POST /api/analyze-xbrl?sessionId={sessionId}</code> e poi ricarica questa pagina.</p>
-            </div>
-        )}
-
-        {error && <ErrorState message={error} />}
-
-        {analysis && (
-          <div className="space-y-8">
-            <ReportHeader 
-                companyName={companyName} 
-                summary={analysis.summary}
-                healthScore={analysis.health_score}
-            />
-            
-            <KeyIndicatorsGrid metrics={metrics} />
-
-            <section>
-                <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi Strategica</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <AnalysisCard title="Analisi Fatturato" text={strategicAnalysis.revenueAnalysis} icon={icons.dollarSign} />
-                    <AnalysisCard title="Analisi Utili" text={strategicAnalysis.profitAnalysis} icon={icons.award} />
-                    <AnalysisCard title="Analisi Debiti" text={strategicAnalysis.debtAnalysis} icon={icons.shield} />
-                    <AnalysisCard title="Contesto di Mercato" text={strategicAnalysis.marketOutlook} icon={icons.globe} />
-                </div>
-            </section>
-          </div>
-        )}
+        {renderContent()}
       </main>
     </>
   );
 }
 
-// --- Componenti UI ---
+// --- Componenti UI (invariati, ma ora usati da un componente client-side) ---
+// (Il codice per ErrorState, HealthScoreGauge, ReportHeader, KeyIndicatorCard, etc. rimane identico)
 
 const ErrorState = ({ message }) => (
     <div className="p-10 bg-white rounded-xl shadow-lg border-l-4 border-red-500 text-center">
@@ -134,12 +223,15 @@ const formatCurrency = (value) => {
 };
 
 const KeyIndicatorCard = ({ title, currentValue, previousValue, icon }) => {
-    if (currentValue === null || previousValue === null) {
+    const isCurrentValid = typeof currentValue === 'number';
+    const isPreviousValid = typeof previousValue === 'number';
+
+    if (!isCurrentValid || !isPreviousValid) {
         return (
             <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
                 <p className="text-sm font-medium text-slate-500 flex items-center"><Icon path={icon} className="w-4 h-4 mr-2" />{title}</p>
-                <p className="text-3xl font-bold text-slate-400 mt-2">N/D</p>
-                <p className="text-xs text-slate-400 mt-1">Dati insufficienti</p>
+                <p className="text-3xl font-bold text-slate-400 mt-2">{isCurrentValid ? formatCurrency(currentValue) : 'N/D'}</p>
+                <p className="text-xs text-slate-400 mt-1">Dati insufficienti per confronto</p>
             </div>
         );
     }
@@ -161,7 +253,7 @@ const KeyIndicatorCard = ({ title, currentValue, previousValue, icon }) => {
 };
 
 const KeyIndicatorsGrid = ({ metrics }) => {
-    if (!metrics) return null;
+    if (!metrics || Object.keys(metrics).length === 0) return null;
     return (
         <section>
             <h2 className="text-xl font-bold text-slate-800 mb-4">Cruscotto Aziendale</h2>
@@ -186,37 +278,4 @@ const AnalysisCard = ({ title, text, icon }) => (
     </div>
 );
 
-// Forza SSR per leggere i dati aggiornati ad ogni caricamento
-export async function getServerSideProps(ctx) {
-  const { sessionId } = ctx.query || {};
-  if (!sessionId) {
-    return { props: { sessionId: null, analysis: null, error: "Nessun sessionId fornito nell'URL." } };
-  }
-
-  try {
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
-
-    const { data, error } = await supabase
-      .from('analysis_results')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    return {
-      props: {
-        sessionId,
-        analysis: data || null,
-        error: null,
-      },
-    };
-  } catch (e) {
-    return { props: { sessionId, analysis: null, error: e.message || 'Errore imprevisto durante il recupero dei dati.' } };
-  }
-}
+// NIENTE PIÙ getServerSideProps. La pagina ora è renderizzata lato client.
