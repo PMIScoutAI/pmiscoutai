@@ -1,9 +1,9 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 17.1 (Solida, SSR-safe, fixing euristiche e formattazioni)
+// VERSIONE 17.1 (Solida, SSR-safe)
 // - Import XLSX corretto (no default export).
-// - Rimosso lo swap "solo debiti": se necessario, si flippano le colonne anno a monte, per intero foglio.
-// - detectScale controlla T0000 + T0002 + T0006.
-// - Formattazioni sicure (no toLocaleString/null crash).
+// - Rimosso lo swap "solo debiti": flip euristico a monte sulle colonne anno.
+// - detectScale legge T0000 + T0002 + T0006.
+// - Formattazioni sicure (no crash su null).
 // - Narrative condizionale se dati incompleti.
 // - Chiamata OpenAI con try/catch e fallback.
 
@@ -46,8 +46,7 @@ const parseValue = (val) => {
       .replace(/\./g, '')
       .replace(',', '.')
       .replace(/[^\d.-]/g, '');
-    // Evita overflow assurdi, ma non scartare numeri grandi realistici
-    if (cleanVal.replace(/[^0-9]/g, '').length > 18) return null;
+    if (cleanVal.replace(/[^0-9]/g, '').length > 18) return null; // guard-rail
     const num = parseFloat(cleanVal);
     return isNaN(num) ? null : num;
   }
@@ -100,23 +99,17 @@ const findYearColumns = (sheetData) => {
       usedFallback: true,
     };
   }
-  // se proprio non troviamo, meglio segnalare più avanti
-  return null;
+  return null; // meglio segnalare dopo
 };
 
-// flip euristico se le colonne current/previous sembrano invertite
 function maybeFlipYearCols(sheetData, yearCols) {
   if (!yearCols) return null;
-  let votes = 0,
-    checks = 0;
+  let votes = 0, checks = 0;
   for (let i = 0; i < Math.min(30, sheetData.length); i++) {
     const row = sheetData[i] || [];
     const a = parseValue(row[yearCols.currentYearCol]);
     const b = parseValue(row[yearCols.previousYearCol]);
-    if (a != null && b != null) {
-      checks++;
-      if (a < b) votes++; // spesso current < previous → forse invertite
-    }
+    if (a != null && b != null) { checks++; if (a < b) votes++; }
   }
   if (checks >= 5 && votes / checks > 0.7) {
     const tmpCol = yearCols.currentYearCol;
@@ -147,12 +140,9 @@ const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
   let bestMatch = null;
 
   const scoreRow = (desc, primary) => {
-    // priorità a match più "stretti"
     let score = 0;
-    const joined = desc;
-    const allContain = primary.every((t) => joined.includes(t));
+    const allContain = primary.every((t) => desc.includes(t));
     if (allContain) score += 2;
-    // boost se inizia con la parola chiave (cells[0])
     const firstCell = desc.split(' ')[0] ?? '';
     if (primary.some((t) => firstCell.includes(t))) score += 1;
     return score;
@@ -178,9 +168,11 @@ const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
         }
       }
     }
-    if (bestMatch) break; // trovato un buon match per questa config
+    if (bestMatch) break;
   }
-  return bestMatch ? { currentYear: bestMatch.currentYear, previousYear: bestMatch.previousYear } : { currentYear: null, previousYear: null };
+  return bestMatch
+    ? { currentYear: bestMatch.currentYear, previousYear: bestMatch.previousYear }
+    : { currentYear: null, previousYear: null };
 };
 
 const findSimpleValue = (sheetData, searchTexts) => {
@@ -189,7 +181,6 @@ const findSimpleValue = (sheetData, searchTexts) => {
     for (let c = 0; c < Math.min(6, row.length); c++) {
       const cell = norm(row[c]);
       if (targets.some((t) => cell.includes(t))) {
-        // cerca a destra nella stessa riga
         for (let k = c + 1; k < row.length; k++) {
           const v = String(row[k] ?? '').trim();
           if (v) return v;
@@ -201,7 +192,6 @@ const findSimpleValue = (sheetData, searchTexts) => {
 };
 
 const detectScale = (sheets, coreMetrics) => {
-  // 1) prova a leggere l'unità di misura da tutti i fogli
   for (const sheetData of sheets) {
     const rx = /unit[aà]\s*di\s*misura.*(migliaia|euro)/i;
     for (const row of sheetData) {
@@ -211,16 +201,13 @@ const detectScale = (sheets, coreMetrics) => {
       }
     }
   }
-  // 2) euristica: se numeri molto piccoli su ricavi/attivo, probabilmente "migliaia"
   const { fatturato, totaleAttivo } = coreMetrics || {};
   if (
     fatturato?.currentYear != null &&
     totaleAttivo?.currentYear != null &&
     fatturato.currentYear < 20000 &&
     totaleAttivo.currentYear < 20000
-  ) {
-    return 1000;
-  }
+  ) return 1000;
   return 1;
 };
 
@@ -272,11 +259,8 @@ export default async function handler(req, res) {
     const balanceSheetData = xlsx.utils.sheet_to_json(T0002, { header: 1, defval: '' });
     const incomeStatementData = xlsx.utils.sheet_to_json(T0006, { header: 1, defval: '' });
 
-    // colonne anno per BS/IS
-    let yearColsBS = findYearColumns(balanceSheetData);
-    let yearColsIS = findYearColumns(incomeStatementData);
-    yearColsBS = maybeFlipYearCols(balanceSheetData, yearColsBS);
-    yearColsIS = maybeFlipYearCols(incomeStatementData, yearColsIS);
+    let yearColsBS = maybeFlipYearCols(balanceSheetData, findYearColumns(balanceSheetData));
+    let yearColsIS = maybeFlipYearCols(incomeStatementData, findYearColumns(incomeStatementData));
 
     const companyName =
       findSimpleValue(companyInfoData, ['denominazione', 'ragione sociale', 'impresa', 'societa', 'azienda']) ||
@@ -286,9 +270,9 @@ export default async function handler(req, res) {
     const context = {
       ateco: findSimpleValue(companyInfoData, ['attivita prevalente', 'settore di attivita prevalente']),
       region: (findSimpleValue(companyInfoData, ['sede'])?.match(/\(([^)]+)\)/) || [])[1] || null,
+      companyName,
     };
 
-    // metriche
     const utileCE = findValueInSheet(incomeStatementData, metricsConfigs.utilePerdita, yearColsIS, 'Utile/Perdita');
     const utileSP = findValueInSheet(balanceSheetData, metricsConfigs.utilePerdita, yearColsBS, 'Utile/Perdita');
 
@@ -300,7 +284,6 @@ export default async function handler(req, res) {
       patrimonioNetto: findValueInSheet(balanceSheetData, metricsConfigs.patrimonioNetto, yearColsBS, 'Patrimonio Netto'),
     };
 
-    // scala (controlla tutti i fogli)
     const scale = detectScale(
       [companyInfoData, balanceSheetData, incomeStatementData],
       { fatturato: metrics.fatturato, totaleAttivo: metrics.totaleAttivo }
@@ -311,7 +294,6 @@ export default async function handler(req, res) {
       if (m.previousYear != null) m.previousYear *= scale;
     });
 
-    // health score
     const { fatturato, utilePerdita, debitiTotali } = metrics;
     const missing = Object.values(metrics).some(
       (m) => !m || m.currentYear === null || m.previousYear === null
@@ -324,12 +306,11 @@ export default async function handler(req, res) {
       if (debitiTotali.currentYear < debitiTotali.previousYear) healthScore += 25;
     }
 
-    // market outlook (best-effort)
     let marketOutlook = 'Prospettive di mercato: dati generali non specificati.';
     try {
       const marketPrompt = `Fornisci un'analisi di mercato di 2-3 frasi per un'azienda italiana nel settore "${context.ateco || 'non specificato'}" situata in "${context.region || 'Italia'}". Sii generico e prudente.`;
       const resp = await openai.chat.completions.create({
-        model: 'gpt-4o-mini', // leggero e veloce; sostituisci se vuoi
+        model: 'gpt-4o-mini',
         messages: [{ role: 'user', content: marketPrompt }],
         temperature: 0.2,
       });
@@ -338,7 +319,6 @@ export default async function handler(req, res) {
       console.warn(`[${sessionId}] marketOutlook fallback:`, e?.message);
     }
 
-    // helper formati sicuri
     const fmt = (n) =>
       typeof n === 'number' && isFinite(n) ? n.toLocaleString('it-IT') + ' €' : 'n.d.';
     const pct = (n) =>
@@ -351,7 +331,6 @@ export default async function handler(req, res) {
         ? ((fatturato.currentYear - fatturato.previousYear) / Math.abs(fatturato.previousYear)) * 100
         : null;
 
-    // narrativa condizionale
     let summary;
     if (missing) {
       summary =
