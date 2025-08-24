@@ -1,8 +1,9 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 11.0 (Ibrida - Stabilità v10 + Parser v8)
-// - REINTEGRATA: La funzione `parseValue` della v8.0, risultata più efficace.
-// - MANTENUTA: La struttura robusta della v10.1 con sanity check e rilevamento scala.
-// - OBIETTIVO: Combinare l'efficacia di parsing della v8 con la stabilità della v10.
+// VERSIONE 12.0 (Hardened - Qualità e Coerenza dei Dati)
+// - Mantenuto parser numerico v8, efficace e semplice.
+// - Aggiunti controlli di coerenza e sanity check più stringenti (N e N-1).
+// - Migliorata la ricerca di label, scale e anni con fallback più robusti.
+// - Aggiunto logging di coerenza di bilancio e parsing JSON sicuro.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -31,7 +32,7 @@ const isEmptyResult = (r) =>
   !r || (r.currentYear === null && r.previousYear === null);
 
 /**
- * ✅ REINTEGRATA: Funzione di parsing della v8.0, più diretta per formati EU.
+ * ✅ MANTENUTA: Funzione di parsing della v8.0, confermata come la più efficace.
  */
 const parseValue = (val) => {
     if (val === null || val === undefined || String(val).trim() === '') return null;
@@ -60,8 +61,11 @@ const parseValue = (val) => {
 };
 
 
-// --- FUNZIONI DI ESTRAZIONE DATI (da v10.1) ---
+// --- FUNZIONI DI ESTRAZIONE DATI ---
 
+/**
+ * ✅ AGGIORNATO: Trova colonne anno con fallback numerico e guardia per colonne uguali.
+ */
 const findYearColumns = (sheetData) => {
   const yearRe = /^(19|20)\d{2}$/;
   const candidates = [];
@@ -79,6 +83,7 @@ const findYearColumns = (sheetData) => {
         previousYearCol: candidates[1].col,
         currentYear: candidates[0].year,
         previousYear: candidates[1].year,
+        usedFallback: false,
     };
     console.log('Colonne anni trovate da header:', res);
     return res;
@@ -93,13 +98,18 @@ const findYearColumns = (sheetData) => {
   const ranked = [...score.entries()].sort((a,b)=>b[1]-a[1]).map(([c])=>c).slice(0,4).sort((a,b)=>a-b);
   const rightMost = ranked.slice(-2);
   if (rightMost.length === 2) {
-    const res = { currentYearCol: rightMost[1], previousYearCol: rightMost[0], currentYear: null, previousYear: null };
+    // Guardia: se le due colonne più dense sono la stessa, prendi la successiva migliore
+    if (rightMost[0] === rightMost[1] && ranked.length > 2) {
+        rightMost[0] = ranked[ranked.length - 3];
+        rightMost.sort((a,b) => a-b);
+    }
+    const res = { currentYearCol: rightMost[1], previousYearCol: rightMost[0], currentYear: null, previousYear: null, usedFallback: true };
     console.warn('Colonne anni trovate con fallback numerico:', res);
     return res;
   }
 
   console.warn('Fallback finale per colonne anni: 3,4');
-  return { currentYearCol: 3, previousYearCol: 4, currentYear: null, previousYear: null };
+  return { currentYearCol: 3, previousYearCol: 4, currentYear: null, previousYear: null, usedFallback: true };
 };
 
 const extractTwoYearsFromRow = (row, yearCols) => {
@@ -107,6 +117,7 @@ const extractTwoYearsFromRow = (row, yearCols) => {
   const b = parseValue(row[yearCols.previousYearCol]);
   if (a !== null || b !== null) return { currentYear: a, previousYear: b };
 
+  // Fallback di riga: prendi i due numeri più a destra
   const nums = row.map(cell => parseValue(cell)).filter(v => v !== null);
   if (nums.length >= 2) {
     const twoRightMost = nums.slice(-2);
@@ -116,7 +127,6 @@ const extractTwoYearsFromRow = (row, yearCols) => {
 };
 
 const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
-  console.log(`--- Inizio ricerca per: [${metricName}] ---`);
   for (const config of searchConfigs) {
     const primary = (config.primary || []).map(norm);
     const exclusion = (config.exclusion || []).map(norm);
@@ -130,13 +140,13 @@ const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
       if (primaryOrTotale && !bad) {
         const result = extractTwoYearsFromRow(row, yearCols);
         if (!isEmptyResult(result)) {
-          console.log(`[${metricName}] match:`, { desc, result });
+          console.log(`[${metricName}] ✅ Match:`, { desc, result });
           return result;
         }
       }
     }
   }
-  console.log(`[${metricName}] nessun match`);
+  console.log(`[${metricName}] ⚠️ Nessun match`);
   return { currentYear: null, previousYear: null };
 };
 
@@ -144,7 +154,6 @@ const findSimpleValue = (sheetData, searchTexts) => {
     const normalizedSearchTexts = searchTexts.map(norm);
     for (const row of sheetData) {
         const normalizedRow = (row.slice(0, 6) || []).map(c => norm(c)).join(' ');
-        
         if (normalizedSearchTexts.some(searchText => normalizedRow.includes(searchText))) {
             for (let j = 0; j < row.length; j++) {
                 const cellValue = String(row[j] || '').trim();
@@ -181,7 +190,7 @@ const metricsConfigs = {
   debitiBreveTermine: [ { primary: ["debiti esigibili entro l'esercizio successivo"] } ],
   creditiClienti: [ { primary: ["crediti verso clienti"] } ],
   rimanenze: [ { primary: ["rimanenze"] } ],
-  disponibilitaLiquide: [ { primary: ["disponibilità liquide"] } ],
+  disponibilitaLiquide: [ { primary: ["disponibilita liquide"] }, { primary: ["cassa e banche"], exclusion: ["passivo", "debiti"] } ],
 };
 
 export default async function handler(req, res) {
@@ -189,7 +198,7 @@ export default async function handler(req, res) {
   const { sessionId } = req.query;
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (v11.0 - Ibrida).`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (v12.0 - Hardened).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -211,7 +220,6 @@ export default async function handler(req, res) {
     const incomeStatementData = xlsx.utils.sheet_to_json(incomeStatement, { header: 1, defval: '', raw: false });
     const companyInfoData = xlsx.utils.sheet_to_json(companyInfoSheet, { header: 1, defval: '', raw: false });
 
-    // 1. Estrazione e uniformazione scala
     let scale = scaleInfo(companyInfoData);
     if (scale == null) scale = scaleInfo(balanceSheetData);
     if (scale == null) {
@@ -222,7 +230,7 @@ export default async function handler(req, res) {
     const yearColsBS = findYearColumns(balanceSheetData);
     const yearColsIS = findYearColumns(incomeStatementData);
 
-    const companyName = findSimpleValue(companyInfoData, ["denominazione", "ragione sociale", "impresa", "societa"]) || 'Azienda Analizzata';
+    const companyName = findSimpleValue(companyInfoData, ["denominazione", "ragione sociale", "impresa", "societa", "azienda"]) || 'Azienda Analizzata';
     const context = {
         ateco: findSimpleValue(companyInfoData, ["codice ateco", "attivita prevalente"]),
         region: (findSimpleValue(companyInfoData, ["sede"])?.match(/\(([^)]+)\)/) || [])[1] || null
@@ -253,47 +261,61 @@ export default async function handler(req, res) {
       if (m.previousYear != null) m.previousYear = m.previousYear * scale;
     });
 
-    // 2. Sanity Check sui dati estratti
+    // ✅ Sanity Check più robusto
     console.log("Eseguo sanity check sui dati estratti...");
-    const coreValues = [
-      metrics.fatturato?.currentYear,
-      metrics.totaleAttivo?.currentYear,
-      metrics.patrimonioNetto?.currentYear,
-      metrics.utilePerdita?.currentYear
+    const coreMetricsCheck = [
+        metrics.fatturato,
+        metrics.totaleAttivo,
+        metrics.patrimonioNetto,
+        metrics.utilePerdita
     ];
-    const presentCoreValues = coreValues.filter(v => typeof v === 'number' && isFinite(v));
-    if (presentCoreValues.length < 2) {
-      throw new Error("Dati estratti insufficienti per un'analisi affidabile (fatturato, attivo, patrimonio, utile).");
+    const validCoreMetricsCount = coreMetricsCheck.filter(m => m && m.currentYear != null && m.previousYear != null).length;
+    if (validCoreMetricsCount < 2) {
+      throw new Error(`Dati estratti insufficienti per un'analisi affidabile. Trovate solo ${validCoreMetricsCount}/4 metriche core con dati per entrambi gli anni.`);
     }
     const hasOutliers = Object.values(metrics).some(m =>
       m && [m?.currentYear, m?.previousYear].some(v => typeof v === 'number' && Math.abs(v) > 1e12)
     );
     if (hasOutliers) {
-      throw new Error("Valori anomali o irrealistici rilevati. L'analisi è stata interrotta per garantire l'affidabilità.");
+      throw new Error("Valori anomali o irrealistici rilevati (> 1.000 miliardi). L'analisi è stata interrotta.");
     }
     console.log("✅ Sanity check superato.");
 
-    // 3. Preparazione del prompt con dati validati
-    const yearLabelIS = (yearColsIS.currentYear != null && yearColsIS.previousYear != null)
-      ? `(${yearColsIS.currentYear} / ${yearColsIS.previousYear})` : '(N / N-1)';
-    const yearLabelBS = (yearColsBS.currentYear != null && yearColsBS.previousYear != null)
-      ? `(${yearColsBS.currentYear} / ${yearColsBS.previousYear})` : '(N / N-1)';
+    // ✅ Logging di coerenza di bilancio (opzionale)
+    const { totaleAttivo, patrimonioNetto, debitiTotali } = metrics;
+    if (totaleAttivo?.currentYear && patrimonioNetto?.currentYear && debitiTotali?.currentYear) {
+        if (totaleAttivo.currentYear < patrimonioNetto.currentYear) console.warn('⚠️ Coerenza sospetta: Totale Attivo < Patrimonio Netto.');
+        const balanceCheck = Math.abs(totaleAttivo.currentYear - (patrimonioNetto.currentYear + debitiTotali.currentYear));
+        const tolerance = Math.abs(totaleAttivo.currentYear * 0.15);
+        if (balanceCheck > tolerance) console.warn(`⚠️ Coerenza sospetta: L'equazione di bilancio non torna entro il 15%. Delta: ${balanceCheck}`);
+    }
+
+    // Preparazione del prompt
+    const getYearLabel = (yc) => {
+        let label = '(N / N-1)';
+        if (yc.currentYear != null && yc.previousYear != null) {
+            label = `(${yc.currentYear} / ${yc.previousYear})`;
+        }
+        if (yc.usedFallback) {
+            label += ' [colonne identificate via fallback]';
+        }
+        return label;
+    };
     
     const dataForPrompt = `
 Dati Aziendali per ${companyName} (Valori in Euro):
-
 Contesto Aziendale:
 - Regione: ${context.region || 'N/D'}
 - Codice ATECO (Settore): ${context.ateco || 'N/D'}
 
-Principali Voci di Conto Economico ${yearLabelIS}:
+Principali Voci di Conto Economico ${getYearLabel(yearColsIS)}:
 - Fatturato: ${metrics.fatturato.currentYear} / ${metrics.fatturato.previousYear}
 - Costi della Produzione: ${metrics.costiProduzione.currentYear} / ${metrics.costiProduzione.previousYear}
 - Ammortamenti e Svalutazioni: ${metrics.ammortamenti.currentYear} / ${metrics.ammortamenti.previousYear}
 - Oneri Finanziari: ${metrics.oneriFinanziari.currentYear} / ${metrics.oneriFinanziari.previousYear}
 - Utile/(Perdita) d'esercizio: ${metrics.utilePerdita.currentYear} / ${metrics.utilePerdita.previousYear}
 
-Principali Voci di Stato Patrimoniale ${yearLabelBS}:
+Principali Voci di Stato Patrimoniale ${getYearLabel(yearColsBS)}:
 - Totale Attivo: ${metrics.totaleAttivo.currentYear} / ${metrics.totaleAttivo.previousYear}
 - Patrimonio Netto: ${metrics.patrimonioNetto.currentYear} / ${metrics.patrimonioNetto.previousYear}
 - Debiti Totali: ${metrics.debitiTotali.currentYear} / ${metrics.debitiTotali.previousYear}
@@ -305,11 +327,10 @@ Principali Voci di Stato Patrimoniale ${yearLabelBS}:
 `;
     
     console.log(`[${sessionId}] Dati validati pronti per l'invio a OpenAI.`);
-    console.log(dataForPrompt);
 
-    // 4. Chiamata AI e salvataggio
-    const { data: promptData, error: promptError } = await supabase.from('ai_prompts').select('prompt_template').eq('name', 'FINANCIAL_ANALYSIS_V2').single();
-    if (promptError || !promptData) throw new Error("Prompt 'FINANCIAL_ANALYSIS_V2' non trovato.");
+    // Chiamata AI e salvataggio
+    const { data: promptData } = await supabase.from('ai_prompts').select('prompt_template').eq('name', 'FINANCIAL_ANALYSIS_V2').single();
+    if (!promptData) throw new Error("Prompt 'FINANCIAL_ANALYSIS_V2' non trovato.");
 
     const finalPrompt = `${promptData.prompt_template}\n\n### DATI ESTRATTI DAL BILANCIO ###\n${dataForPrompt}`;
     const response = await openai.chat.completions.create({
@@ -318,7 +339,14 @@ Principali Voci di Stato Patrimoniale ${yearLabelBS}:
       response_format: { type: "json_object" },
       temperature: 0.1,
     });
-    const analysisResult = JSON.parse(response.choices[0].message.content);
+
+    let analysisResult;
+    try {
+        analysisResult = JSON.parse(response.choices[0].message.content);
+    } catch (e) {
+        console.error("Errore nel parsing della risposta JSON da OpenAI:", e);
+        throw new Error("La risposta dell'AI non è in un formato JSON valido.");
+    }
     
     const resultToSave = {
       session_id: sessionId,
