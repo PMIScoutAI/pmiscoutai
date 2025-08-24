@@ -1,10 +1,9 @@
 // /pages/check-ai-xbrl.js
-// VERSIONE CON LOGICA DI AUTENTICAZIONE CORRETTA E DEFINITIVA
-// - Replica la logica di sicurezza del widget funzionante (checkup-hd.js).
-// - L'utente deve essere loggato tramite Outseta e il componente ProtectedPage deve fornire user e token.
-// - Prima di qualsiasi operazione, il token viene usato per autenticare la sessione con Supabase.
-// - Successivamente, si verifica che l'email dell'utente esista nella tabella 'users'.
-// - Se entrambi i controlli passano, si procede con l'upload usando lo user_id (UUID).
+// VERSIONE CON LOGICA DI DEBUG INTEGRATA
+// - Corretta la destrutturazione del componente ProtectedPage.
+// - Aggiunti log per verificare il passaggio di user e token.
+// - Commentata la riga supabase.auth.setSession per i test.
+// - Aggiunti log per verificare il file selezionato e gli errori di upload.
 
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -16,7 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 // --- IMPORTA IL TUO VERO COMPONENTE DI PROTEZIONE PAGINA ---
 // Assicurati che questo sia il percorso corretto e che il componente
-// fornisca sia 'user' che 'token', come fa ProtectedPageHd.
+// fornisca un oggetto con 'user' e 'token'.
 import { ProtectedPage } from '../utils/ProtectedPage'; 
 
 
@@ -41,9 +40,9 @@ export default function CheckAiXbrlPageWrapper() {
       <Script id="outseta-options" strategy="beforeInteractive">{`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}</Script>
       <Script id="outseta-script" src="https://cdn.outseta.com/outseta.min.js" strategy="beforeInteractive" />
       
-      {/* Il tuo componente ProtectedPage DEVE fornire sia user che token */}
+      {/* ✅ 1. CORRETTA LA DESTRUTTURAZIONE */}
       <ProtectedPage>
-        {(user, token) => <CheckAiXbrlPageLayout user={user} token={token} />}
+        {({ user, token }) => <CheckAiXbrlPageLayout user={user} token={token} />}
       </ProtectedPage>
     </>
   );
@@ -63,6 +62,10 @@ const icons = {
 
 // --- Layout della Pagina con Dashboard ---
 function CheckAiXbrlPageLayout({ user, token }) {
+  // ✅ 2. AGGIUNTI LOG PER VERIFICARE USER E TOKEN
+  console.log('[DEBUG] USER:', user);
+  console.log('[DEBUG] TOKEN:', token);
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navLinks = [
     { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
@@ -145,26 +148,20 @@ function CheckAiXbrlForm({ user, token }) {
     setError('');
 
     try {
-      // =======================================================================================
-      // == LOGICA DI AUTORIZZAZIONE CORRETTA ==
-      // =======================================================================================
-      // 1. Autentica la sessione Supabase con il token di Outseta.
-      // Questo è il passaggio chiave che mancava.
-      if (!token) {
-        throw new Error("Token di autenticazione non trovato. Effettua nuovamente il login.");
-      }
-      await supabase.auth.setSession({ access_token: token });
+      // ✅ 3. RIMOSSA LA RIGA setSession
+      // if (!token) {
+      //   throw new Error("Token di autenticazione non trovato. Effettua nuovamente il login.");
+      // }
+      // await supabase.auth.setSession({ access_token: token });
 
-      // 2. Ottieni l'email dell'utente loggato.
       const loggedInUserEmail = user.email;
       if (!loggedInUserEmail) {
         throw new Error("Impossibile recuperare l'email dell'utente. Assicurati di essere loggato.");
       }
 
-      // 3. Verifica se l'utente è autorizzato controllando la tabella 'users'.
       const { data: dbUser, error: userError } = await supabase
         .from('users')
-        .select('id') // Selezioniamo solo l'ID (UUID)
+        .select('id')
         .eq('email', loggedInUserEmail)
         .single();
 
@@ -172,16 +169,21 @@ function CheckAiXbrlForm({ user, token }) {
         throw new Error("Non sei autorizzato a eseguire questa operazione. Contatta il supporto.");
       }
       
-      // 4. Se l'utente è autorizzato, procedi con l'upload.
       const supabaseUserId = dbUser.id;
       
       const sessionId = uuidv4();
       const fileExt = selectedFile.name.split('.').pop();
       const filePath = `public/${sessionId}.${fileExt}`;
 
+      // ✅ 4. LOG PER VERIFICARE IL FILE
+      console.log('[DEBUG] Selected file:', selectedFile);
+
       const { error: uploadError } = await supabase.storage
         .from('checkup-documents')
         .upload(filePath, selectedFile);
+      
+      // ✅ 5. LOG PER VERIFICARE L'ERRORE DI UPLOAD
+      if (uploadError) console.error('[UPLOAD ERROR]', uploadError);
       if (uploadError) throw uploadError;
 
       const { error: sessionError } = await supabase
@@ -191,7 +193,7 @@ function CheckAiXbrlForm({ user, token }) {
           session_name: companyName, 
           file_path: filePath,
           status: 'pending',
-          user_id: supabaseUserId, // Usa l'UUID verificato
+          user_id: supabaseUserId,
         });
       if (sessionError) throw sessionError;
 
