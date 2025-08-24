@@ -1,10 +1,10 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 8.0: Implementazione della nuova Dashboard Finanziaria
-// - Riorganizzazione della UI secondo la proposta "financial-dashboard-proposal".
-// - Aggiunta card "Crescita Fatturato" in primo piano.
-// - Creazione di una griglia dinamica per i KPI.
-// - Aggiunta sezione "Avvisi e Qualità Dati".
-// - Miglioramenti grafici e di leggibilità.
+// VERSIONE 9.0: Dashboard Professionale e Contestuale
+// - Logica migliorata per il recupero del nome dell'azienda.
+// - Aggiunta "Dashboard Esecutiva" con Fatturato, Utile e Variazione.
+// - Nuova sezione "Contesto di Mercato" con ATECO e Regione.
+// - KPI ora includono una valutazione qualitativa (es. "Eccellente").
+// - Migliorata la visibilità degli avvisi sulla qualità dei dati.
 
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -24,7 +24,6 @@ export default function AnalisiReportPageWrapper() {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <script src="https://cdn.tailwindcss.com"></script>
-        {/* Libreria per i grafici */}
         <script src="https://unpkg.com/recharts/umd/Recharts.min.js"></script>
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
       </Head>
@@ -58,7 +57,9 @@ const icons = {
   dollarSign: <><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></>,
   shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></>,
   zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></>,
-  checkCircle: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></>
+  checkCircle: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></>,
+  briefcase: <><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></>,
+  mapPin: <><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></>
 };
 
 // --- Layout della Pagina Report (invariato) ---
@@ -125,17 +126,14 @@ function AnalisiReportPage({ user }) {
           if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
           
           if (data.status === 'completed' && data.analysisData) {
-            // Parse JSON strings into objects
-            const parsedData = {
-              ...data.analysisData,
-              key_metrics: typeof data.analysisData.key_metrics === 'string' ? JSON.parse(data.analysisData.key_metrics) : data.analysisData.key_metrics,
-              charts_data: typeof data.analysisData.charts_data === 'string' ? JSON.parse(data.analysisData.charts_data) : data.analysisData.charts_data,
-              detailed_swot: typeof data.analysisData.detailed_swot === 'string' ? JSON.parse(data.analysisData.detailed_swot) : data.analysisData.detailed_swot,
-              recommendations: typeof data.analysisData.recommendations === 'string' ? JSON.parse(data.analysisData.recommendations) : data.analysisData.recommendations,
-              risk_analysis: typeof data.analysisData.risk_analysis === 'string' ? JSON.parse(data.analysisData.risk_analysis) : data.analysisData.risk_analysis,
-              pro_features_teaser: typeof data.analysisData.pro_features_teaser === 'string' ? JSON.parse(data.analysisData.pro_features_teaser) : data.analysisData.pro_features_teaser,
-              raw_ai_response: typeof data.analysisData.raw_ai_response === 'string' ? JSON.parse(data.analysisData.raw_ai_response) : data.analysisData.raw_ai_response,
-            };
+            const parsedData = Object.keys(data.analysisData).reduce((acc, key) => {
+              try {
+                acc[key] = typeof data.analysisData[key] === 'string' ? JSON.parse(data.analysisData[key]) : data.analysisData[key];
+              } catch (e) {
+                acc[key] = data.analysisData[key];
+              }
+              return acc;
+            }, {});
             setAnalysisData(parsedData);
           } else if (data.status === 'failed') {
             setError(data.error_message || 'Si è verificato un errore durante l\'analisi.');
@@ -171,14 +169,16 @@ function AnalisiReportPage({ user }) {
     
     if (!analysisData) return <ErrorState message="Analisi completata, ma non è stato possibile recuperare i risultati." />;
 
-    const companyName = analysisData.raw_ai_response?.company_name || sessionData.companies?.company_name;
+    // ✅ Logica migliorata per il nome azienda
+    const companyName = (analysisData.raw_ai_response?.company_name && !analysisData.raw_ai_response.company_name.startsWith('T0000')) 
+      ? analysisData.raw_ai_response.company_name 
+      : (sessionData.companies?.company_name || 'Azienda Analizzata');
     
-    // Estrai avvisi e dati mancanti
     const warnings = analysisData.raw_ai_response?.warnings || [];
     const missingDataReasons = Object.values(analysisData.key_metrics || {})
       .map(metric => metric.reason_if_null)
-      .filter(Boolean); // Filtra i valori null/undefined
-    const allWarnings = [...new Set([...warnings, ...missingDataReasons])]; // Unisci e rimuovi duplicati
+      .filter(Boolean);
+    const allWarnings = [...new Set([...warnings, ...missingDataReasons])];
 
     return (
       <div className="space-y-8">
@@ -186,10 +186,13 @@ function AnalisiReportPage({ user }) {
             companyName={companyName} 
             healthScore={analysisData.health_score} 
             summary={analysisData.summary}
-            chartsData={analysisData.charts_data}
         />
         
+        <ExecutiveSummarySection chartsData={analysisData.charts_data} />
+        
         {allWarnings.length > 0 && <DataQualitySection warnings={allWarnings} />}
+        
+        <MarketContextSection context={analysisData.raw_ai_response?.company_context} />
         
         <KeyMetricsSection metrics={analysisData.key_metrics} />
 
@@ -230,14 +233,29 @@ const ErrorState = ({ message }) => (
     <div className="flex items-center justify-center h-full p-10"><div className="text-center p-10 bg-white rounded-xl shadow-lg border-l-4 border-red-500"><Icon path={icons.alertTriangle} className="w-12 h-12 text-red-500 mx-auto mb-4" /><h2 className="text-2xl font-bold text-red-700">Si è verificato un errore</h2><p className="text-slate-600 mt-2">{message}</p></div></div>
 );
 
-// --- NUOVI Componenti della Dashboard ---
+// --- NUOVI Componenti della Dashboard v9.0 ---
+
+const ReportHeader = ({ companyName, healthScore, summary }) => (
+  <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
+    <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+      <div className="flex-1 text-center md:text-left">
+        <p className="text-sm font-medium text-blue-600">Report di Analisi AI</p>
+        <h1 className="text-3xl font-bold text-slate-900 mt-1">{companyName}</h1>
+        <p className="mt-4 text-slate-600 leading-relaxed max-w-prose mx-auto md:mx-0">{summary || 'Nessun sommario disponibile.'}</p>
+      </div>
+      <div className="flex-shrink-0">
+        <HealthScoreGauge score={healthScore} />
+      </div>
+    </div>
+  </div>
+);
 
 const HealthScoreGauge = ({ score }) => {
     if (score === null || score === undefined) {
         return (
             <div className="flex flex-col items-center justify-center w-40 h-40 bg-slate-50 rounded-full border">
                 <Icon path={icons.alertTriangle} className="w-8 h-8 text-slate-400 mb-2" />
-                <p className="text-xs text-slate-500 text-center">Dati non sufficienti</p>
+                <p className="text-xs text-slate-500 text-center px-2">Dati insufficienti per il calcolo</p>
             </div>
         );
     }
@@ -262,54 +280,56 @@ const HealthScoreGauge = ({ score }) => {
     );
 };
 
-const RevenueGrowthCard = ({ chartsData }) => {
-    const { current_year: current, previous_year: previous } = chartsData?.revenue_trend || {};
-    if (current === null || previous === null || previous === 0) {
-        return null; // Non mostrare la card se i dati non sono validi
+const formatCurrency = (value) => {
+    if (value === null || value === undefined) return 'N/D';
+    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value);
+};
+
+const ExecutiveSummaryCard = ({ title, value, icon, change, changeColor }) => (
+    <div className="p-4 bg-white rounded-xl shadow-sm border border-slate-200 flex-1">
+        <div className="flex items-center text-sm font-medium text-slate-500">
+            <Icon path={icon} className="w-4 h-4 mr-2" />
+            {title}
+        </div>
+        <p className="text-3xl font-bold text-slate-900 mt-2">{value}</p>
+        {change && <p className={`text-sm font-medium mt-1 ${changeColor}`}>{change}</p>}
+    </div>
+);
+
+const ExecutiveSummarySection = ({ chartsData }) => {
+    const revenue = chartsData?.revenue_trend || {};
+    const profit = chartsData?.profit_trend || {};
+    
+    let growth = null;
+    let growthColor = '';
+    if (revenue.current_year !== null && revenue.previous_year !== null && revenue.previous_year !== 0) {
+        const growthValue = ((revenue.current_year - revenue.previous_year) / Math.abs(revenue.previous_year)) * 100;
+        const isPositive = growthValue >= 0;
+        growth = `${isPositive ? '+' : ''}${growthValue.toFixed(1)}% vs anno prec.`;
+        growthColor = isPositive ? 'text-green-600' : 'text-red-600';
     }
-    const growth = ((current - previous) / Math.abs(previous)) * 100;
-    const isPositive = growth >= 0;
-    const colorClasses = isPositive ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100';
 
     return (
-        <div className="p-4 bg-white rounded-xl shadow-sm border border-slate-200 flex-1">
-            <p className="text-sm font-medium text-slate-500">Crescita Fatturato</p>
-            <div className={`flex items-center gap-2 mt-2 ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                <Icon path={icons.trendingUp} className="w-7 h-7" />
-                <p className="text-3xl font-bold">{growth.toFixed(1)}%</p>
+        <section>
+            <div className="flex flex-col md:flex-row gap-4">
+                <ExecutiveSummaryCard title="Fatturato (Anno Corrente)" value={formatCurrency(revenue.current_year)} icon={icons.dollarSign} change={growth} changeColor={growthColor} />
+                <ExecutiveSummaryCard title="Utile Netto (Anno Corrente)" value={formatCurrency(profit.current_year)} icon={icons.award} />
             </div>
-        </div>
+        </section>
     );
 };
 
-const ReportHeader = ({ companyName, healthScore, summary, chartsData }) => (
-  <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
-    <div className="flex flex-col md:flex-row items-start justify-between gap-6">
-      <div className="flex-1">
-        <p className="text-sm font-medium text-blue-600">Report di Analisi AI</p>
-        <h1 className="text-3xl font-bold text-slate-900 mt-1">{companyName}</h1>
-        <p className="mt-4 text-slate-600 leading-relaxed max-w-prose">{summary || 'Nessun sommario disponibile.'}</p>
-      </div>
-      <div className="flex flex-col sm:flex-row md:flex-col gap-4 w-full md:w-auto">
-        <div className="flex-shrink-0 mx-auto md:mx-0">
-          <HealthScoreGauge score={healthScore} />
-        </div>
-        <RevenueGrowthCard chartsData={chartsData} />
-      </div>
-    </div>
-  </div>
-);
-
 const DataQualitySection = ({ warnings }) => (
-    <section className="p-6 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg">
+    <section className="p-6 bg-amber-50 border-l-4 border-amber-400 rounded-lg">
         <div className="flex">
             <div className="flex-shrink-0">
-                <Icon path={icons.alertTriangle} className="h-5 w-5 text-yellow-400" />
+                <Icon path={icons.alertTriangle} className="h-5 w-5 text-amber-500" />
             </div>
             <div className="ml-3">
-                <h3 className="text-sm font-medium text-yellow-800">Avvisi sulla qualità dei dati</h3>
-                <div className="mt-2 text-sm text-yellow-700">
-                    <ul className="list-disc space-y-1 pl-5">
+                <h3 className="text-sm font-medium text-amber-800">Avvisi sulla Qualità dei Dati</h3>
+                <div className="mt-2 text-sm text-amber-700">
+                    <p>La precisione di questa analisi è limitata dai seguenti fattori:</p>
+                    <ul className="list-disc space-y-1 pl-5 mt-2">
                         {warnings.map((warning, i) => <li key={i}>{warning}</li>)}
                     </ul>
                 </div>
@@ -318,13 +338,54 @@ const DataQualitySection = ({ warnings }) => (
     </section>
 );
 
+const MarketContextSection = ({ context }) => {
+    if (!context || (!context.ateco_code && !context.region)) return null;
+    return (
+        <section>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Contesto di Mercato</h2>
+            <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <div className="flex items-center text-sm font-medium text-slate-500">
+                            <Icon path={icons.briefcase} className="w-4 h-4 mr-2" />
+                            <span>Settore (Codice ATECO)</span>
+                        </div>
+                        <p className="text-lg font-semibold text-slate-800 mt-1">{context.ateco_code || 'Non specificato'}</p>
+                        <p className="text-xs text-slate-500 mt-1">Questo codice identifica l'attività economica principale dell'azienda, utile per analisi comparative di settore.</p>
+                    </div>
+                    <div>
+                        <div className="flex items-center text-sm font-medium text-slate-500">
+                            <Icon path={icons.mapPin} className="w-4 h-4 mr-2" />
+                            <span>Regione</span>
+                        </div>
+                        <p className="text-lg font-semibold text-slate-800 mt-1">{context.region || 'Non specificata'}</p>
+                        <p className="text-xs text-slate-500 mt-1">La localizzazione geografica può influenzare l'analisi a causa di normative e condizioni di mercato locali.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    );
+};
+
 const KeyMetricsSection = ({ metrics }) => {
     const metricDetails = {
-        roe: { label: 'ROE', icon: icons.award },
-        roi: { label: 'ROI', icon: icons.target },
-        debt_equity: { label: 'Debt/Equity', icon: icons.shield },
-        current_ratio: { label: 'Current Ratio', icon: icons.dollarSign },
-        ebitda_margin: { label: 'EBITDA Margin', icon: icons.zap },
+        roe: { label: 'ROE', icon: icons.award, unit: '%' },
+        roi: { label: 'ROI', icon: icons.target, unit: '%' },
+        debt_equity: { label: 'Debt/Equity', icon: icons.shield, unit: '' },
+        current_ratio: { label: 'Current Ratio', icon: icons.dollarSign, unit: '' },
+        ebitda_margin: { label: 'EBITDA Margin', icon: icons.zap, unit: '%' },
+    };
+
+    const getRating = (key, value) => {
+        if (value === null) return { text: 'Non Calcolabile', color: 'bg-slate-100 text-slate-500' };
+        switch (key) {
+            case 'roe': return value > 15 ? { text: 'Eccellente', color: 'bg-green-100 text-green-700' } : (value > 5 ? { text: 'Buono', color: 'bg-sky-100 text-sky-700' } : { text: 'Da Migliorare', color: 'bg-amber-100 text-amber-700' });
+            case 'roi': return value > 10 ? { text: 'Eccellente', color: 'bg-green-100 text-green-700' } : (value > 5 ? { text: 'Buono', color: 'bg-sky-100 text-sky-700' } : { text: 'Da Migliorare', color: 'bg-amber-100 text-amber-700' });
+            case 'debt_equity': return value < 1.5 ? { text: 'Ottimale', color: 'bg-green-100 text-green-700' } : (value < 2.5 ? { text: 'Attenzione', color: 'bg-amber-100 text-amber-700' } : { text: 'Rischioso', color: 'bg-red-100 text-red-700' });
+            case 'current_ratio': return value > 1.8 ? { text: 'Solido', color: 'bg-green-100 text-green-700' } : (value > 1.2 ? { text: 'Adeguato', color: 'bg-sky-100 text-sky-700' } : { text: 'Critico', color: 'bg-red-100 text-red-700' });
+            case 'ebitda_margin': return value > 20 ? { text: 'Alto', color: 'bg-green-100 text-green-700' } : (value > 10 ? { text: 'Buono', color: 'bg-sky-100 text-sky-700' } : { text: 'Basso', color: 'bg-amber-100 text-amber-700' });
+            default: return { text: '', color: '' };
+        }
     };
 
     if (!metrics || Object.keys(metrics).length === 0) return null;
@@ -332,22 +393,26 @@ const KeyMetricsSection = ({ metrics }) => {
     return (
         <section>
             <h2 className="text-xl font-bold text-slate-800 mb-4">Indicatori Chiave (KPIs)</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {Object.entries(metrics).map(([key, metric]) => {
                     const detail = metricDetails[key];
                     if (!detail) return null;
-
-                    const isOk = metric.value !== null;
-                    const valueDisplay = isOk ? (key === 'roe' || key === 'roi' || key === 'ebitda_margin' ? `${metric.value.toFixed(2)}%` : metric.value.toFixed(2)) : 'N/D';
+                    const rating = getRating(key, metric.value);
+                    const valueDisplay = metric.value !== null ? `${metric.value.toFixed(2)}${detail.unit}` : 'N/D';
                     
                     return (
-                        <div key={key} className="p-4 bg-white rounded-xl shadow-sm border border-slate-200">
-                            <div className="flex items-center text-sm font-medium text-slate-500">
-                                <Icon path={detail.icon} className="w-4 h-4 mr-2" />
-                                {detail.label}
+                        <div key={key} className="p-4 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
+                            <div>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center text-sm font-medium text-slate-500">
+                                        <Icon path={detail.icon} className="w-4 h-4 mr-2" />
+                                        {detail.label}
+                                    </div>
+                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${rating.color}`}>{rating.text}</span>
+                                </div>
+                                <p className={`text-3xl font-bold mt-2 ${metric.value !== null ? 'text-slate-900' : 'text-slate-400'}`}>{valueDisplay}</p>
                             </div>
-                            <p className={`text-3xl font-bold mt-2 ${isOk ? 'text-slate-900' : 'text-slate-400'}`}>{valueDisplay}</p>
-                            <p className="text-xs text-slate-400 mt-1 truncate" title={metric.benchmark}>{metric.benchmark}</p>
+                            <p className="text-xs text-slate-400 mt-2 truncate" title={metric.benchmark}>{metric.benchmark}</p>
                         </div>
                     );
                 })}
@@ -356,66 +421,49 @@ const KeyMetricsSection = ({ metrics }) => {
     );
 };
 
+// --- Componenti Esistenti (Stile e Logica Aggiornati) ---
 const TrendChartsSection = ({ chartsData }) => {
     if (!chartsData) return null;
     const { revenue_trend, profit_trend } = chartsData;
-
     return (
         <section>
              <h2 className="text-xl font-bold text-slate-800 mb-4">Andamento Economico</h2>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {revenue_trend && <TrendChart data={revenue_trend} dataKey="val" name="Fatturato" color="#3b82f6" title="Andamento Fatturato (€)" />}
-                {profit_trend && <TrendChart data={profit_trend} dataKey="val" name="Utile" color="#10b981" title="Andamento Utile (€)" />}
+                {revenue_trend && (revenue_trend.current_year !== null || revenue_trend.previous_year !== null) && <TrendChart data={revenue_trend} dataKey="val" name="Fatturato" color="#3b82f6" title="Andamento Fatturato (€)" />}
+                {profit_trend && (profit_trend.current_year !== null || profit_trend.previous_year !== null) && <TrendChart data={profit_trend} dataKey="val" name="Utile" color="#10b981" title="Andamento Utile (€)" />}
              </div>
         </section>
     );
 };
-
 const TrendChart = ({ data, dataKey, name, color, title }) => {
     if (typeof window === 'undefined' || !window.Recharts) {
-        return <div className="flex items-center justify-center h-64 text-sm text-slate-500">Caricamento grafico...</div>;
+        return <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200"><div className="flex items-center justify-center h-64 text-sm text-slate-500">Caricamento grafico...</div></div>;
     }
     const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts;
-    const chartData = [
-        { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 },
-        { name: 'Anno Corr.', [dataKey]: data.current_year || 0 },
-    ];
+    const chartData = [ { name: 'Anno Prec.', [dataKey]: data.previous_year || 0 }, { name: 'Anno Corr.', [dataKey]: data.current_year || 0 } ];
     const formatYAxis = (tick) => tick >= 1000000 ? `${(tick/1000000).toFixed(1)}M` : (tick >= 1000 ? `${(tick/1000).toFixed(0)}K` : tick);
     return (
         <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
             <h3 className="text-base font-semibold text-slate-800">{title}</h3>
             <div className="h-64 mt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={formatYAxis} axisLine={false} tickLine={false} />
-                        <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} contentStyle={{ fontSize: 12, borderRadius: '0.75rem', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)', border: '1px solid #e2e8f0', padding: '8px 12px' }} formatter={(value) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value)} />
-                        <Bar dataKey={dataKey} name={name} fill={color} barSize={40} radius={[8, 8, 0, 0]} />
-                    </BarChart>
-                </ResponsiveContainer>
+                <ResponsiveContainer width="100%" height="100%"><BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} /><YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={formatYAxis} axisLine={false} tickLine={false} /><Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} contentStyle={{ fontSize: 12, borderRadius: '0.75rem', border: '1px solid #e2e8f0', padding: '8px 12px' }} formatter={(value) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value)} /><Bar dataKey={dataKey} name={name} fill={color} barSize={40} radius={[8, 8, 0, 0]} /></BarChart></ResponsiveContainer>
             </div>
         </div>
     );
 };
-
-// --- Sezioni Esistenti (Stile Aggiornato) ---
 const RecommendationsSection = ({ recommendations }) => (
     <section>
         <h2 className="text-xl font-bold text-slate-800 mb-4">Raccomandazioni Strategiche</h2>
         <div className="space-y-4">
             {recommendations.map((rec, i) => (
                 <div key={i} className="flex items-start p-4 bg-white rounded-xl shadow-sm border border-slate-200">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-4">
-                        <Icon path={icons.lightbulb} className="w-5 h-5 text-blue-600" />
-                    </div>
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-4"><Icon path={icons.lightbulb} className="w-5 h-5 text-blue-600" /></div>
                     <p className="text-slate-700 text-sm">{rec}</p>
                 </div>
             ))}
         </div>
     </section>
 );
-
 const DetailedSwotSection = ({ swot }) => {
     const swotDetails = {
         strengths: { label: 'Punti di Forza', icon: icons.thumbsUp, classes: 'border-green-500 bg-green-50 text-green-700' },
@@ -433,18 +481,11 @@ const DetailedSwotSection = ({ swot }) => {
                     return (
                         <div key={key} className={`p-6 bg-white rounded-xl shadow-sm border-t-4 ${detail.classes.split(' ')[0]}`}>
                             <div className="flex items-center text-lg font-bold text-slate-800">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 ${detail.classes.split(' ')[1]}`}>
-                                    <Icon path={detail.icon} className={`w-5 h-5 ${detail.classes.split(' ')[2]}`} />
-                                </div>
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 ${detail.classes.split(' ')[1]}`}><Icon path={detail.icon} className={`w-5 h-5 ${detail.classes.split(' ')[2]}`} /></div>
                                 {detail.label}
                             </div>
                             <div className="mt-4 space-y-3 text-sm">
-                                {swot[key].map((item, idx) => (
-                                    <div key={idx}>
-                                        <p className="font-semibold text-slate-700">{item.point}</p>
-                                        <p className="text-slate-500">{item.explanation}</p>
-                                    </div>
-                                ))}
+                                {swot[key].map((item, idx) => (<div key={idx}><p className="font-semibold text-slate-700">{item.point}</p><p className="text-slate-500">{item.explanation}</p></div>))}
                             </div>
                         </div>
                     );
@@ -453,24 +494,19 @@ const DetailedSwotSection = ({ swot }) => {
         </section>
     );
 };
-
 const RiskAnalysisSection = ({ risks }) => (
     <section>
         <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi dei Rischi Principali</h2>
         <div className="space-y-4">
             {risks.map((item, i) => (
                 <div key={i} className="p-4 bg-white rounded-xl shadow-sm border border-slate-200">
-                    <div className="flex items-center font-semibold text-slate-700">
-                        <Icon path={icons.shield} className="w-5 h-5 mr-3 text-red-500" />
-                        {item.risk}
-                    </div>
+                    <div className="flex items-center font-semibold text-slate-700"><Icon path={icons.shield} className="w-5 h-5 mr-3 text-red-500" />{item.risk}</div>
                     <p className="mt-2 pl-8 text-sm text-slate-600">{item.mitigation}</p>
                 </div>
             ))}
         </div>
     </section>
 );
-
 const ProTeaserSection = ({ teaser }) => (
     <section className="mt-12">
         <div className="p-8 bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl shadow-lg text-center">
