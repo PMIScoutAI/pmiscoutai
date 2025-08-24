@@ -1,9 +1,8 @@
 // /pages/check-ai-xbrl.js
-// VERSIONE CON LOGICA BETA
-// - Rimuove la dipendenza dal token di Outseta per la fase beta.
-// - Gestisce l'autenticazione direttamente all'interno del form.
-// - Se l'utente non è loggato, crea una sessione anonima ("utente fittizio") su Supabase
-//   per permettere l'upload e risolvere l'errore di sicurezza.
+// VERSIONE CON LOGICA BETA FINALE
+// - Se un utente è loggato (es. con Outseta), usa il suo ID.
+// - Se nessun utente è loggato, usa un ID "fittizio" predefinito per la fase beta,
+//   evitando di creare nuovi utenti anonimi e risolvendo gli errori di sicurezza.
 
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -139,21 +138,20 @@ function CheckAiXbrlForm() {
       // =======================================================================================
       // == LOGICA DI AUTENTICAZIONE BETA ==
       // =======================================================================================
-      // 1. Controlliamo se c'è già una sessione utente (da Outseta o precedente).
+      // 1. Controlliamo se c'è già una sessione utente attiva (da Outseta).
       let { data: { session } } = await supabase.auth.getSession();
-      let user = session?.user;
+      let userId;
 
-      // 2. Se non c'è una sessione, creiamo un utente anonimo "fittizio" per la fase beta.
-      if (!user) {
-        console.log("Nessun utente loggato, creo una sessione anonima per la beta.");
-        const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously();
-        if (anonError) throw anonError;
-        user = anonData.user;
+      // 2. Se c'è una sessione, usiamo l'ID dell'utente reale.
+      if (session?.user) {
+        userId = session.user.id;
+        console.log("Utente loggato trovato:", userId);
+      } else {
+        // 3. Se non c'è sessione, usiamo l'ID fittizio per la fase beta.
+        userId = "11111111-1111-1111-1111-111111111111";
+        console.log("Nessun utente loggato, utilizzo l'ID beta:", userId);
       }
       
-      if (!user) throw new Error("Impossibile ottenere una sessione utente per procedere.");
-
-      // Da qui in poi, usiamo l'ID dell'utente (reale o fittizio) per le operazioni.
       const sessionId = uuidv4();
       const fileExt = selectedFile.name.split('.').pop();
       const filePath = `public/${sessionId}.${fileExt}`;
@@ -170,7 +168,7 @@ function CheckAiXbrlForm() {
           session_name: companyName, 
           file_path: filePath,
           status: 'pending',
-          user_id: user.id, // Questo ID ora è sempre valido
+          user_id: userId, // Questo ID ora è sempre valido (reale o fittizio)
         });
       if (sessionError) throw sessionError;
 
