@@ -1,9 +1,8 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 12.0 (UI Integrata e Definitiva)
-// - INTEGRAZIONE: Unisce la UI avanzata suggerita dall'utente (sezioni Key Metrics, SWOT, Recommendations)
-//   con una struttura dati stabile e funzionante.
-// - FIX: Codice sintatticamente corretto e pronto per il deploy.
-// - EFFICIENZA: Popola la nuova UI direttamente con i dati forniti dall'AI, senza rigenerare testi sul frontend.
+// VERSIONE 12.1 (Fix Grafici con Barre di Progresso)
+// - FIX: Sostituita la sezione dei grafici (ComparisonSection) che usava Recharts con una nuova versione
+//   che utilizza barre di progresso in CSS, come da suggerimento dell'utente (Opzione B).
+// - Il risultato è una UI più leggera, veloce e affidabile.
 
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -23,7 +22,8 @@ export default function AnalisiReportPageWrapper() {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <script src="https://cdn.tailwindcss.com"></script>
-        <script src="https://unpkg.com/recharts/umd/Recharts.min.js"></script>
+        {/* Rimuoviamo la dipendenza da Recharts */}
+        {/* <script src="https://unpkg.com/recharts/umd/Recharts.min.js"></script> */}
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
       </Head>
       <Script id="outseta-options" strategy="beforeInteractive">
@@ -54,7 +54,6 @@ const icons = {
 // --- Layout della Pagina Report (invariato) ---
 function ReportPageLayout({ user }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  // ... (resto del layout invariato)
   return (
     <div className="relative flex min-h-screen bg-slate-100 text-slate-800">
       <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
@@ -141,10 +140,9 @@ function AnalisiReportPage({ user }) {
     if (error) return <ErrorState message={error} />;
     if (!analysisData) return <ErrorState message="Nessun dato di analisi trovato." />;
     
-    // Estrazione robusta del nome azienda
     const companyName = 
-      analysisData.raw_ai_response?.company_name || 
       analysisData.raw_parsed_data?.companyName || 
+      analysisData.raw_ai_response?.company_name || 
       'Azienda Analizzata';
 
     return (
@@ -153,7 +151,9 @@ function AnalisiReportPage({ user }) {
             companyName={companyName} 
             summary={analysisData.summary}
         />
-        <ComparisonSection chartsData={analysisData.charts_data} />
+        
+        {/* ✅ SOSTITUITO con la versione con barre di progresso */}
+        <ComparisonSectionWithBars chartsData={analysisData.charts_data} />
         
         <KeyMetricsSection keyMetrics={analysisData.key_metrics} />
         <SwotAnalysisSection swotData={analysisData.detailed_swot} />
@@ -178,7 +178,7 @@ function AnalisiReportPage({ user }) {
   );
 }
 
-// --- Componenti di Stato ---
+// --- Componenti di Stato (invariati) ---
 const LoadingState = ({ text }) => (
     <div className="flex items-center justify-center h-full p-10"><div className="text-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div><h2 className="text-2xl font-bold text-slate-800">{text}</h2></div></div>
 );
@@ -200,54 +200,95 @@ const formatCurrency = (value) => {
     return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value);
 };
 
-const ComparisonCard = ({ title, data, dataKey, icon, color }) => {
-    if (!data || data.current_year === null || data.previous_year === null) {
-        return <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 text-center"><h3 className="text-base font-semibold text-slate-800">{title}</h3><p className="mt-4 text-slate-500">Dati non disponibili.</p></div>;
-    }
-    const { current_year, previous_year } = data;
-    const percentageChange = previous_year !== 0 ? ((current_year - previous_year) / Math.abs(previous_year)) * 100 : 0;
-    const isPositive = percentageChange >= 0;
-
-    if (typeof window === 'undefined' || !window.Recharts) {
-        return <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200"><div className="flex items-center justify-center h-64 text-sm text-slate-500">Caricamento grafico...</div></div>;
-    }
-    const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } = window.Recharts;
-    const chartData = [ { name: 'Anno Prec.', [dataKey]: previous_year }, { name: 'Anno Corr.', [dataKey]: current_year } ];
-    const formatYAxis = (tick) => tick >= 1000000 ? `${(tick/1000000).toFixed(1)}M` : (tick >= 1000 ? `${(tick/1000).toFixed(0)}K` : tick);
-
-    return (
-        <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
-            <div className="flex justify-between items-start">
-                <div>
-                    <h3 className="text-base font-semibold text-slate-800 flex items-center"><Icon path={icon} className="w-5 h-5 mr-2 text-slate-500" />{title}</h3>
-                    <p className="text-3xl font-bold text-slate-900 mt-2">{formatCurrency(current_year)}</p>
-                </div>
-                <div className={`text-right ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                    <p className="font-semibold text-lg">{isPositive ? '+' : ''}{percentageChange.toFixed(1)}%</p>
-                    <p className="text-xs">vs anno precedente</p>
-                </div>
-            </div>
-            <div className="h-40 mt-4">
-                <ResponsiveContainer width="100%" height="100%"><BarChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}><XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} /><YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={formatYAxis} axisLine={false} tickLine={false} /><Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} contentStyle={{ fontSize: 12, borderRadius: '0.75rem', border: '1px solid #e2e8f0', padding: '8px 12px' }} formatter={(value) => formatCurrency(value)} /><Bar dataKey={dataKey} fill={color} barSize={40} radius={[8, 8, 0, 0]} /></BarChart></ResponsiveContainer>
-            </div>
-        </div>
-    );
-};
-
-const ComparisonSection = ({ chartsData }) => {
+// 🔧 FIX 2: GRAFICI - OPZIONE B: Barre di progresso invece dei grafici
+const ComparisonSectionWithBars = ({ chartsData }) => {
     if (!chartsData) return null;
+    
+    const { revenue_trend, profit_trend } = chartsData;
+    
+    const ProgressBar = ({ current, previous, title, color = "bg-blue-500" }) => {
+        if (current === null || current === undefined || previous === null || previous === undefined) {
+             return (
+                <div className="space-y-3">
+                    <h4 className="font-semibold text-slate-800">{title}</h4>
+                    <p className="text-sm text-slate-500">Dati non sufficienti per il confronto.</p>
+                </div>
+             );
+        }
+        
+        const maxValue = Math.max(current, previous, 0); // Aggiunto 0 per evitare divisioni per zero se entrambi sono negativi
+        const currentPercent = maxValue > 0 ? (current / maxValue) * 100 : 0;
+        const previousPercent = maxValue > 0 ? (previous / maxValue) * 100 : 0;
+        
+        return (
+            <div className="space-y-3">
+                <h4 className="font-semibold text-slate-800">{title}</h4>
+                
+                <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                        <span>Anno Corrente</span>
+                        <span className="font-semibold">{formatCurrency(current)}</span>
+                    </div>
+                    <div className="w-full bg-slate-200 rounded-full h-3">
+                        <div 
+                            className={`h-3 rounded-full transition-all duration-1000 ${color}`}
+                            style={{ width: `${currentPercent}%` }}
+                        ></div>
+                    </div>
+                </div>
+                
+                <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                        <span>Anno Precedente</span>
+                        <span className="font-semibold">{formatCurrency(previous)}</span>
+                    </div>
+                    <div className="w-full bg-slate-200 rounded-full h-3">
+                        <div 
+                            className="bg-slate-400 h-3 rounded-full transition-all duration-1000"
+                            style={{ width: `${previousPercent}%` }}
+                        ></div>
+                    </div>
+                </div>
+                
+                <div className="text-center pt-2">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        current >= previous ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                        {current >= previous ? '↗️' : '↘️'} 
+                        {previous !== 0 ? `${((current - previous) / Math.abs(previous) * 100).toFixed(1)}%` : 'N/A'}
+                    </span>
+                </div>
+            </div>
+        );
+    };
+    
     return (
         <section>
-             <h2 className="text-xl font-bold text-slate-800 mb-4">Dati a Confronto</h2>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <ComparisonCard title="Fatturato" data={chartsData.revenue_trend} dataKey="fatturato" icon={icons.dollarSign} color="#3b82f6" />
-                <ComparisonCard title="Utile Netto" data={chartsData.profit_trend} dataKey="utile" icon={icons.award} color="#10b981" />
-             </div>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Dati a Confronto</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
+                    <ProgressBar 
+                        current={revenue_trend?.current_year} 
+                        previous={revenue_trend?.previous_year}
+                        title="Fatturato"
+                        color="bg-blue-500"
+                    />
+                </div>
+                <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
+                    <ProgressBar 
+                        current={profit_trend?.current_year} 
+                        previous={profit_trend?.previous_year}
+                        title="Utile Netto"
+                        color="bg-green-500"
+                    />
+                </div>
+            </div>
         </section>
     );
 };
 
-// --- NUOVI COMPONENTI UI INTEGRATI ---
+
+// --- Componenti UI per le sezioni di analisi ---
 
 const KeyMetricsSection = ({ keyMetrics }) => {
   if (!keyMetrics) return null;
