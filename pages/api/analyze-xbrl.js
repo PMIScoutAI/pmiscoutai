@@ -1,9 +1,9 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 11.0 (Logica ATECO Avanzata e Prompt Dinamico)
-// - INTEGRAZIONE: Implementata la nuova logica ATECO avanzata proposta dall'utente.
-// - NUOVO: Funzione `getSectorInfo` per interrogare la tabella `ateco_macro_map` e recuperare dati di settore dettagliati (macro_sector_2, notes).
-// - MIGLIORAMENTO: Il prompt per l'AI ora è costruito dinamicamente con un contesto settoriale ricco, utilizzando le note e le specifiche del database.
-// - Le configurazioni delle metriche e l'estrazione ATECO di base rimangono invariate dalla v10.0.
+// VERSIONE 12.0 (Fix ATECO Robusto e Modulare)
+// - REFACTORING: Implementato il fix proposto dall'utente per l'estrazione ATECO.
+// - NUOVO: Funzione `findAtecoValue` dedicata alla ricerca della stringa ATECO, più specifica e affidabile di `findSimpleValue`.
+// - MIGLIORAMENTO: La funzione `extractAtecoCode` è stata potenziata con pattern di riconoscimento più ampi e logging dettagliato per il debug.
+// - La logica principale ora usa la ricerca specifica con un fallback a quella generica, aumentando la resilienza.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -116,27 +116,84 @@ const metricsConfigs = {
     debitiLungoTermine: [{ primary: ["esigibili oltre l'esercizio successivo"] }, { primary: ["debiti esigibili oltre l'esercizio successivo"] }]
 };
 
-// 🎯 FUNZIONE MIGLIORATA per estrarre codice ATECO (invariata)
-const extractAtecoCode = (atecoString) => {
-    if (!atecoString) return null;
-    console.log(`Estrazione ATECO da: "${atecoString}"`);
-    const patterns = [
-        /\((\d{2})\.(\d{2})\.(\d{2})\)/, /\/(\d{2})\.(\d{2})\.(\d{2})/,
-        /(\d{2})\.(\d{2})/, /(\d{2})/
+// 🔧 FIX 1: Funzione di ricerca ATECO più specifica e robusta
+const findAtecoValue = (sheetData, sessionId) => {
+    console.log(`[${sessionId}] 🔍 Inizio ricerca specifica per codice ATECO`);
+    const searchTerms = [
+        "settore di attività prevalente (ateco)",
+        "settore di attività prevalente",
+        "codice ateco",
+        "attività prevalente"
     ];
-    for (const pattern of patterns) {
-        const match = atecoString.match(pattern);
-        if (match) {
-            const division = match[1];
-            console.log(`✅ Divisione ATECO estratta: ${division}`);
-            return { full: match[0].replace(/[()]/g, ''), division: division };
+    for (const searchTerm of searchTerms) {
+        console.log(`[${sessionId}] 🔎 Cercando: "${searchTerm}"`);
+        for (let i = 0; i < sheetData.length; i++) {
+            const row = sheetData[i];
+            for (let j = 0; j < Math.min(row.length, 6); j++) {
+                const cellValue = String(row[j] || '').toLowerCase().trim();
+                if (cellValue.includes(searchTerm.toLowerCase())) {
+                    console.log(`[${sessionId}] 🎯 Trovato termine "${searchTerm}" alla riga ${i}, colonna ${j}`);
+                    // Cerca il valore ATECO nelle colonne successive della stessa riga
+                    for (let k = j + 1; k < row.length; k++) {
+                        const valueCell = String(row[k] || '').trim();
+                        if (valueCell && (valueCell.includes('(') || valueCell.match(/\d{2}\.\d{2}/))) {
+                            console.log(`[${sessionId}] ✅ Valore ATECO trovato: "${valueCell}"`);
+                            return valueCell;
+                        }
+                    }
+                    // Se non trova nella stessa riga, cerca nelle righe successive
+                    for (let nextRow = i + 1; nextRow < Math.min(i + 3, sheetData.length); nextRow++) {
+                        for (let col = 0; col < sheetData[nextRow].length; col++) {
+                            const nextValue = String(sheetData[nextRow][col] || '').trim();
+                            if (nextValue && (nextValue.includes('(') || nextValue.match(/\d{2}\.\d{2}/))) {
+                                console.log(`[${sessionId}] ✅ Valore ATECO trovato riga successiva: "${nextValue}"`);
+                                return nextValue;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
+    console.log(`[${sessionId}] ❌ Nessun codice ATECO trovato con ricerca specifica`);
     return null;
 };
 
-// 🎯 FUNZIONE per ottenere info settoriali dal TUO database
-const getSectorInfo = async (divisionCode) => {
+// 🔧 FIX 2: Estrazione ATECO con logging dettagliato
+const extractAtecoCode = (atecoString, sessionId) => {
+    if (!atecoString) {
+        console.log(`[${sessionId}] ❌ ATECO string vuota`);
+        return null;
+    }
+    console.log(`[${sessionId}] 🔍 Estrazione ATECO da: "${atecoString}"`);
+    const patterns = [
+        { regex: /\((\d{2})\.(\d{2})\.(\d{2})\)/, name: "Standard con parentesi (41.00.00)" },
+        { regex: /(\d{2})\.(\d{2})\.(\d{2})/, name: "Standard senza parentesi 41.00.00" },
+        { regex: /(\d{2})\.(\d{2})/, name: "Formato breve 41.00" },
+        { regex: /(\d{2})-(\d{2})-(\d{2})/, name: "Con trattini 41-00-00" },
+        { regex: /(\d{2})\s+(\d{2})\s+(\d{2})/, name: "Con spazi 41 00 00" },
+        { regex: /(\d{2})/, name: "Solo divisione 41" }
+    ];
+    for (const { regex, name } of patterns) {
+        const match = atecoString.match(regex);
+        if (match) {
+            const division = match[1];
+            const fullCode = match[0].replace(/[()]/g, '').replace(/[-\s]/g, '.');
+            console.log(`[${sessionId}] ✅ MATCH con pattern "${name}"`);
+            console.log(`[${sessionId}] 📋 Divisione: ${division}, Codice completo: ${fullCode}`);
+            return {
+                full: fullCode,
+                division: division,
+                raw: atecoString,
+                pattern_used: name
+            };
+        }
+    }
+    console.log(`[${sessionId}] 💥 NESSUN PATTERN ATECO RICONOSCIUTO in: "${atecoString}"`);
+    return null;
+};
+
+const getSectorInfo = async (divisionCode, sessionId) => {
     if (!divisionCode) return null;
     try {
         const { data, error } = await supabase
@@ -145,13 +202,13 @@ const getSectorInfo = async (divisionCode) => {
             .eq('ateco_code', divisionCode)
             .single();
         if (error || !data) {
-            console.log(`[ATECO] ⚠️ Divisione ${divisionCode} non trovata nel mapping`);
+            console.log(`[${sessionId}] [ATECO] ⚠️ Divisione ${divisionCode} non trovata nel mapping`);
             return null;
         }
-        console.log(`[ATECO] ✅ Trovato: ${data.macro_sector}${data.macro_sector_2 ? ` - ${data.macro_sector_2}` : ''}`);
+        console.log(`[${sessionId}] [ATECO] ✅ Trovato: ${data.macro_sector}${data.macro_sector_2 ? ` - ${data.macro_sector_2}` : ''}`);
         return data;
     } catch (err) {
-        console.error(`[ATECO] Errore query per divisione ${divisionCode}:`, err);
+        console.error(`[${sessionId}] [ATECO] Errore query per divisione ${divisionCode}:`, err);
         return null;
     }
 };
@@ -161,7 +218,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (versione 11.0).`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (versione 12.0).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -182,17 +239,34 @@ export default async function handler(req, res) {
     const yearColsBS = findYearColumns(balanceSheetData);
     const yearColsIS = findYearColumns(incomeStatementData);
 
-    // 🎯 SEZIONE PRINCIPALE nel tuo handler analyze-xbrl.js
     const companyName = findSimpleValue(companyInfoData, ['denominazione', 'ragione sociale']) || session.companies.company_name || 'Azienda';
     const sedeRow = findSimpleValue(companyInfoData, ["sede"]);
     const regionMatch = sedeRow ? sedeRow.match(/\(([^)]+)\)/) : null;
     const region = regionMatch ? regionMatch[1] : null;
 
-    const rawAtecoString = findSimpleValue(companyInfoData, ["settore di attività prevalente", "codice ateco", "attività prevalente"]);
-    console.log(`[${sessionId}] ATECO grezzo trovato: "${rawAtecoString}"`);
+    // 🔧 FIX 3: Implementazione della nuova logica di ricerca ATECO
+    console.log(`[${sessionId}] 🚀 Avvio ricerca ATECO migliorata`);
+    let rawAtecoString = findAtecoValue(companyInfoData, sessionId);
+    if (!rawAtecoString) {
+        console.log(`[${sessionId}] ⚠️ Ricerca specifica fallita, uso fallback`);
+        rawAtecoString = findSimpleValue(companyInfoData, ["settore di attività prevalente", "codice ateco", "attività prevalente"]);
+    }
+    console.log(`[${sessionId}] 📋 ATECO grezzo estratto: "${rawAtecoString}"`);
     
-    const atecoData = extractAtecoCode(rawAtecoString);
-    const sectorInfo = await getSectorInfo(atecoData?.division);
+    const atecoData = extractAtecoCode(rawAtecoString, sessionId);
+    if (!atecoData) console.log(`[${sessionId}] ❌ ATECO non estratto - continuando senza info settoriale`);
+
+    const sectorInfo = await getSectorInfo(atecoData?.division, sessionId);
+
+    console.log(`[${sessionId}] 🏁 RISULTATO FINALE ATECO:`);
+    console.log(`   - Testo originale: "${rawAtecoString}"`);
+    console.log(`   - Divisione estratta: ${atecoData?.division || 'NONE'}`);
+    console.log(`   - Settore trovato: ${sectorInfo?.macro_sector || 'NONE'}`);
+    if (atecoData?.division && sectorInfo?.macro_sector) {
+        console.log(`[${sessionId}] ✅ MAPPING ATECO RIUSCITO: ${atecoData.division} → ${sectorInfo.macro_sector}`);
+    } else {
+        console.log(`[${sessionId}] ⚠️ MAPPING ATECO INCOMPLETO`);
+    }
 
     const context = {
         ateco_code: atecoData?.full || rawAtecoString,
@@ -200,9 +274,10 @@ export default async function handler(req, res) {
         region: region,
         macro_sector: sectorInfo?.macro_sector,
         macro_sector_2: sectorInfo?.macro_sector_2,
-        sector_notes: sectorInfo?.notes
+        sector_notes: sectorInfo?.notes,
+        ateco_extraction_method: rawAtecoString === findAtecoValue(companyInfoData, sessionId) ? 'specific' : 'fallback',
+        ateco_pattern_used: atecoData?.pattern_used
     };
-    console.log(`[${sessionId}] Contesto finale:`, context);
 
     const metrics = {
         fatturato: findValueInSheetImproved(incomeStatementData, metricsConfigs.fatturato, yearColsIS, 'Fatturato'),
@@ -221,7 +296,6 @@ export default async function handler(req, res) {
         disponibilitaLiquide: findValueInSheetImproved(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide')
     };
 
-    // 🎯 PROMPT ARRICCHITO con le tue informazioni settoriali
     const sectorialContext = sectorInfo ? `
 - SETTORE SPECIFICO: ${sectorInfo.macro_sector.toUpperCase()}${sectorInfo.macro_sector_2 ? ` (${sectorInfo.macro_sector_2})` : ''}
 - NOTE SETTORIALI: ${sectorInfo.notes}
