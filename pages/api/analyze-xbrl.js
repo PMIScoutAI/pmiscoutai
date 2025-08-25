@@ -1,8 +1,8 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 9.0 (Integrazione Macro Settore ATECO)
-// - AGGIUNTO: Logica per interrogare la tabella 'ateco_macro_map' usando il codice ATECO.
-// - AGGIUNTO: Il macro settore, se trovato, viene incluso nel prompt per l'AI.
-// - MIGLIORATO: La struttura dell'oggetto 'context' per includere il macro settore.
+// VERSIONE 9.1 (Prompt ATECO Migliorato)
+// - AGGIUNTO: Istruzione esplicita nel prompt per l'AI per generare analisi SWOT più specifiche
+//   utilizzando il codice ATECO e il macro settore, evitando risposte generiche.
+// - La logica di estrazione dati rimane invariata.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -155,7 +155,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'SessionId è richiesto' });
   }
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (versione 9.0).`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (versione 9.1).`);
 
   try {
     const { data: session, error: sessionError } = await supabase
@@ -196,7 +196,7 @@ export default async function handler(req, res) {
     const regionMatch = sedeRow ? sedeRow.match(/\(([^)]+)\)/) : null;
     const region = regionMatch ? regionMatch[1] : null;
 
-    // ✅ NUOVA LOGICA: Controllo del macro settore tramite codice ATECO
+    // Logica per il controllo del macro settore tramite codice ATECO
     const parsedAteco = findSimpleValue(companyInfoData, ["codice ateco", "attività prevalente"]);
     let macroSector = null;
     if (parsedAteco) {
@@ -238,13 +238,14 @@ export default async function handler(req, res) {
         disponibilitaLiquide: findValueInSheet(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide'),
     };
 
-    // ✅ PROMPT AGGIORNATO: Include dinamicamente il macro settore
+    // ✅ PROMPT MIGLIORATO: Aggiunta istruzione specifica per l'AI
     const dataForPrompt = `
 Dati Aziendali per ${companyName}:
 
 Contesto Aziendale:
 - Regione: ${context.region || 'N/D'}
 - Codice ATECO (Settore): ${context.ateco_code || 'N/D'}${context.macro_sector ? `\n- Macro Settore: ${context.macro_sector}` : ''}
+- Istruzione per l'AI: Nell'analisi SWOT, alla voce 'Opportunità', fornisci spunti specifici e concreti basati sul Macro Settore e sul Codice ATECO, considerando il contesto di mercato italiano. Evita frasi generiche come 'Basata su ATECO'.
 
 Principali Voci di Conto Economico (Anno Corrente N / Anno Precedente N-1):
 - Fatturato: ${metrics.fatturato.currentYear} / ${metrics.fatturato.previousYear}
@@ -285,7 +286,6 @@ Principali Voci di Stato Patrimoniale (Anno Corrente N / Anno Precedente N-1):
 
     const analysisResult = JSON.parse(response.choices[0].message.content);
     
-    // ✅ Dati salvati arricchiti con il contesto completo
     const resultToSave = {
       session_id: sessionId,
       health_score: analysisResult.health_score,
