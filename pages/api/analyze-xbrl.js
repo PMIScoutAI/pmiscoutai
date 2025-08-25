@@ -1,9 +1,8 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 8.0 (Estrazione Robusta e Debuggabile)
-// - Nuova funzione di ricerca flessibile basata su configurazioni.
-// - Dizionario di ricerca ampliato con alias e priorità.
-// - Logging dettagliato per un debug efficace.
-// - Gestione più sicura dei valori nulli o non numerici.
+// VERSIONE 9.0 (Integrazione Macro Settore ATECO)
+// - AGGIUNTO: Logica per interrogare la tabella 'ateco_macro_map' usando il codice ATECO.
+// - AGGIUNTO: Il macro settore, se trovato, viene incluso nel prompt per l'AI.
+// - MIGLIORATO: La struttura dell'oggetto 'context' per includere il macro settore.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -20,7 +19,6 @@ const openai = new OpenAI({
 
 /**
  * Funzione di parsing potenziata per gestire vari formati numerici.
- * Invariata dalla v7.3, già molto robusta.
  */
 const parseValue = (val) => {
     if (val === null || val === undefined || String(val).trim() === '') return null;
@@ -43,13 +41,11 @@ const parseValue = (val) => {
 };
 
 /**
- * Trova le colonne degli anni in modo più tollerante e profondo.
- * Invariata dalla v7.3.
+ * Trova le colonne degli anni in modo tollerante.
  */
 const findYearColumns = (sheetData) => {
     const yearRegex = /(19|20)\d{2}/;
     let years = [];
-    // Controlla le prime 40 righe per trovare gli anni
     for (let i = 0; i < Math.min(sheetData.length, 40); i++) {
         const row = sheetData[i];
         for (let j = 0; j < row.length; j++) {
@@ -72,13 +68,7 @@ const findYearColumns = (sheetData) => {
 };
 
 /**
- * ✅ NUOVA FUNZIONE DI RICERCA: Flessibile, basata su configurazioni e con logging.
- * Cerca valori numerici in base a una serie di regole di ricerca.
- * @param {Array<Array<any>>} sheetData - I dati del foglio di calcolo.
- * @param {Array<Object>} searchConfigs - Array di configurazioni di ricerca.
- * @param {Object} yearCols - Oggetto con le colonne degli anni.
- * @param {string} metricName - Nome della metrica per il logging.
- * @returns {{currentYear: number|null, previousYear: number|null}}
+ * Funzione di ricerca flessibile basata su configurazioni.
  */
 const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
     console.log(`--- Inizio ricerca per metrica: [${metricName}] ---`);
@@ -87,7 +77,6 @@ const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
         const exclusionTerms = (config.exclusion || []).map(t => t.toLowerCase().trim());
 
         for (const row of sheetData) {
-            // Concatena le prime 6 colonne per creare una descrizione completa della riga
             let description = '';
             for (let i = 0; i < 6; i++) {
                 description += String(row[i] || '').toLowerCase().trim() + ' ';
@@ -105,8 +94,6 @@ const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
                     previousYear: parseValue(rawPrevious)
                 };
 
-                // Un match è valido solo se contiene almeno un valore numerico.
-                // Questo evita di fermarsi su righe di intestazione che contengono le parole chiave.
                 if (result.currentYear !== null || result.previousYear !== null) {
                     console.log(`[${metricName}] ✅ MATCH TROVATO con config: [${primaryTerms.join(', ')}]. Valori: {N: ${result.currentYear}, N-1: ${result.previousYear}}`);
                     return result;
@@ -120,8 +107,7 @@ const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
 };
 
 /**
- * Trova un valore testuale semplice (es. Ragione Sociale, ATECO).
- * Invariata dalla v7.3.
+ * Trova un valore testuale semplice.
  */
 const findSimpleValue = (sheetData, searchTexts) => {
     const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
@@ -141,56 +127,21 @@ const findSimpleValue = (sheetData, searchTexts) => {
     return null;
 };
 
-// ✅ NUOVO: Dizionario centralizzato per le configurazioni di ricerca.
-// Le configurazioni sono in ordine di priorità (dalla più specifica alla più generica).
+// Dizionario centralizzato per le configurazioni di ricerca.
 const metricsConfigs = {
-    fatturato: [
-        { primary: ["a) ricavi delle vendite e delle prestazioni"] },
-        { primary: ["ricavi delle vendite"] },
-        { primary: ["valore della produzione"], exclusion: ["costi", "differenza"] }
-    ],
-    utilePerdita: [
-        { primary: ["utile (perdita) dell'esercizio"] },
-        { primary: ["risultato dell'esercizio"] },
-        { primary: ["risultato prima delle imposte"] } // Fallback se il netto non si trova
-    ],
-    totaleAttivo: [
-        { primary: ["totale attivo"] }
-    ],
-    patrimonioNetto: [
-        { primary: ["a) patrimonio netto"] },
-        { primary: ["totale patrimonio netto"] }
-    ],
-    debitiTotali: [
-        { primary: ["d) debiti"] }, // Voce aggregata standard
-        { primary: ["debiti"] }
-    ],
-    costiProduzione: [
-        { primary: ["b) costi della produzione"] },
-        { primary: ["costi della produzione"], exclusion: ["valore"] }
-    ],
-    ammortamenti: [
-        { primary: ["ammortamenti e svalutazioni"] }
-    ],
-    oneriFinanziari: [
-        { primary: ["interessi e altri oneri finanziari"] }
-    ],
-    attivoCircolante: [
-        { primary: ["c) attivo circolante"], exclusion: ["immobilizzazioni"] },
-        { primary: ["totale attivo circolante"] }
-    ],
-    debitiBreveTermine: [
-        { primary: ["debiti esigibili entro l'esercizio successivo"] }
-    ],
-    creditiClienti: [
-        { primary: ["crediti verso clienti"] }
-    ],
-    rimanenze: [
-        { primary: ["rimanenze"] }
-    ],
-    disponibilitaLiquide: [
-        { primary: ["disponibilità liquide"] }
-    ],
+    fatturato: [ { primary: ["a) ricavi delle vendite e delle prestazioni"] }, { primary: ["ricavi delle vendite"] }, { primary: ["valore della produzione"], exclusion: ["costi", "differenza"] } ],
+    utilePerdita: [ { primary: ["utile (perdita) dell'esercizio"] }, { primary: ["risultato dell'esercizio"] }, { primary: ["risultato prima delle imposte"] } ],
+    totaleAttivo: [ { primary: ["totale attivo"] } ],
+    patrimonioNetto: [ { primary: ["a) patrimonio netto"] }, { primary: ["totale patrimonio netto"] } ],
+    debitiTotali: [ { primary: ["d) debiti"] }, { primary: ["debiti"] } ],
+    costiProduzione: [ { primary: ["b) costi della produzione"] }, { primary: ["costi della produzione"], exclusion: ["valore"] } ],
+    ammortamenti: [ { primary: ["ammortamenti e svalutazioni"] } ],
+    oneriFinanziari: [ { primary: ["interessi e altri oneri finanziari"] } ],
+    attivoCircolante: [ { primary: ["c) attivo circolante"], exclusion: ["immobilizzazioni"] }, { primary: ["totale attivo circolante"] } ],
+    debitiBreveTermine: [ { primary: ["debiti esigibili entro l'esercizio successivo"] } ],
+    creditiClienti: [ { primary: ["crediti verso clienti"] } ],
+    rimanenze: [ { primary: ["rimanenze"] } ],
+    disponibilitaLiquide: [ { primary: ["disponibilità liquide"] } ],
 };
 
 
@@ -204,7 +155,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'SessionId è richiesto' });
   }
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (versione robusta 8.0).`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (versione 9.0).`);
 
   try {
     const { data: session, error: sessionError } = await supabase
@@ -240,18 +191,37 @@ export default async function handler(req, res) {
     const yearColsBS = findYearColumns(balanceSheetData);
     const yearColsIS = findYearColumns(incomeStatementData);
 
-    const companyName = findSimpleValue(companyInfoData, ['denominazione', 'ragione sociale', 'impresa', 'società']) || 'Azienda Analizzata';
-
+    const companyName = findSimpleValue(companyInfoData, ['denominazione', 'ragione sociale', 'impresa', 'società']) || session.companies.company_name || 'Azienda Analizzata';
     const sedeRow = findSimpleValue(companyInfoData, ["sede"]);
     const regionMatch = sedeRow ? sedeRow.match(/\(([^)]+)\)/) : null;
     const region = regionMatch ? regionMatch[1] : null;
 
-    const context = {
-        ateco: findSimpleValue(companyInfoData, ["codice ateco", "attività prevalente"]),
-        region: region
-    };
+    // ✅ NUOVA LOGICA: Controllo del macro settore tramite codice ATECO
+    const parsedAteco = findSimpleValue(companyInfoData, ["codice ateco", "attività prevalente"]);
+    let macroSector = null;
+    if (parsedAteco) {
+        const divisionCode = parsedAteco.split('.')[0];
+        const { data, error } = await supabase
+            .from('ateco_macro_map')
+            .select('macro_sector')
+            .eq('ateco_code', divisionCode)
+            .single();
 
-    // Estrazione delle metriche usando la nuova funzione e le configurazioni
+        if (!error && data?.macro_sector) {
+            macroSector = data.macro_sector;
+            console.log(`[${sessionId}] ✅ Macro Settore trovato: ${macroSector}`);
+        } else {
+            console.log(`[${sessionId}] ⚠️ Macro Settore non trovato per ATECO: ${divisionCode}. L'AI lo dedurrà.`);
+        }
+    }
+
+    const context = {
+        ateco_code: parsedAteco,
+        region: region,
+        macro_sector: macroSector // Sarà null se non trovato
+    };
+    
+    // Estrazione delle metriche
     const metrics = {
         fatturato: findValueInSheet(incomeStatementData, metricsConfigs.fatturato, yearColsIS, 'Fatturato'),
         utilePerdita: findValueInSheet(incomeStatementData, metricsConfigs.utilePerdita, yearColsIS, 'Utile/Perdita CE') || findValueInSheet(balanceSheetData, metricsConfigs.utilePerdita, yearColsBS, 'Utile/Perdita SP'),
@@ -268,12 +238,13 @@ export default async function handler(req, res) {
         disponibilitaLiquide: findValueInSheet(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide'),
     };
 
+    // ✅ PROMPT AGGIORNATO: Include dinamicamente il macro settore
     const dataForPrompt = `
 Dati Aziendali per ${companyName}:
 
 Contesto Aziendale:
 - Regione: ${context.region || 'N/D'}
-- Codice ATECO (Settore): ${context.ateco || 'N/D'}
+- Codice ATECO (Settore): ${context.ateco_code || 'N/D'}${context.macro_sector ? `\n- Macro Settore: ${context.macro_sector}` : ''}
 
 Principali Voci di Conto Economico (Anno Corrente N / Anno Precedente N-1):
 - Fatturato: ${metrics.fatturato.currentYear} / ${metrics.fatturato.previousYear}
@@ -294,8 +265,7 @@ Principali Voci di Stato Patrimoniale (Anno Corrente N / Anno Precedente N-1):
 `;
     
     console.log(`[${sessionId}] Dati estratti pronti per l'invio a OpenAI.`);
-    console.log(dataForPrompt); // Log per verificare i dati estratti
-
+    
     const { data: promptData, error: promptError } = await supabase
       .from('ai_prompts')
       .select('prompt_template')
@@ -315,6 +285,7 @@ Principali Voci di Stato Patrimoniale (Anno Corrente N / Anno Precedente N-1):
 
     const analysisResult = JSON.parse(response.choices[0].message.content);
     
+    // ✅ Dati salvati arricchiti con il contesto completo
     const resultToSave = {
       session_id: sessionId,
       health_score: analysisResult.health_score,
@@ -327,7 +298,7 @@ Principali Voci di Stato Patrimoniale (Anno Corrente N / Anno Precedente N-1):
       detailed_swot: analysisResult.detailed_swot,
       risk_analysis: analysisResult.risk_analysis,
       pro_features_teaser: analysisResult.pro_features_teaser,
-      raw_parsed_data: { metrics, context }
+      raw_parsed_data: { metrics, context, companyName } // Aggiunto companyName per coerenza
     };
     
     const { error: saveError } = await supabase.from('analysis_results').insert(resultToSave);
