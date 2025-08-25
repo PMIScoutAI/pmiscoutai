@@ -1,7 +1,9 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 11.2 (FIX FINALE)
-// - Corregge errori di sintassi che bloccavano il build di Vercel.
-// - UI allineata per visualizzare i dati SWOT e le raccomandazioni.
+// VERSIONE 12.0 (UI Integrata e Definitiva)
+// - INTEGRAZIONE: Unisce la UI avanzata suggerita dall'utente (sezioni Key Metrics, SWOT, Recommendations)
+//   con una struttura dati stabile e funzionante.
+// - FIX: Codice sintatticamente corretto e pronto per il deploy.
+// - EFFICIENZA: Popola la nuova UI direttamente con i dati forniti dall'AI, senza rigenerare testi sul frontend.
 
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -47,18 +49,12 @@ const icons = {
   alertTriangle: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
   award: <><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 22 12 17 17 22 15.79 13.88"></polyline></>,
   dollarSign: <><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></>,
-  shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></>,
-  globe: <><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></>
 };
 
 // --- Layout della Pagina Report (invariato) ---
 function ReportPageLayout({ user }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const navLinks = [
-    { href: '/', text: 'Dashboard', icon: icons.dashboard, active: false },
-    { href: '/checkup', text: 'Check-UP AI', icon: icons.checkup, active: true },
-    { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
-  ];
+  // ... (resto del layout invariato)
   return (
     <div className="relative flex min-h-screen bg-slate-100 text-slate-800">
       <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
@@ -68,9 +64,9 @@ function ReportPageLayout({ user }) {
             </div>
             <div className="flex flex-col flex-grow pt-5 overflow-y-auto">
                 <nav className="flex-1 px-2 pb-4 space-y-1">
-                {navLinks.map((link) => (
-                    <Link key={link.text} href={link.href}><a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors ${ link.active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' }`}><Icon path={link.icon} className={`w-6 h-6 mr-3 ${link.active ? 'text-white' : 'text-slate-500'}`} />{link.text}</a></Link>
-                ))}
+                    <Link href="/"><a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors text-slate-600 hover:bg-slate-100 hover:text-slate-900`}><Icon path={icons.dashboard} className={`w-6 h-6 mr-3 text-slate-500`} />Dashboard</a></Link>
+                    <Link href="/check-ai-xbrl"><a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors bg-blue-600 text-white`}><Icon path={icons.checkup} className={`w-6 h-6 mr-3 text-white`} />Check-UP AI</a></Link>
+                    <Link href="/profilo"><a className={`flex items-center px-2 py-2 text-sm font-medium rounded-md group transition-colors text-slate-600 hover:bg-slate-100 hover:text-slate-900`}><Icon path={icons.profile} className={`w-6 h-6 mr-3 text-slate-500`} />Profilo</a></Link>
                 </nav>
                 <div className="px-2 py-4 border-t"><a href="mailto:antonio@pmiscout.eu" className="flex items-center px-2 py-2 text-sm font-medium text-slate-600 rounded-md hover:bg-slate-100 hover:text-slate-900 group transition-colors"><Icon path={icons.support} className="w-6 h-6 mr-3 text-slate-500" />Supporto</a></div>
             </div>
@@ -140,23 +136,16 @@ function AnalisiReportPage({ user }) {
     };
   }, [sessionId, user]);  
 
-  const formatSwotPoints = (pointsArray) => {
-      if (!pointsArray || pointsArray.length === 0) return "Nessuna informazione disponibile.";
-      return (
-          <ul className="list-disc pl-4 space-y-1 text-sm text-slate-600 leading-relaxed">
-              {pointsArray.map((item, index) => <li key={index}><strong>{item.point}:</strong> {item.explanation}</li>)}
-          </ul>
-      );
-  };
-
   const renderContent = () => {
     if (isLoading) return <LoadingState text="Elaborazione del report in corso..." />;
     if (error) return <ErrorState message={error} />;
     if (!analysisData) return <ErrorState message="Nessun dato di analisi trovato." />;
     
-    const companyName = analysisData.raw_parsed_data?.companyName || 'Azienda Analizzata';
-    const swot = analysisData.detailed_swot || {};
-    const recommendations = analysisData.recommendations || [];
+    // Estrazione robusta del nome azienda
+    const companyName = 
+      analysisData.raw_ai_response?.company_name || 
+      analysisData.raw_parsed_data?.companyName || 
+      'Azienda Analizzata';
 
     return (
       <div className="space-y-8">
@@ -165,27 +154,11 @@ function AnalisiReportPage({ user }) {
             summary={analysisData.summary}
         />
         <ComparisonSection chartsData={analysisData.charts_data} />
-        <section>
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi Strategica SWOT</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <AnalysisCard title="Punti di Forza" content={formatSwotPoints(swot.strengths)} icon={icons.award} />
-                <AnalysisCard title="Punti di Debolezza" content={formatSwotPoints(swot.weaknesses)} icon={icons.alertTriangle} />
-                <AnalysisCard title="Opportunità" content={formatSwotPoints(swot.opportunities)} icon={icons.globe} />
-                <AnalysisCard title="Minacce" content={formatSwotPoints(swot.threats)} icon={icons.shield} />
-            </div>
-        </section>
-        <section>
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Raccomandazioni dell'AI</h2>
-            <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
-                {recommendations.length > 0 ? (
-                    <ul className="list-decimal pl-5 space-y-2 text-slate-700">
-                        {recommendations.map((rec, index) => <li key={index} className="leading-relaxed">{rec}</li>)}
-                    </ul>
-                ) : (
-                    <p className="text-slate-500">Nessuna raccomandazione specifica disponibile.</p>
-                )}
-            </div>
-        </section>
+        
+        <KeyMetricsSection keyMetrics={analysisData.key_metrics} />
+        <SwotAnalysisSection swotData={analysisData.detailed_swot} />
+        <RecommendationsSection recommendations={analysisData.recommendations} />
+        
         <div className="flex justify-center items-center space-x-4 mt-10">
             <button onClick={() => window.print()} className="flex items-center justify-center px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg shadow-sm hover:bg-slate-50 transition-colors">
                 <Icon path={icons.print} className="w-5 h-5 mr-2" />
@@ -229,19 +202,10 @@ const formatCurrency = (value) => {
 
 const ComparisonCard = ({ title, data, dataKey, icon, color }) => {
     if (!data || data.current_year === null || data.previous_year === null) {
-        return (
-            <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 text-center">
-                <h3 className="text-base font-semibold text-slate-800">{title}</h3>
-                <p className="mt-4 text-slate-500">Dati non disponibili per il confronto.</p>
-            </div>
-        );
+        return <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 text-center"><h3 className="text-base font-semibold text-slate-800">{title}</h3><p className="mt-4 text-slate-500">Dati non disponibili.</p></div>;
     }
-    
     const { current_year, previous_year } = data;
-    let percentageChange = 0;
-    if (previous_year !== 0) {
-        percentageChange = ((current_year - previous_year) / Math.abs(previous_year)) * 100;
-    }
+    const percentageChange = previous_year !== 0 ? ((current_year - previous_year) / Math.abs(previous_year)) * 100 : 0;
     const isPositive = percentageChange >= 0;
 
     if (typeof window === 'undefined' || !window.Recharts) {
@@ -264,14 +228,7 @@ const ComparisonCard = ({ title, data, dataKey, icon, color }) => {
                 </div>
             </div>
             <div className="h-40 mt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
-                        <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={formatYAxis} axisLine={false} tickLine={false} />
-                        <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} contentStyle={{ fontSize: 12, borderRadius: '0.75rem', border: '1px solid #e2e8f0', padding: '8px 12px' }} formatter={(value) => formatCurrency(value)} />
-                        <Bar dataKey={dataKey} fill={color} barSize={40} radius={[8, 8, 0, 0]} />
-                    </BarChart>
-                </ResponsiveContainer>
+                <ResponsiveContainer width="100%" height="100%"><BarChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}><XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} /><YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={formatYAxis} axisLine={false} tickLine={false} /><Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} contentStyle={{ fontSize: 12, borderRadius: '0.75rem', border: '1px solid #e2e8f0', padding: '8px 12px' }} formatter={(value) => formatCurrency(value)} /><Bar dataKey={dataKey} fill={color} barSize={40} radius={[8, 8, 0, 0]} /></BarChart></ResponsiveContainer>
             </div>
         </div>
     );
@@ -290,14 +247,89 @@ const ComparisonSection = ({ chartsData }) => {
     );
 };
 
-const AnalysisCard = ({ title, content, icon }) => (
-    <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
-        <div className="flex items-center text-lg font-bold text-slate-800">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center mr-3 bg-slate-100">
-                <Icon path={icon} className="w-5 h-5 text-slate-600" />
+// --- NUOVI COMPONENTI UI INTEGRATI ---
+
+const KeyMetricsSection = ({ keyMetrics }) => {
+  if (!keyMetrics) return null;
+  const metrics = typeof keyMetrics === 'string' ? JSON.parse(keyMetrics) : keyMetrics;
+  
+  return (
+    <section>
+      <h2 className="text-xl font-bold text-slate-800 mb-4">Indicatori Chiave</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {Object.entries(metrics).map(([key, metric]) => (
+          <div key={key} className="p-4 bg-white rounded-xl shadow-sm border border-slate-200">
+            <h4 className="font-semibold text-slate-700 capitalize">
+              {key.replace(/_/g, ' ')}
+            </h4>
+            <p className="text-3xl font-bold text-slate-900 mt-1">
+              {metric.value !== null ? metric.value.toFixed(2) : 'N/D'}
+              <span className="text-lg font-medium text-slate-500 ml-1">{key.includes('ratio') ? '' : '%'}</span>
+            </p>
+            <p className="text-xs text-slate-500 mt-2">{metric.benchmark}</p>
+            {metric.reason_if_null && (
+              <p className="text-xs text-amber-600 mt-1">{metric.reason_if_null}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+};
+
+const SwotAnalysisSection = ({ swotData }) => {
+  if (!swotData) return null;
+  const swot = typeof swotData === 'string' ? JSON.parse(swotData) : swotData;
+  
+  const swotCards = [
+    { title: 'Punti di Forza', data: swot.strengths, color: 'bg-green-50 border-green-200', icon: '💪' },
+    { title: 'Punti di Debolezza', data: swot.weaknesses, color: 'bg-red-50 border-red-200', icon: '⚠️' },
+    { title: 'Opportunità', data: swot.opportunities, color: 'bg-blue-50 border-blue-200', icon: '🚀' },
+    { title: 'Minacce', data: swot.threats, color: 'bg-yellow-50 border-yellow-200', icon: '⚡' }
+  ];
+  
+  return (
+    <section>
+      <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi SWOT</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {swotCards.map(({ title, data, color, icon }) => (
+          <div key={title} className={`p-6 rounded-xl shadow-sm border ${color}`}>
+            <h3 className="text-lg font-bold text-slate-800 flex items-center mb-3">
+              <span className="mr-3 text-xl">{icon}</span>
+              {title}
+            </h3>
+            <div className="space-y-3">
+              {data?.length > 0 ? data.map((item, index) => (
+                <div key={index}>
+                  <p className="font-semibold text-slate-800">{item.point}</p>
+                  <p className="text-sm text-slate-600 mt-1">{item.explanation}</p>
+                </div>
+              )) : <p className="text-sm text-slate-500">Nessun dato disponibile.</p>}
             </div>
-            {title}
-        </div>
-        <div className="mt-3">{content || "Analisi non disponibile."}</div>
-    </div>
-);
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+};
+
+const RecommendationsSection = ({ recommendations }) => {
+  if (!recommendations || recommendations.length === 0) return null;
+  const recs = typeof recommendations === 'string' ? JSON.parse(recommendations) : recommendations;
+  
+  return (
+    <section>
+      <h2 className="text-xl font-bold text-slate-800 mb-4">Raccomandazioni Strategiche</h2>
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <ul className="space-y-3">
+          {recs.map((rec, index) => (
+            <li key={index} className="flex items-start">
+              <svg className="w-5 h-5 text-blue-600 mr-3 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"></path></svg>
+              <p className="text-slate-700">{rec}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+};
