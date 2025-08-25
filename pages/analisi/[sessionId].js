@@ -89,6 +89,8 @@ function AnalisiReportPage() {
         .eq('id', sessionId)
         .single();
 
+      console.log("📥 Stato iniziale recuperato:", initialSession);
+
       if (initialError) {
         setError("Impossibile recuperare lo stato dell'analisi.");
         setStatus('failed');
