@@ -1,9 +1,8 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 12.0: UI Strategica con Dati Strutturati
-// - UI completamente ridisegnata per visualizzare il nuovo output JSON ricco di dati.
-// - Cruscotto KPI con card dinamiche per ogni metrica.
-// - Sezioni dedicate per Analisi SWOT, Raccomandazioni e Rischi.
-// - Logica di aggiornamento in tempo reale con Supabase Realtime.
+// VERSIONE 12.1: Logica di caricamento robusta
+// - FIX: Risolto il problema della pagina bloccata su "pending" controllando lo stato iniziale prima di iscriversi agli aggiornamenti.
+// - FIX: Re-implementata la sezione dei grafici di confronto.
+// - Aggiunta gestione più sicura del parsing JSON.
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -87,42 +86,85 @@ function AnalisiReportPage({ user }) {
       if (error) {
         setError("Impossibile caricare i risultati dell'analisi.");
       } else if (data) {
-        // Il nuovo JSON ha campi che sono stringhe JSON, quindi li parsifichiamo
-        const parsedData = {
-          ...data,
-          key_metrics: JSON.parse(data.key_metrics || '{}'),
-          detailed_swot: JSON.parse(data.detailed_swot || '{}'),
-          recommendations: JSON.parse(data.recommendations || '[]'),
-          risk_analysis: JSON.parse(data.risk_analysis || '[]'),
-          charts_data: JSON.parse(data.charts_data || '{}'),
-        };
-        setAnalysisData(parsedData);
+        try {
+          const parsedData = {
+            ...data,
+            key_metrics: JSON.parse(data.key_metrics || '{}'),
+            detailed_swot: JSON.parse(data.detailed_swot || '{}'),
+            recommendations: JSON.parse(data.recommendations || '[]'),
+            risk_analysis: JSON.parse(data.risk_analysis || '[]'),
+            charts_data: JSON.parse(data.charts_data || '{}'),
+          };
+          setAnalysisData(parsedData);
+        } catch (parseError) {
+          console.error("Errore nel parsing dei dati JSON:", parseError);
+          setError("I risultati dell'analisi sono in un formato non valido.");
+        }
       }
     };
 
-    const channel = supabase
-      .channel(`session-updates:${sessionId}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'checkup_sessions', filter: `id=eq.${sessionId}`},
-        (payload) => {
-          const newStatus = payload.new.status;
-          setStatus(newStatus);
-          if (newStatus === 'completed') {
-            fetchFinalData();
-            channel.unsubscribe();
-          } else if (newStatus === 'failed') {
-            setError(payload.new.error_message || 'Si è verificato un errore durante l\'analisi.');
-            channel.unsubscribe();
-          }
-        }
-      ).subscribe();
+    let channel;
+    const checkInitialStatusAndSubscribe = async () => {
+      // 1. Controlla lo stato iniziale
+      const { data: initialSession, error: initialError } = await supabase
+        .from('checkup_sessions')
+        .select('status, error_message')
+        .eq('id', sessionId)
+        .single();
 
-    return () => supabase.removeChannel(channel);
+      if (initialError) {
+        setError("Impossibile recuperare lo stato dell'analisi.");
+        setStatus('failed');
+        return;
+      }
+
+      const initialStatus = initialSession.status;
+
+      // 2. Se è già completato o fallito, agisci subito
+      if (initialStatus === 'completed') {
+        setStatus('completed');
+        fetchFinalData();
+        return;
+      }
+      if (initialStatus === 'failed') {
+        setStatus('failed');
+        setError(initialSession.error_message || 'Si è verificato un errore.');
+        return;
+      }
+
+      // 3. Altrimenti, iscriviti per aggiornamenti futuri
+      setStatus(initialStatus);
+      channel = supabase
+        .channel(`session-updates:${sessionId}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'checkup_sessions', filter: `id=eq.${sessionId}`},
+          (payload) => {
+            const newStatus = payload.new.status;
+            setStatus(newStatus);
+            if (newStatus === 'completed') {
+              fetchFinalData();
+              if (channel) channel.unsubscribe();
+            } else if (newStatus === 'failed') {
+              setError(payload.new.error_message || 'Si è verificato un errore.');
+              if (channel) channel.unsubscribe();
+            }
+          }
+        ).subscribe();
+    };
+
+    checkInitialStatusAndSubscribe();
+
+    // Funzione di pulizia
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, [sessionId, user]);
 
   const renderContent = () => {
     if (status !== 'completed' && !error) return <LoadingState text="Elaborazione del report in corso..." status={status} />;
     if (error) return <ErrorState message={error} />;
-    if (!analysisData) return <ErrorState message="Nessun dato di analisi trovato." />;
+    if (!analysisData) return <LoadingState text="Caricamento dei risultati..." status={status} />;
 
     const companyName = analysisData.raw_ai_response?.company_name || 'Azienda Analizzata';
 
@@ -187,7 +229,73 @@ const KeyMetricsSection = ({ metrics }) => {
 };
 
 // --- Sezione Grafici ---
-const ComparisonSection = ({ chartsData }) => { /* ... (Invariato dalla versione precedente) ... */ };
+const formatCurrency = (value) => {
+  if (value === null || value === undefined) return 'N/D';
+  return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value);
+};
+
+const ComparisonCard = ({ title, data, dataKey, icon, color }) => {
+    if (!data || data.current_year === null || data.previous_year === null) {
+        return (
+            <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 text-center">
+                <h3 className="text-base font-semibold text-slate-800">{title}</h3>
+                <p className="mt-4 text-slate-500">Dati non disponibili per il confronto.</p>
+            </div>
+        );
+    }
+    
+    const { current_year, previous_year } = data;
+    let percentageChange = 0;
+    if (previous_year !== 0) {
+        percentageChange = ((current_year - previous_year) / Math.abs(previous_year)) * 100;
+    }
+    const isPositive = percentageChange >= 0;
+
+    if (typeof window === 'undefined' || !window.Recharts) {
+        return <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200"><div className="flex items-center justify-center h-64 text-sm text-slate-500">Caricamento grafico...</div></div>;
+    }
+    const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } = window.Recharts;
+    const chartData = [ { name: 'Anno Prec.', [dataKey]: previous_year }, { name: 'Anno Corr.', [dataKey]: current_year } ];
+    const formatYAxis = (tick) => tick >= 1000000 ? `${(tick/1000000).toFixed(1)}M` : (tick >= 1000 ? `${(tick/1000).toFixed(0)}K` : tick);
+
+    return (
+        <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
+            <div className="flex justify-between items-start">
+                <div>
+                    <h3 className="text-base font-semibold text-slate-800 flex items-center"><Icon path={icon} className="w-5 h-5 mr-2 text-slate-500" />{title}</h3>
+                    <p className="text-3xl font-bold text-slate-900 mt-2">{formatCurrency(current_year)}</p>
+                </div>
+                <div className={`text-right ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                    <p className="font-semibold text-lg">{isPositive ? '+' : ''}{percentageChange.toFixed(1)}%</p>
+                    <p className="text-xs">vs anno precedente</p>
+                </div>
+            </div>
+            <div className="h-40 mt-4">
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
+                        <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={formatYAxis} axisLine={false} tickLine={false} />
+                        <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} contentStyle={{ fontSize: 12, borderRadius: '0.75rem', border: '1px solid #e2e8f0', padding: '8px 12px' }} formatter={(value) => formatCurrency(value)} />
+                        <Bar dataKey={dataKey} fill={color} barSize={40} radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
+};
+
+const ComparisonSection = ({ chartsData }) => {
+    if (!chartsData) return null;
+    return (
+        <section>
+             <h2 className="text-xl font-bold text-slate-800 mb-4">Dati a Confronto</h2>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <ComparisonCard title="Fatturato" data={chartsData.revenue_trend} dataKey="fatturato" icon={icons.dollarSign} color="#3b82f6" />
+                <ComparisonCard title="Utile Netto" data={chartsData.profit_trend} dataKey="utile" icon={icons.award} color="#10b981" />
+             </div>
+        </section>
+    );
+};
 
 // --- Sezione SWOT ---
 const DetailedSwotSection = ({ swot }) => {
@@ -203,17 +311,17 @@ const DetailedSwotSection = ({ swot }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {Object.entries(swot).map(([key, items]) => {
           const detail = swotDetails[key];
-          if (!detail || !items) return null;
+          if (!detail || !items || items.length === 0) return null;
           return (
             <div key={key} className={`p-6 bg-white rounded-xl shadow-sm border-l-4 ${detail.classes.split(' ')[0]}`}>
               <h3 className={`flex items-center text-lg font-bold ${detail.classes.split(' ')[2]}`}><Icon path={detail.icon} className="w-6 h-6 mr-3" />{detail.label}</h3>
               <div className="mt-4 space-y-3 text-sm">
-                {items.length > 0 ? items.map((item, idx) => (
+                {items.map((item, idx) => (
                   <div key={idx}>
                     <p className="font-semibold text-slate-700">{item.point}</p>
                     <p className="text-slate-500">{item.explanation}</p>
                   </div>
-                )) : <p className="text-slate-500">Nessun dato disponibile.</p>}
+                ))}
               </div>
             </div>
           );
