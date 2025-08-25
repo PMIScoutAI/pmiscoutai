@@ -70,6 +70,7 @@ function AnalisiReportPage({ user }) {
   const router = useRouter();
   const { sessionId } = router.query;
   const [analysisData, setAnalysisData] = useState(null);
+  const [sessionData, setSessionData] = useState(null);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('pending');
 
@@ -108,7 +109,7 @@ function AnalisiReportPage({ user }) {
       // 1. Controlla lo stato iniziale
       const { data: initialSession, error: initialError } = await supabase
         .from('checkup_sessions')
-        .select('status, error_message')
+        .select('status, error_message, session_name')
         .eq('id', sessionId)
         .single();
 
@@ -117,7 +118,8 @@ function AnalisiReportPage({ user }) {
         setStatus('failed');
         return;
       }
-
+      
+      setSessionData(initialSession);
       const initialStatus = initialSession.status;
 
       // 2. Se è già completato o fallito, agisci subito
@@ -166,7 +168,7 @@ function AnalisiReportPage({ user }) {
     if (error) return <ErrorState message={error} />;
     if (!analysisData) return <LoadingState text="Caricamento dei risultati..." status={status} />;
 
-    const companyName = analysisData.raw_ai_response?.company_name || 'Azienda Analizzata';
+    const companyName = analysisData.raw_ai_response?.company_name || sessionData?.session_name || 'Azienda Analizzata';
 
     return (
       <div className="space-y-8">
