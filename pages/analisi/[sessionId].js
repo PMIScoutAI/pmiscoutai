@@ -1,8 +1,7 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 11.1 (FIX DEPLOY E DATI)
-// - FIX: Rimossa un'accolada di chiusura extra che causava il fallimento del build.
-// - FIX: Aggiornata la UI per visualizzare i dati SWOT e le raccomandazioni effettivamente presenti nella risposta dell'AI.
-// - I grafici e il layout rimangono invariati.
+// VERSIONE 11.2 (FIX FINALE)
+// - Corregge errori di sintassi che bloccavano il build di Vercel.
+// - UI allineata per visualizzare i dati SWOT e le raccomandazioni.
 
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -90,14 +89,13 @@ function ReportPageLayout({ user }) {
   );
 }
 
-// --- Componente Pagina Analisi (VERSIONE CORRETTA E FUNZIONANTE) ---
+// --- Componente Pagina Analisi ---
 function AnalisiReportPage({ user }) {
   const router = useRouter();
   const { sessionId } = router.query;
   const [analysisData, setAnalysisData] = useState(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  
   const pollingIntervalRef = useRef(null);
 
   useEffect(() => {
@@ -142,7 +140,6 @@ function AnalisiReportPage({ user }) {
     };
   }, [sessionId, user]);  
 
-  // Funzione helper per formattare i punti della SWOT analysis in una lista
   const formatSwotPoints = (pointsArray) => {
       if (!pointsArray || pointsArray.length === 0) return "Nessuna informazione disponibile.";
       return (
@@ -157,9 +154,6 @@ function AnalisiReportPage({ user }) {
     if (error) return <ErrorState message={error} />;
     if (!analysisData) return <ErrorState message="Nessun dato di analisi trovato." />;
     
-    // NOTA: Per far funzionare companyName, assicurati che nel file `analyze-xbrl.js`
-    // l'oggetto `resultToSave` includa `companyName` dentro `raw_parsed_data`.
-    // Esempio: raw_parsed_data: { metrics, context, companyName }
     const companyName = analysisData.raw_parsed_data?.companyName || 'Azienda Analizzata';
     const swot = analysisData.detailed_swot || {};
     const recommendations = analysisData.recommendations || [];
@@ -170,10 +164,7 @@ function AnalisiReportPage({ user }) {
             companyName={companyName} 
             summary={analysisData.summary}
         />
-        
         <ComparisonSection chartsData={analysisData.charts_data} />
-
-        {/* SEZIONE SWOT ANALYSIS - CORRETTA */}
         <section>
             <h2 className="text-xl font-bold text-slate-800 mb-4">Analisi Strategica SWOT</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -183,8 +174,6 @@ function AnalisiReportPage({ user }) {
                 <AnalysisCard title="Minacce" content={formatSwotPoints(swot.threats)} icon={icons.shield} />
             </div>
         </section>
-        
-        {/* NUOVA SEZIONE RACCOMANDAZIONI */}
         <section>
             <h2 className="text-xl font-bold text-slate-800 mb-4">Raccomandazioni dell'AI</h2>
             <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
@@ -197,7 +186,6 @@ function AnalisiReportPage({ user }) {
                 )}
             </div>
         </section>
-        
         <div className="flex justify-center items-center space-x-4 mt-10">
             <button onClick={() => window.print()} className="flex items-center justify-center px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg shadow-sm hover:bg-slate-50 transition-colors">
                 <Icon path={icons.print} className="w-5 h-5 mr-2" />
@@ -217,7 +205,7 @@ function AnalisiReportPage({ user }) {
   );
 }
 
-// --- Componenti di Stato (invariati) ---
+// --- Componenti di Stato ---
 const LoadingState = ({ text }) => (
     <div className="flex items-center justify-center h-full p-10"><div className="text-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div><h2 className="text-2xl font-bold text-slate-800">{text}</h2></div></div>
 );
@@ -225,7 +213,7 @@ const ErrorState = ({ message }) => (
     <div className="flex items-center justify-center h-full p-10"><div className="text-center p-10 bg-white rounded-xl shadow-lg border-l-4 border-red-500"><Icon path={icons.alertTriangle} className="w-12 h-12 text-red-500 mx-auto mb-4" /><h2 className="text-2xl font-bold text-red-700">Si è verificato un errore</h2><p className="text-slate-600 mt-2">{message}</p></div></div>
 );
 
-// --- Componenti della Dashboard (invariati, con una piccola modifica ad AnalysisCard) ---
+// --- Componenti della Dashboard ---
 const ReportHeader = ({ companyName, summary }) => (
   <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 text-center">
     <p className="text-sm font-medium text-blue-600">Report di Analisi Strategica</p>
@@ -290,4 +278,26 @@ const ComparisonCard = ({ title, data, dataKey, icon, color }) => {
 };
 
 const ComparisonSection = ({ chartsData }) => {
-    if (!chartsData) return
+    if (!chartsData) return null;
+    return (
+        <section>
+             <h2 className="text-xl font-bold text-slate-800 mb-4">Dati a Confronto</h2>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <ComparisonCard title="Fatturato" data={chartsData.revenue_trend} dataKey="fatturato" icon={icons.dollarSign} color="#3b82f6" />
+                <ComparisonCard title="Utile Netto" data={chartsData.profit_trend} dataKey="utile" icon={icons.award} color="#10b981" />
+             </div>
+        </section>
+    );
+};
+
+const AnalysisCard = ({ title, content, icon }) => (
+    <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
+        <div className="flex items-center text-lg font-bold text-slate-800">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center mr-3 bg-slate-100">
+                <Icon path={icon} className="w-5 h-5 text-slate-600" />
+            </div>
+            {title}
+        </div>
+        <div className="mt-3">{content || "Analisi non disponibile."}</div>
+    </div>
+);
