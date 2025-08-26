@@ -1,7 +1,8 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 12.1 (Fix Imposte)
-// - NUOVO: Aggiunta estrazione metrica "imposte" come richiesto.
-// - La configurazione e la logica di estrazione sono state aggiornate per includere il nuovo valore.
+// VERSIONE 12.3 (Fix Completo: Imposte + Nome Azienda)
+// - FIX: Reintegrata l'estrazione della metrica "imposte" che era stata persa nell'aggiornamento precedente.
+// - FIX: Aggiunto il campo `company_name` all'oggetto `resultToSave` per salvarlo direttamente nella tabella `analysis_results`.
+// - MIGLIORAMENTO: Logica di estrazione del nome azienda resa più robusta con fallback multipli e logging.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -57,9 +58,12 @@ const findSimpleValue = (sheetData, searchTexts) => {
     for (const row of sheetData) {
         const descriptionCell = [row[0], row[1], row[2], row[3], row[4], row[5]].map(c => String(c || '').toLowerCase().trim()).join(' ');
         if (normalizedSearchTexts.some(searchText => descriptionCell.includes(searchText))) {
+            // Cerca la prima cella non vuota nella riga che non sia la descrizione stessa
             for (let j = 0; j < row.length; j++) {
-                if (typeof row[j] === 'string' && row[j].trim() && !normalizedSearchTexts.some(st => row[j].toLowerCase().includes(st))) {
-                    return row[j].trim();
+                const cellContent = String(row[j] || '').trim();
+                const isSearchTerm = normalizedSearchTexts.some(st => cellContent.toLowerCase().includes(st));
+                if (cellContent && !isSearchTerm) {
+                    return cellContent;
                 }
             }
         }
@@ -112,7 +116,6 @@ const metricsConfigs = {
     rimanenze: [{ primary: ["rimanenze"] }],
     disponibilitaLiquide: [{ primary: ["disponibilità liquide"] }],
     debitiLungoTermine: [{ primary: ["esigibili oltre l'esercizio successivo"] }, { primary: ["debiti esigibili oltre l'esercizio successivo"] }],
-    // --- NUOVA METRICA AGGIUNTA QUI ---
     imposte: [
         { primary: ["22) imposte sul reddito dell'esercizio"] },
         { primary: ["imposte sul reddito"] },
@@ -120,7 +123,7 @@ const metricsConfigs = {
     ]
 };
 
-// Funzione di ricerca ATECO (invariata)
+// Funzioni ATECO (invariate)
 const findAtecoValue = (sheetData, sessionId) => {
     console.log(`[${sessionId}] 🔍 Inizio ricerca specifica per codice ATECO`);
     const searchTerms = [
@@ -161,7 +164,6 @@ const findAtecoValue = (sheetData, sessionId) => {
     return null;
 };
 
-// Estrazione ATECO (invariata)
 const extractAtecoCode = (atecoString, sessionId) => {
     if (!atecoString) {
         console.log(`[${sessionId}] ❌ ATECO string vuota`);
@@ -220,7 +222,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (versione 12.1).`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (versione 12.3).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -241,7 +243,15 @@ export default async function handler(req, res) {
     const yearColsBS = findYearColumns(balanceSheetData);
     const yearColsIS = findYearColumns(incomeStatementData);
 
-    const companyName = findSimpleValue(companyInfoData, ['denominazione', 'ragione sociale']) || session.companies.company_name || 'Azienda';
+    const companyName = findSimpleValue(companyInfoData, [
+        'denominazione', 
+        'ragione sociale',
+        'denominazione sociale',
+        'nome azienda'
+    ]) || session.companies?.company_name || session.company_name || 'Azienda Sconosciuta';
+    
+    console.log(`[${sessionId}] 🏢 Nome azienda estratto: "${companyName}"`);
+
     const sedeRow = findSimpleValue(companyInfoData, ["sede"]);
     const regionMatch = sedeRow ? sedeRow.match(/\(([^)]+)\)/) : null;
     const region = regionMatch ? regionMatch[1] : null;
@@ -295,7 +305,6 @@ export default async function handler(req, res) {
         attivoCircolante: findValueInSheetImproved(balanceSheetData, metricsConfigs.attivoCircolante, yearColsBS, 'Attivo Circolante'),
         rimanenze: findValueInSheetImproved(balanceSheetData, metricsConfigs.rimanenze, yearColsBS, 'Rimanenze'),
         disponibilitaLiquide: findValueInSheetImproved(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide'),
-        // --- NUOVA METRICA ESTRATTA QUI ---
         imposte: findValueInSheetImproved(incomeStatementData, metricsConfigs.imposte, yearColsIS, 'Imposte')
     };
 
@@ -338,6 +347,7 @@ Principali Voci di Bilancio (Anno Corrente N / Anno Precedente N-1):
     
     const resultToSave = {
       session_id: sessionId,
+      company_name: companyName,
       health_score: analysisResult.health_score,
       key_metrics: analysisResult.key_metrics,
       swot: analysisResult.detailed_swot,
