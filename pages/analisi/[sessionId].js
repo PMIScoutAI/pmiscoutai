@@ -1,8 +1,8 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 12.1 (Fix Grafici con Barre di Progresso)
-// - FIX: Sostituita la sezione dei grafici (ComparisonSection) che usava Recharts con una nuova versione
-//   che utilizza barre di progresso in CSS, come da suggerimento dell'utente (Opzione B).
-// - Il risultato è una UI più leggera, veloce e affidabile.
+// VERSIONE 12.2 (Aggiunta Score Section)
+// - NUOVO: Creato il componente <ScoreSection /> per visualizzare i 3 score principali.
+// - NUOVO: Creato il componente <ScoreGauge /> per mostrare un indicatore circolare dinamico.
+// - AGGIORNAMENTO: Inserita la nuova sezione degli score in cima al report, subito dopo l'header, per massima visibilità.
 
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -22,9 +22,7 @@ export default function AnalisiReportPageWrapper() {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <script src="https://cdn.tailwindcss.com"></script>
-        {/* Rimuoviamo la dipendenza da Recharts */}
-        {/* <script src="https://unpkg.com/recharts/umd/Recharts.min.js"></script> */}
-        <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+        <style>{` body { font-family: 'Inter', sans-serif; } .printable-area { print-color-adjust: exact; -webkit-print-color-adjust: exact; } @media print { .no-print { display: none; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }`}</style>
       </Head>
       <Script id="outseta-options" strategy="beforeInteractive">
         {`var o_options = { domain: 'pmiscout.outseta.com', load: 'auth', tokenStorage: 'cookie' };`}
@@ -47,8 +45,6 @@ const icons = {
   menu: <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>,
   print: <><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></>,
   alertTriangle: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
-  award: <><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 22 12 17 17 22 15.79 13.88"></polyline></>,
-  dollarSign: <><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></>,
 };
 
 // --- Layout della Pagina Report (invariato) ---
@@ -56,7 +52,7 @@ function ReportPageLayout({ user }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   return (
     <div className="relative flex min-h-screen bg-slate-100 text-slate-800">
-      <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
+      <aside className={`absolute z-20 flex-shrink-0 w-64 h-full bg-white border-r transform md:relative md:translate-x-0 transition-transform duration-300 ease-in-out no-print ${ isSidebarOpen ? 'translate-x-0' : '-translate-x-full' }`}>
         <div className="flex flex-col h-full">
             <div className="flex items-center justify-center h-16 border-b">
                 <img src="https://www.pmiscout.eu/wp-content/uploads/2024/07/Logo_Pmi_Scout_favicon.jpg" alt="Logo PMIScout" className="h-8 w-auto" onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/150x40/007BFF/FFFFFF?text=PMIScout'; }} />
@@ -73,7 +69,7 @@ function ReportPageLayout({ user }) {
       </aside>
       {isSidebarOpen && (<div className="fixed inset-0 z-10 bg-black bg-opacity-50 md:hidden" onClick={() => setIsSidebarOpen(false)} />)}
       <div className="flex flex-col flex-1 w-0 overflow-hidden">
-        <header className="relative z-10 flex items-center justify-between flex-shrink-0 h-16 px-4 bg-white border-b md:hidden">
+        <header className="relative z-10 flex items-center justify-between flex-shrink-0 h-16 px-4 bg-white border-b md:hidden no-print">
             <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 rounded-md hover:text-slate-900 hover:bg-slate-100 transition-colors" aria-label="Apri menu"><Icon path={icons.menu} /></button>
             <img src="https://www.pmiscout.eu/wp-content/uploads/2024/07/Logo_Pmi_Scout_favicon.jpg" alt="Logo PMIScout" className="h-7 w-auto" onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/120x30/007BFF/FFFFFF?text=PMIScout'; }} />
             <div className="w-8" />
@@ -146,20 +142,27 @@ function AnalisiReportPage({ user }) {
       'Azienda Analizzata';
 
     return (
-      <div className="space-y-8">
+      <div className="space-y-8 printable-area">
         <ReportHeader 
             companyName={companyName} 
             summary={analysisData.summary}
         />
         
-        {/* ✅ SOSTITUITO con la versione con barre di progresso */}
+        {/* --- NUOVA SEZIONE SCORE --- */}
+        <ScoreSection
+          healthScore={analysisData.raw_ai_response?.health_score}
+          healthRating={analysisData.raw_ai_response?.health_score_rating}
+          zScore={analysisData.raw_ai_response?.z_score}
+          bancabilitaScore={analysisData.raw_ai_response?.bancabilita_score}
+        />
+        
         <ComparisonSectionWithBars chartsData={analysisData.charts_data} />
         
         <KeyMetricsSection keyMetrics={analysisData.key_metrics} />
         <SwotAnalysisSection swotData={analysisData.detailed_swot} />
         <RecommendationsSection recommendations={analysisData.recommendations} />
         
-        <div className="flex justify-center items-center space-x-4 mt-10">
+        <div className="flex justify-center items-center space-x-4 mt-10 no-print">
             <button onClick={() => window.print()} className="flex items-center justify-center px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg shadow-sm hover:bg-slate-50 transition-colors">
                 <Icon path={icons.print} className="w-5 h-5 mr-2" />
                 Stampa Report
@@ -195,12 +198,123 @@ const ReportHeader = ({ companyName, summary }) => (
   </div>
 );
 
+// --- NUOVO COMPONENTE PER GLI SCORE ---
+const ScoreGauge = ({ score, colorClass }) => {
+  const radius = 50;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (score / 100) * circumference;
+
+  return (
+    <div className="relative w-32 h-32 mx-auto">
+      <svg className="w-full h-full" viewBox="0 0 120 120">
+        <circle
+          className="text-slate-200"
+          strokeWidth="10"
+          stroke="currentColor"
+          fill="transparent"
+          r={radius}
+          cx="60"
+          cy="60"
+        />
+        <circle
+          className={`${colorClass} transition-all duration-1000 ease-out`}
+          strokeWidth="10"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          stroke="currentColor"
+          fill="transparent"
+          r={radius}
+          cx="60"
+          cy="60"
+          transform="rotate(-90 60 60)"
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className={`text-3xl font-bold ${colorClass}`}>{score}</span>
+      </div>
+    </div>
+  );
+};
+
+const ScoreSection = ({ healthScore, healthRating, zScore, bancabilitaScore }) => {
+  const getHealthScoreColor = (score) => {
+    if (score >= 80) return { text: 'text-green-600', bg: 'bg-green-100' };
+    if (score >= 60) return { text: 'text-blue-600', bg: 'bg-blue-100' };
+    if (score >= 40) return { text: 'text-yellow-600', bg: 'bg-yellow-100' };
+    return { text: 'text-red-600', bg: 'bg-red-100' };
+  };
+
+  const getDynamicScoreColor = (scoreObj) => {
+    if (scoreObj?.color === 'green') return { text: 'text-green-600', bg: 'bg-green-100' };
+    if (scoreObj?.color === 'yellow') return { text: 'text-yellow-600', bg: 'bg-yellow-100' };
+    return { text: 'text-red-600', bg: 'bg-red-100' };
+  };
+
+  const healthColor = getHealthScoreColor(healthScore);
+  const zScoreColor = getDynamicScoreColor(zScore);
+  const bancabilitaColor = getDynamicScoreColor(bancabilitaScore);
+
+  return (
+    <section>
+      <h2 className="text-xl font-bold text-slate-800 mb-4">Score di Valutazione</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Health Score */}
+        <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 text-center">
+          <h3 className="font-bold text-slate-800">Health Score</h3>
+          <p className="text-sm text-slate-500 mb-4">Salute Generale</p>
+          {healthScore !== null && healthScore !== undefined ? (
+            <>
+              <ScoreGauge score={healthScore} colorClass={healthColor.text} />
+              <p className={`mt-4 text-sm font-semibold px-3 py-1 inline-block rounded-full ${healthColor.bg} ${healthColor.text}`}>
+                {healthRating || 'N/D'}
+              </p>
+            </>
+          ) : <p className="text-slate-500 pt-10">Dato non disponibile</p>}
+        </div>
+
+        {/* Z-Score */}
+        <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 text-center">
+          <h3 className="font-bold text-slate-800">Z-Score</h3>
+          <p className="text-sm text-slate-500 mb-4">Rischio di Default</p>
+          {zScore?.value !== null && zScore?.value !== undefined ? (
+            <>
+              <div className="py-8">
+                <p className={`text-5xl font-bold ${zScoreColor.text}`}>{zScore.value.toFixed(2)}</p>
+              </div>
+              <p className={`mt-4 text-sm font-semibold px-3 py-1 inline-block rounded-full ${zScoreColor.bg} ${zScoreColor.text}`}>
+                {zScore.rating || 'N/D'}
+              </p>
+            </>
+          ) : <p className="text-slate-500 pt-10">Dato non disponibile</p>}
+        </div>
+
+        {/* Bancabilità */}
+        <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200 text-center">
+          <h3 className="font-bold text-slate-800">Bancabilità</h3>
+          <p className="text-sm text-slate-500 mb-4">Accesso al Credito</p>
+           {bancabilitaScore?.value !== null && bancabilitaScore?.value !== undefined ? (
+            <>
+              <div className="py-8">
+                 <p className={`text-5xl font-bold ${bancabilitaColor.text}`}>{bancabilitaScore.value}</p>
+              </div>
+              <p className={`mt-4 text-sm font-semibold px-3 py-1 inline-block rounded-full ${bancabilitaColor.bg} ${bancabilitaColor.text}`}>
+                {bancabilitaScore.rating || 'N/D'}
+              </p>
+            </>
+          ) : <p className="text-slate-500 pt-10">Dato non disponibile</p>}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+
 const formatCurrency = (value) => {
     if (value === null || value === undefined) return 'N/D';
     return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value);
 };
 
-// 🔧 FIX 2: GRAFICI - OPZIONE B: Barre di progresso invece dei grafici
 const ComparisonSectionWithBars = ({ chartsData }) => {
     if (!chartsData) return null;
     
@@ -216,9 +330,9 @@ const ComparisonSectionWithBars = ({ chartsData }) => {
              );
         }
         
-        const maxValue = Math.max(current, previous, 0); // Aggiunto 0 per evitare divisioni per zero se entrambi sono negativi
-        const currentPercent = maxValue > 0 ? (current / maxValue) * 100 : 0;
-        const previousPercent = maxValue > 0 ? (previous / maxValue) * 100 : 0;
+        const maxValue = Math.max(Math.abs(current), Math.abs(previous));
+        const currentPercent = maxValue > 0 ? (Math.abs(current) / maxValue) * 100 : 0;
+        const previousPercent = maxValue > 0 ? (Math.abs(previous) / maxValue) * 100 : 0;
         
         return (
             <div className="space-y-3">
@@ -231,7 +345,7 @@ const ComparisonSectionWithBars = ({ chartsData }) => {
                     </div>
                     <div className="w-full bg-slate-200 rounded-full h-3">
                         <div 
-                            className={`h-3 rounded-full transition-all duration-1000 ${color}`}
+                            className={`h-3 rounded-full transition-all duration-1000 ${current < 0 ? 'bg-red-500' : color}`}
                             style={{ width: `${currentPercent}%` }}
                         ></div>
                     </div>
@@ -244,7 +358,7 @@ const ComparisonSectionWithBars = ({ chartsData }) => {
                     </div>
                     <div className="w-full bg-slate-200 rounded-full h-3">
                         <div 
-                            className="bg-slate-400 h-3 rounded-full transition-all duration-1000"
+                            className={`h-3 rounded-full transition-all duration-1000 ${previous < 0 ? 'bg-red-400' : 'bg-slate-400'}`}
                             style={{ width: `${previousPercent}%` }}
                         ></div>
                     </div>
@@ -287,9 +401,6 @@ const ComparisonSectionWithBars = ({ chartsData }) => {
     );
 };
 
-
-// --- Componenti UI per le sezioni di analisi ---
-
 const KeyMetricsSection = ({ keyMetrics }) => {
   if (!keyMetrics) return null;
   const metrics = typeof keyMetrics === 'string' ? JSON.parse(keyMetrics) : keyMetrics;
@@ -304,8 +415,8 @@ const KeyMetricsSection = ({ keyMetrics }) => {
               {key.replace(/_/g, ' ')}
             </h4>
             <p className="text-3xl font-bold text-slate-900 mt-1">
-              {metric.value !== null ? metric.value.toFixed(2) : 'N/D'}
-              <span className="text-lg font-medium text-slate-500 ml-1">{key.includes('ratio') ? '' : '%'}</span>
+              {metric.value !== null && metric.value !== undefined ? (typeof metric.value === 'number' ? metric.value.toFixed(2) : metric.value) : 'N/D'}
+              <span className="text-lg font-medium text-slate-500 ml-1">{key.includes('ratio') || typeof metric.value !== 'number' ? '' : '%'}</span>
             </p>
             <p className="text-xs text-slate-500 mt-2">{metric.benchmark}</p>
             {metric.reason_if_null && (
