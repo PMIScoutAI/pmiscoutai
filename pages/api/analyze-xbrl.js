@@ -1,8 +1,8 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 12.3 (Fix Completo: Imposte + Nome Azienda)
-// - FIX: Reintegrata l'estrazione della metrica "imposte" che era stata persa nell'aggiornamento precedente.
-// - FIX: Aggiunto il campo `company_name` all'oggetto `resultToSave` per salvarlo direttamente nella tabella `analysis_results`.
-// - MIGLIORAMENTO: Logica di estrazione del nome azienda resa più robusta con fallback multipli e logging.
+// VERSIONE 12.4 (Fix Logica Estrazione Valori Semplici)
+// - REFACTORING: Sostituita la funzione `findSimpleValue` con una logica più robusta e precisa, come suggerito.
+//   La nuova funzione prima trova l'etichetta e poi cerca il valore nelle colonne a destra, migliorando l'affidabilità.
+// - Tutti i fix precedenti (imposte, salvataggio nome azienda) sono mantenuti.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -53,21 +53,31 @@ const findYearColumns = (sheetData) => {
     return { currentYearCol: years[0].col, previousYearCol: years[1].col };
 };
 
+// --- NUOVA FUNZIONE findSimpleValue ---
 const findSimpleValue = (sheetData, searchTexts) => {
     const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
+    
     for (const row of sheetData) {
-        const descriptionCell = [row[0], row[1], row[2], row[3], row[4], row[5]].map(c => String(c || '').toLowerCase().trim()).join(' ');
-        if (normalizedSearchTexts.some(searchText => descriptionCell.includes(searchText))) {
-            // Cerca la prima cella non vuota nella riga che non sia la descrizione stessa
-            for (let j = 0; j < row.length; j++) {
-                const cellContent = String(row[j] || '').trim();
-                const isSearchTerm = normalizedSearchTexts.some(st => cellContent.toLowerCase().includes(st));
-                if (cellContent && !isSearchTerm) {
-                    return cellContent;
+        // Cerco in quale colonna si trova il termine di ricerca
+        for (let j = 0; j < row.length; j++) {
+            const cellContent = String(row[j] || '').toLowerCase().trim();
+            
+            // Se trovo un termine di ricerca in questa cella
+            if (normalizedSearchTexts.some(searchText => cellContent.includes(searchText))) {
+                console.log(`🔍 Trovato termine di ricerca in colonna ${j}: "${cellContent}"`);
+                
+                // Cerco il valore nelle colonne successive della stessa riga
+                for (let k = j + 1; k < row.length; k++) {
+                    const valueCell = String(row[k] || '').trim();
+                    if (valueCell && valueCell !== '' && !normalizedSearchTexts.some(st => valueCell.toLowerCase().includes(st))) {
+                        console.log(`✅ Valore trovato in colonna ${k}: "${valueCell}"`);
+                        return valueCell;
+                    }
                 }
             }
         }
     }
+    console.log(`⚠️ Valore non trovato per i termini: ${searchTexts.join(', ')}`);
     return null;
 };
 
@@ -222,7 +232,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (versione 12.3).`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (versione 12.4).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
