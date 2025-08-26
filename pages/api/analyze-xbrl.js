@@ -1,6 +1,7 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 12.1 (Fix Estrazione Nome Azienda)
-// - MIGLIORAMENTO: Aumentata la robustezza dell'estrazione del nome dell'azienda aggiungendo più pattern di ricerca.
+// VERSIONE 12.1 (Fix Imposte)
+// - NUOVO: Aggiunta estrazione metrica "imposte" come richiesto.
+// - La configurazione e la logica di estrazione sono state aggiornate per includere il nuovo valore.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -56,12 +57,9 @@ const findSimpleValue = (sheetData, searchTexts) => {
     for (const row of sheetData) {
         const descriptionCell = [row[0], row[1], row[2], row[3], row[4], row[5]].map(c => String(c || '').toLowerCase().trim()).join(' ');
         if (normalizedSearchTexts.some(searchText => descriptionCell.includes(searchText))) {
-            // Cerca la prima cella non vuota nella riga che non sia la descrizione stessa
             for (let j = 0; j < row.length; j++) {
-                const cellContent = String(row[j] || '').trim();
-                const isSearchTerm = normalizedSearchTexts.some(st => cellContent.toLowerCase().includes(st));
-                if (cellContent && !isSearchTerm) {
-                    return cellContent;
+                if (typeof row[j] === 'string' && row[j].trim() && !normalizedSearchTexts.some(st => row[j].toLowerCase().includes(st))) {
+                    return row[j].trim();
                 }
             }
         }
@@ -98,7 +96,7 @@ const findValueInSheetImproved = (sheetData, searchConfigs, yearCols, metricName
     return { currentYear: null, previousYear: null };
 };
 
-// Configurazioni metriche (invariate)
+// Configurazioni metriche
 const metricsConfigs = {
     fatturato: [{ primary: ["a) ricavi delle vendite e delle prestazioni"] }, { primary: ["ricavi delle vendite"] }, { primary: ["valore della produzione"], exclusion: ["costi", "differenza"] }],
     utilePerdita: [{ primary: ["utile (perdita) dell'esercizio"] }, { primary: ["risultato dell'esercizio"] }, { primary: ["risultato prima delle imposte"] }],
@@ -113,10 +111,16 @@ const metricsConfigs = {
     attivoCircolante: [{ primary: ["c) attivo circolante"], exclusion: ["immobilizzazioni"] }, { primary: ["totale attivo circolante"] }],
     rimanenze: [{ primary: ["rimanenze"] }],
     disponibilitaLiquide: [{ primary: ["disponibilità liquide"] }],
-    debitiLungoTermine: [{ primary: ["esigibili oltre l'esercizio successivo"] }, { primary: ["debiti esigibili oltre l'esercizio successivo"] }]
+    debitiLungoTermine: [{ primary: ["esigibili oltre l'esercizio successivo"] }, { primary: ["debiti esigibili oltre l'esercizio successivo"] }],
+    // --- NUOVA METRICA AGGIUNTA QUI ---
+    imposte: [
+        { primary: ["22) imposte sul reddito dell'esercizio"] },
+        { primary: ["imposte sul reddito"] },
+        { primary: ["totale imposte"] }
+    ]
 };
 
-// Funzioni ATECO (invariate)
+// Funzione di ricerca ATECO (invariata)
 const findAtecoValue = (sheetData, sessionId) => {
     console.log(`[${sessionId}] 🔍 Inizio ricerca specifica per codice ATECO`);
     const searchTerms = [
@@ -157,6 +161,7 @@ const findAtecoValue = (sheetData, sessionId) => {
     return null;
 };
 
+// Estrazione ATECO (invariata)
 const extractAtecoCode = (atecoString, sessionId) => {
     if (!atecoString) {
         console.log(`[${sessionId}] ❌ ATECO string vuota`);
@@ -236,14 +241,7 @@ export default async function handler(req, res) {
     const yearColsBS = findYearColumns(balanceSheetData);
     const yearColsIS = findYearColumns(incomeStatementData);
 
-    // --- FIX APPLICATO QUI ---
-    const companyName = findSimpleValue(companyInfoData, [
-        'denominazione', 
-        'ragione sociale',
-        'denominazione sociale',
-        'nome azienda'
-    ]) || session.companies.company_name || 'Azienda';
-    
+    const companyName = findSimpleValue(companyInfoData, ['denominazione', 'ragione sociale']) || session.companies.company_name || 'Azienda';
     const sedeRow = findSimpleValue(companyInfoData, ["sede"]);
     const regionMatch = sedeRow ? sedeRow.match(/\(([^)]+)\)/) : null;
     const region = regionMatch ? regionMatch[1] : null;
@@ -296,7 +294,9 @@ export default async function handler(req, res) {
         oneriFinanziari: findValueInSheetImproved(incomeStatementData, metricsConfigs.oneriFinanziari, yearColsIS, 'Oneri Finanziari'),
         attivoCircolante: findValueInSheetImproved(balanceSheetData, metricsConfigs.attivoCircolante, yearColsBS, 'Attivo Circolante'),
         rimanenze: findValueInSheetImproved(balanceSheetData, metricsConfigs.rimanenze, yearColsBS, 'Rimanenze'),
-        disponibilitaLiquide: findValueInSheetImproved(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide')
+        disponibilitaLiquide: findValueInSheetImproved(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide'),
+        // --- NUOVA METRICA ESTRATTA QUI ---
+        imposte: findValueInSheetImproved(incomeStatementData, metricsConfigs.imposte, yearColsIS, 'Imposte')
     };
 
     const sectorialContext = sectorInfo ? `
@@ -319,6 +319,7 @@ Principali Voci di Bilancio (Anno Corrente N / Anno Precedente N-1):
 - Debiti Totali: ${metrics.debitiTotali.currentYear} / ${metrics.debitiTotali.previousYear}
 - Debiti a Breve Termine: ${metrics.debitiBreveTermine.currentYear} / ${metrics.debitiBreveTermine.previousYear}
 - Crediti: ${metrics.creditiClienti.currentYear} / ${metrics.creditiClienti.previousYear}
+- Imposte: ${metrics.imposte.currentYear} / ${metrics.imposte.previousYear}
 `;
 
     const { data: promptData, error: promptError } = await supabase.from('ai_prompts').select('prompt_template').eq('name', 'FINANCIAL_ANALYSIS_V2').single();
