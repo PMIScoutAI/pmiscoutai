@@ -1,9 +1,7 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 12.0 (Fix ATECO Robusto e Modulare)
-// - REFACTORING: Implementato il fix proposto dall'utente per l'estrazione ATECO.
-// - NUOVO: Funzione `findAtecoValue` dedicata alla ricerca della stringa ATECO, più specifica e affidabile di `findSimpleValue`.
-// - MIGLIORAMENTO: La funzione `extractAtecoCode` è stata potenziata con pattern di riconoscimento più ampi e logging dettagliato per il debug.
-// - La logica principale ora usa la ricerca specifica con un fallback a quella generica, aumentando la resilienza.
+// VERSIONE 12.1 (Fix Imposte)
+// - NUOVO: Aggiunta estrazione metrica "imposte" come richiesto.
+// - La configurazione e la logica di estrazione sono state aggiornate per includere il nuovo valore.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -98,7 +96,7 @@ const findValueInSheetImproved = (sheetData, searchConfigs, yearCols, metricName
     return { currentYear: null, previousYear: null };
 };
 
-// Configurazioni metriche (invariate)
+// Configurazioni metriche
 const metricsConfigs = {
     fatturato: [{ primary: ["a) ricavi delle vendite e delle prestazioni"] }, { primary: ["ricavi delle vendite"] }, { primary: ["valore della produzione"], exclusion: ["costi", "differenza"] }],
     utilePerdita: [{ primary: ["utile (perdita) dell'esercizio"] }, { primary: ["risultato dell'esercizio"] }, { primary: ["risultato prima delle imposte"] }],
@@ -113,10 +111,16 @@ const metricsConfigs = {
     attivoCircolante: [{ primary: ["c) attivo circolante"], exclusion: ["immobilizzazioni"] }, { primary: ["totale attivo circolante"] }],
     rimanenze: [{ primary: ["rimanenze"] }],
     disponibilitaLiquide: [{ primary: ["disponibilità liquide"] }],
-    debitiLungoTermine: [{ primary: ["esigibili oltre l'esercizio successivo"] }, { primary: ["debiti esigibili oltre l'esercizio successivo"] }]
+    debitiLungoTermine: [{ primary: ["esigibili oltre l'esercizio successivo"] }, { primary: ["debiti esigibili oltre l'esercizio successivo"] }],
+    // --- NUOVA METRICA AGGIUNTA QUI ---
+    imposte: [
+        { primary: ["22) imposte sul reddito dell'esercizio"] },
+        { primary: ["imposte sul reddito"] },
+        { primary: ["totale imposte"] }
+    ]
 };
 
-// 🔧 FIX 1: Funzione di ricerca ATECO più specifica e robusta
+// Funzione di ricerca ATECO (invariata)
 const findAtecoValue = (sheetData, sessionId) => {
     console.log(`[${sessionId}] 🔍 Inizio ricerca specifica per codice ATECO`);
     const searchTerms = [
@@ -133,7 +137,6 @@ const findAtecoValue = (sheetData, sessionId) => {
                 const cellValue = String(row[j] || '').toLowerCase().trim();
                 if (cellValue.includes(searchTerm.toLowerCase())) {
                     console.log(`[${sessionId}] 🎯 Trovato termine "${searchTerm}" alla riga ${i}, colonna ${j}`);
-                    // Cerca il valore ATECO nelle colonne successive della stessa riga
                     for (let k = j + 1; k < row.length; k++) {
                         const valueCell = String(row[k] || '').trim();
                         if (valueCell && (valueCell.includes('(') || valueCell.match(/\d{2}\.\d{2}/))) {
@@ -141,7 +144,6 @@ const findAtecoValue = (sheetData, sessionId) => {
                             return valueCell;
                         }
                     }
-                    // Se non trova nella stessa riga, cerca nelle righe successive
                     for (let nextRow = i + 1; nextRow < Math.min(i + 3, sheetData.length); nextRow++) {
                         for (let col = 0; col < sheetData[nextRow].length; col++) {
                             const nextValue = String(sheetData[nextRow][col] || '').trim();
@@ -159,7 +161,7 @@ const findAtecoValue = (sheetData, sessionId) => {
     return null;
 };
 
-// 🔧 FIX 2: Estrazione ATECO con logging dettagliato
+// Estrazione ATECO (invariata)
 const extractAtecoCode = (atecoString, sessionId) => {
     if (!atecoString) {
         console.log(`[${sessionId}] ❌ ATECO string vuota`);
@@ -218,7 +220,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (versione 12.0).`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (versione 12.1).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -244,7 +246,6 @@ export default async function handler(req, res) {
     const regionMatch = sedeRow ? sedeRow.match(/\(([^)]+)\)/) : null;
     const region = regionMatch ? regionMatch[1] : null;
 
-    // 🔧 FIX 3: Implementazione della nuova logica di ricerca ATECO
     console.log(`[${sessionId}] 🚀 Avvio ricerca ATECO migliorata`);
     let rawAtecoString = findAtecoValue(companyInfoData, sessionId);
     if (!rawAtecoString) {
@@ -293,7 +294,9 @@ export default async function handler(req, res) {
         oneriFinanziari: findValueInSheetImproved(incomeStatementData, metricsConfigs.oneriFinanziari, yearColsIS, 'Oneri Finanziari'),
         attivoCircolante: findValueInSheetImproved(balanceSheetData, metricsConfigs.attivoCircolante, yearColsBS, 'Attivo Circolante'),
         rimanenze: findValueInSheetImproved(balanceSheetData, metricsConfigs.rimanenze, yearColsBS, 'Rimanenze'),
-        disponibilitaLiquide: findValueInSheetImproved(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide')
+        disponibilitaLiquide: findValueInSheetImproved(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide'),
+        // --- NUOVA METRICA ESTRATTA QUI ---
+        imposte: findValueInSheetImproved(incomeStatementData, metricsConfigs.imposte, yearColsIS, 'Imposte')
     };
 
     const sectorialContext = sectorInfo ? `
@@ -316,6 +319,7 @@ Principali Voci di Bilancio (Anno Corrente N / Anno Precedente N-1):
 - Debiti Totali: ${metrics.debitiTotali.currentYear} / ${metrics.debitiTotali.previousYear}
 - Debiti a Breve Termine: ${metrics.debitiBreveTermine.currentYear} / ${metrics.debitiBreveTermine.previousYear}
 - Crediti: ${metrics.creditiClienti.currentYear} / ${metrics.creditiClienti.previousYear}
+- Imposte: ${metrics.imposte.currentYear} / ${metrics.imposte.previousYear}
 `;
 
     const { data: promptData, error: promptError } = await supabase.from('ai_prompts').select('prompt_template').eq('name', 'FINANCIAL_ANALYSIS_V2').single();
