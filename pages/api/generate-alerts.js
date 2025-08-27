@@ -8,6 +8,55 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 /**
+ * Funzione per generare un'analisi di impatto con OpenAI.
+ * @param {object} alert - L'oggetto alert generato.
+ * @param {object} context - Il contesto dell'utente (ateco, regione, etc.).
+ * @returns {Promise<{impatto_ai: string, prompt_usato: string}>}
+ */
+async function generateImpactWithAI(alert, context) {
+  const { ateco_code, region, health_score } = context;
+  
+  // 1. Costruire il prompt dinamico
+  const prompt = `Sintetizza in massimo 30 parole l'impatto per una piccola impresa ${region} del settore ${ateco_code} (salute ${health_score}/100) di questo avviso: "${alert.descrizione}".`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 60,
+        temperature: 0.5,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Chiamata a OpenAI fallita con status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const impatto_ai = data.choices[0]?.message?.content.trim() || '';
+
+    return {
+      impatto_ai,
+      prompt_usato: prompt,
+    };
+  } catch (error) {
+    console.error("Errore durante la chiamata a OpenAI:", error);
+    // Restituisce valori di default in caso di errore per non bloccare il flusso
+    return {
+      impatto_ai: '',
+      prompt_usato: prompt,
+    };
+  }
+}
+
+
+/**
  * Funzione refattorizzata: ora accetta userId per recuperare il contesto dell'ultima analisi.
  */
 async function getLatestUserAnalysisContext(userId) {
@@ -84,7 +133,7 @@ export default async function handler(req, res) {
     const { data: userData, error: userError } = await supabase.from('users').select('id').eq('email', userEmail).single();
     if (userError || !userData) {
       console.error(`Handler: Utente non trovato per l'email: ${userEmail}`, userError);
-      return res.status(200).json([]); // Restituisce array vuoto se l'utente non esiste
+      return res.status(200).json([]);
     }
     const userId = userData.id;
 
@@ -147,7 +196,7 @@ export default async function handler(req, res) {
     }
     finalAlerts = finalAlerts.slice(0, 3);
 
-    // 🟧 3. Salvare gli alert generati nel DB
+    // 🟧 3. Salvare gli alert generati nel DB e ottenere gli ID
     if (finalAlerts.length > 0) {
       const alertsToInsert = finalAlerts.map(alert => ({
         user_id: userId,
@@ -158,14 +207,35 @@ export default async function handler(req, res) {
         cta: alert.cta,
         link: alert.link,
         valid_from: new Date().toISOString(),
-        valid_to: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() // Validità di 14 giorni
+        valid_to: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
       }));
 
-      const { error: insertError } = await supabase.from('alerts').insert(alertsToInsert);
+      const { data: insertedData, error: insertError } = await supabase
+        .from('alerts')
+        .insert(alertsToInsert)
+        .select(); // Chiediamo a Supabase di restituire i record inseriti
+
       if (insertError) {
         console.error("Errore durante il salvataggio dei nuovi alert:", insertError);
-      } else {
-        console.log(`Salvati ${alertsToInsert.length} nuovi alert per l'utente ${userId}.`);
+      } else if (insertedData) {
+        console.log(`Salvati ${insertedData.length} nuovi alert per l'utente ${userId}.`);
+        
+        // Esegui l'arricchimento AI in background (non blocca la risposta al client)
+        insertedData.forEach(async (alert) => {
+          const { impatto_ai, prompt_usato } = await generateImpactWithAI(alert, context);
+          
+          // Se la generazione AI ha prodotto un risultato, aggiorna il record
+          if (impatto_ai) {
+            const { error: updateError } = await supabase
+              .from('alerts')
+              .update({ impatto_ai, prompt_usato })
+              .eq('id', alert.id);
+
+            if (updateError) {
+              console.error(`Errore durante l'aggiornamento dell'alert ${alert.id} con i dati AI:`, updateError);
+            }
+          }
+        });
       }
     }
 
