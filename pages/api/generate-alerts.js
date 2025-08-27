@@ -2,21 +2,12 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Utilizzo delle variabili d'ambiente server-side per maggiore sicurezza.
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-/**
- * Funzione per generare un'analisi di impatto con OpenAI.
- * @param {object} alert - L'oggetto alert generato.
- * @param {object} context - Il contesto dell'utente (ateco, regione, etc.).
- * @returns {Promise<{impatto_ai: string, prompt_usato: string}>}
- */
 async function generateImpactWithAI(alert, context) {
   const { ateco_code, region, health_score } = context;
-  
-  // 1. Costruire il prompt dinamico
   const prompt = `Sintetizza in massimo 30 parole l'impatto per una piccola impresa ${region} del settore ${ateco_code} (salute ${health_score}/100) di questo avviso: "${alert.descrizione}".`;
 
   try {
@@ -41,30 +32,18 @@ async function generateImpactWithAI(alert, context) {
     const data = await response.json();
     const impatto_ai = data.choices[0]?.message?.content.trim() || '';
 
-    return {
-      impatto_ai,
-      prompt_usato: prompt,
-    };
+    return { impatto_ai, prompt_usato: prompt };
   } catch (error) {
     console.error("Errore durante la chiamata a OpenAI:", error);
-    // Restituisce valori di default in caso di errore per non bloccare il flusso
-    return {
-      impatto_ai: '',
-      prompt_usato: prompt,
-    };
+    return { impatto_ai: '', prompt_usato: prompt };
   }
 }
 
-
-/**
- * Funzione refattorizzata: ora accetta userId per recuperare il contesto dell'ultima analisi.
- */
 async function getLatestUserAnalysisContext(userId) {
   try {
-    // Step 1: Trovare l'ultima checkup_session per l'utente
     const { data: sessionData, error: sessionError } = await supabase
       .from('checkup_sessions')
-      .select('id') // La colonna si chiama 'id'
+      .select('id')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -74,21 +53,18 @@ async function getLatestUserAnalysisContext(userId) {
       console.log(`Nessuna sessione di analisi trovata per l'utente con id: ${userId}`);
       return { hasAnalysis: false, context: null };
     }
-    const { id: session_id } = sessionData;
 
-    // Step 2: Leggere i dati contestuali da analysis_results
     const { data: analysisData, error: analysisError } = await supabase
       .from('analysis_results')
       .select('health_score, raw_parsed_data')
-      .eq('session_id', session_id)
+      .eq('session_id', sessionData.id)
       .single();
 
     if (analysisError || !analysisData) {
-      console.error(`Dati di analisi non trovati per session_id: ${session_id}`, analysisError);
+      console.error(`Dati di analisi non trovati per session_id: ${sessionData.id}`, analysisError);
       return { hasAnalysis: false, context: null };
     }
 
-    // Step 3: Estrarre e restituire il contesto
     const rawData = analysisData.raw_parsed_data || {};
     const contextData = rawData.context || {};
     
@@ -100,16 +76,13 @@ async function getLatestUserAnalysisContext(userId) {
         health_score: analysisData.health_score
       }
     };
-
   } catch (error) {
     console.error("Errore imprevisto in getLatestUserAnalysisContext:", error);
     return { hasAnalysis: false, context: null };
   }
 }
 
-// Fonte dati per gli alert (in MVP può essere una lista hardcoded)
 const allAlerts = [
-  // ... (la lista di alert rimane invariata)
   { id: 1, titolo: "Scadenza IVA – 31/08", categoria: "fiscale", urgenza: "alta", descrizione: "Ricorda il versamento trimestrale dell'IVA se sei un contribuente trimestrale.", cta: "Verifica scadenze", link: "#", tags: { region: ['all'], ateco: ['all'] } },
   { id: 2, titolo: "Acconto IRES/IRAP", categoria: "fiscale", urgenza: "media", descrizione: "Controlla le scadenze per il versamento degli acconti di novembre.", cta: "Dettagli", link: "#", tags: { region: ['all'], ateco: ['all'] } },
   { id: 3, titolo: "Bando Transizione 5.0", categoria: "bando", urgenza: "media", descrizione: "Crediti d'imposta per investimenti in digitalizzazione e sostenibilità.", cta: "Scopri di più", link: "#", tags: { region: ['all'], ateco: ['all'] } },
@@ -118,14 +91,13 @@ const allAlerts = [
   { id: 8, titolo: "Decreto Flussi 2025", categoria: "normativa", urgenza: "media", descrizione: "Pubblicate le nuove quote per l'ingresso di lavoratori extracomunitari.", cta: "Consulta il decreto", link: "#", tags: { region: ['all'], ateco: ['all'] } },
 ];
 
-
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ message: 'Method Not Allowed' });
   }
 
   try {
-    const userEmail = req.query.email || 'investimentolibero@gmail.com';
+    const userEmail = req.query.email;
     if (!userEmail) {
       return res.status(400).json({ message: 'Email non fornita' });
     }
@@ -137,7 +109,6 @@ export default async function handler(req, res) {
     }
     const userId = userData.id;
 
-    // 🟩 1. Leggere alert validi esistenti
     const now = new Date().toISOString();
     const { data: existingAlerts, error: existingAlertsError } = await supabase
       .from('alerts')
@@ -157,7 +128,6 @@ export default async function handler(req, res) {
       return res.status(200).json(existingAlerts);
     }
 
-    // 🟨 2. Se non ci sono alert, generarli
     console.log(`Nessun alert valido trovato, ne genero di nuovi per l'utente ${userId}.`);
     const { hasAnalysis, context } = await getLatestUserAnalysisContext(userId);
 
@@ -196,7 +166,6 @@ export default async function handler(req, res) {
     }
     finalAlerts = finalAlerts.slice(0, 3);
 
-    // 🟧 3. Salvare gli alert generati nel DB e ottenere gli ID
     if (finalAlerts.length > 0) {
       const alertsToInsert = finalAlerts.map(alert => ({
         user_id: userId,
@@ -213,19 +182,20 @@ export default async function handler(req, res) {
       const { data: insertedData, error: insertError } = await supabase
         .from('alerts')
         .insert(alertsToInsert)
-        .select(); // Chiediamo a Supabase di restituire i record inseriti
+        .select();
 
       if (insertError) {
         console.error("Errore durante il salvataggio dei nuovi alert:", insertError);
-      } else if (insertedData) {
-        console.log(`Salvati ${insertedData.length} nuovi alert per l'utente ${userId}.`);
+        return res.status(200).json(finalAlerts);
+      } 
+      
+      if (insertedData) {
+        console.log(`Salvati ${insertedData.length} nuovi alert per l'utente ${userId}. Inizio arricchimento AI...`);
         
-        // ✅ FIX: Sostituito forEach con Promise.all(map) per attendere le chiamate asincrone
-        await Promise.all(
+        const enrichedAlerts = await Promise.all(
           insertedData.map(async (alert) => {
             const { impatto_ai, prompt_usato } = await generateImpactWithAI(alert, context);
             
-            // Se la generazione AI ha prodotto un risultato, aggiorna il record
             if (impatto_ai) {
               const { error: updateError } = await supabase
                 .from('alerts')
@@ -236,12 +206,15 @@ export default async function handler(req, res) {
                 console.error(`Errore durante l'aggiornamento dell'alert ${alert.id} con i dati AI:`, updateError);
               }
             }
+            return { ...alert, impatto_ai, prompt_usato };
           })
         );
+        
+        console.log("Arricchimento AI completato.");
+        return res.status(200).json(enrichedAlerts);
       }
     }
 
-    // 🟦 4. Rispondere con gli alert appena generati
     res.status(200).json(finalAlerts);
 
   } catch (error) {
