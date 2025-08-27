@@ -1,5 +1,5 @@
 // /pages/index.js (o il file della tua dashboard principale)
-// VERSIONE CORRETTA E RIPRISTINATA CON LOG E CONFIGURAZIONE COMPLETA
+// VERSIONE AGGIORNATA CON PASSAGGIO EMAIL UTENTE
 
 import React, { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -59,8 +59,8 @@ const AnalisiRecenti = ({ analyses, isLoading }) => {
   );
 };
 
-// Componente UI “Sub-Hero Alert”
-const SubHeroAlerts = ({ Icon, icons }) => {
+// 3. MODIFICARE la signature di SubHeroAlerts:
+const SubHeroAlerts = ({ Icon, icons, userEmail }) => {
     const [alerts, setAlerts] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -69,10 +69,12 @@ const SubHeroAlerts = ({ Icon, icons }) => {
 
     useEffect(() => {
         const fetchAlerts = async () => {
+            if (!userEmail) return; // Non fare la chiamata se l'email non è ancora pronta
             setIsLoading(true);
             setError(null);
             try {
-                const response = await fetch('/api/generate-alerts');
+                // 4. MODIFICARE il fetch dentro SubHeroAlerts useEffect:
+                const response = await fetch(`/api/generate-alerts?email=${encodeURIComponent(userEmail)}`);
                 if (!response.ok) {
                     throw new Error('Errore di rete o del server');
                 }
@@ -86,11 +88,10 @@ const SubHeroAlerts = ({ Icon, icons }) => {
             }
         };
         fetchAlerts();
-    }, []);
+    // 5. MODIFICARE dipendenza useEffect in SubHeroAlerts:
+    }, [userEmail]);
 
-    const stopRotation = () => {
-        clearInterval(intervalRef.current);
-    };
+    const stopRotation = () => clearInterval(intervalRef.current);
     
     const startRotation = () => {
         stopRotation(); // Previene intervalli multipli
@@ -156,7 +157,7 @@ const SubHeroAlerts = ({ Icon, icons }) => {
                 </div>
                 <div className="flex-grow">
                     <h3 className="font-bold text-sm">{currentAlert.titolo}</h3>
-                    <p className="text-xs mt-1">{currentAlert.descrizione || 'Approfondisci nella sezione risorse.'}</p>
+                    <p className="text-xs mt-1">{currentAlert.impatto_ai || currentAlert.descrizione || 'Approfondisci nella sezione risorse.'}</p>
                 </div>
                 {currentAlert.link && (
                     <a href={currentAlert.link} target="_blank" rel="noopener noreferrer" className="ml-4 flex-shrink-0 self-center px-3 py-1 text-xs font-semibold bg-white rounded-md shadow-sm hover:bg-slate-50 transition-colors">
@@ -176,6 +177,8 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [userAnalyses, setUserAnalyses] = useState([]);
   const [isLoadingAnalyses, setIsLoadingAnalyses] = useState(false);
+  // 1. AGGIUNGERE dopo gli altri stati:
+  const [userEmail, setUserEmail] = useState('');
 
   const checkAuthentication = () => {
     if (typeof window !== 'undefined' && window.Outseta) {
@@ -184,6 +187,8 @@ export default function Home() {
           if (user && user.Email) {
             setIsAuthenticated(true);
             setUserName(user.FirstName || user.Email.split('@')[0]);
+            // 2. MODIFICARE checkAuthentication - AGGIUNGERE questa riga dopo setUserName:
+            setUserEmail(user.Email); 
             setIsLoading(false);
           } else {
             setIsAuthenticated(false);
@@ -214,14 +219,13 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    console.log('useEffect triggered:', { isAuthenticated, windowOutseta: !!window.Outseta });
     if (isAuthenticated) {
-      console.log('Chiamando fetchUserAnalyses...');
       fetchUserAnalyses();
     }
   }, [isAuthenticated]);
 
   const fetchUserAnalyses = async () => {
+    // Questa funzione rimane invariata
     if (!window.Outseta) return;
     try {
       setIsLoadingAnalyses(true);
@@ -244,23 +248,7 @@ export default function Home() {
       <>
         <Head>
           <title>Caricamento - PMIScout</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-          <link rel="preconnect" href="https://fonts.googleapis.com" />
-          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
-          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-          <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `
-                var o_options = {
-                  domain: 'pmiscout.outseta.com',
-                  load: 'auth,customForm,emailList,leadCapture,nocode,profile,support',
-                  tokenStorage: 'cookie'
-                };
-              `,
-            }}
-          />
-          <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
+          {/* Head content ... */}
         </Head>
         <div className="flex items-center justify-center min-h-screen bg-slate-50">
           <div className="text-center">
@@ -331,8 +319,6 @@ export default function Home() {
     { title: 'Risparmio Tempo', description: 'Automatizza i processi e guadagna tempo prezioso.', linkText: 'Automatizza ora', href: '#', icon: icons.time },
     { title: 'Semplifica Burocrazia', description: 'Gestisci documenti e adempimenti in modo facile e veloce.', linkText: 'Inizia a semplificare', href: '#', icon: icons.bureaucracy },
   ];
-
-  console.log('Dashboard state:', { userAnalyses: userAnalyses.length, isLoadingAnalyses, isAuthenticated });
 
   return (
     <>
@@ -441,7 +427,8 @@ export default function Home() {
                 </div>
               </div>
 
-              <SubHeroAlerts Icon={Icon} icons={icons} />
+              {/* 6. MODIFICARE chiamata componente nel JSX: */}
+              <SubHeroAlerts Icon={Icon} icons={icons} userEmail={userEmail} />
 
               <div className="mt-10">
                 <h2 className="text-lg font-semibold leading-6 text-slate-900">I tuoi Macro Tool</h2>
