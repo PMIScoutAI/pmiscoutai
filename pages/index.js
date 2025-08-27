@@ -59,7 +59,7 @@ const AnalisiRecenti = ({ analyses, isLoading }) => {
   );
 };
 
-// 3. MODIFICARE la signature di SubHeroAlerts:
+// Componente UI “Sub-Hero Alert”
 const SubHeroAlerts = ({ Icon, icons, userEmail }) => {
     const [alerts, setAlerts] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -73,7 +73,6 @@ const SubHeroAlerts = ({ Icon, icons, userEmail }) => {
             setIsLoading(true);
             setError(null);
             try {
-                // 4. MODIFICARE il fetch dentro SubHeroAlerts useEffect:
                 const response = await fetch(`/api/generate-alerts?email=${encodeURIComponent(userEmail)}`);
                 if (!response.ok) {
                     throw new Error('Errore di rete o del server');
@@ -88,7 +87,6 @@ const SubHeroAlerts = ({ Icon, icons, userEmail }) => {
             }
         };
         fetchAlerts();
-    // 5. MODIFICARE dipendenza useEffect in SubHeroAlerts:
     }, [userEmail]);
 
     const stopRotation = () => clearInterval(intervalRef.current);
@@ -177,7 +175,6 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [userAnalyses, setUserAnalyses] = useState([]);
   const [isLoadingAnalyses, setIsLoadingAnalyses] = useState(false);
-  // 1. AGGIUNGERE dopo gli altri stati:
   const [userEmail, setUserEmail] = useState('');
 
   const checkAuthentication = () => {
@@ -187,7 +184,6 @@ export default function Home() {
           if (user && user.Email) {
             setIsAuthenticated(true);
             setUserName(user.FirstName || user.Email.split('@')[0]);
-            // 2. MODIFICARE checkAuthentication - AGGIUNGERE questa riga dopo setUserName:
             setUserEmail(user.Email); 
             setIsLoading(false);
           } else {
@@ -225,7 +221,6 @@ export default function Home() {
   }, [isAuthenticated]);
 
   const fetchUserAnalyses = async () => {
-    // Questa funzione rimane invariata
     if (!window.Outseta) return;
     try {
       setIsLoadingAnalyses(true);
@@ -248,7 +243,23 @@ export default function Home() {
       <>
         <Head>
           <title>Caricamento - PMIScout</title>
-          {/* Head content ... */}
+          <script src="https://cdn.tailwindcss.com"></script>
+          <link rel="preconnect" href="https://fonts.googleapis.com" />
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+          <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                var o_options = {
+                  domain: 'pmiscout.outseta.com',
+                  load: 'auth,customForm,emailList,leadCapture,nocode,profile,support',
+                  tokenStorage: 'cookie'
+                };
+              `,
+            }}
+          />
+          <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
         </Head>
         <div className="flex items-center justify-center min-h-screen bg-slate-50">
           <div className="text-center">
