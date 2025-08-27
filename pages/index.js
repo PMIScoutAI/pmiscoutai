@@ -1,11 +1,12 @@
 // /pages/index.js (o il file della tua dashboard principale)
-// VERSIONE AGGIORNATA CON SUB-HERO ALERTS
+// VERSIONE CORRETTA CON SUB-HERO ALERTS
 
 import React, { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 
 const AnalisiRecenti = ({ analyses, isLoading }) => {
+  // Questo componente rimane invariato
   if (isLoading) {
     return (
       <div className="px-2 py-3 border-t border-slate-200">
@@ -57,36 +58,49 @@ const AnalisiRecenti = ({ analyses, isLoading }) => {
   );
 };
 
-// 4. Componente UI “Sub-Hero Alert”
-const SubHeroAlerts = ({ icons }) => {
+// Componente UI “Sub-Hero Alert”
+const SubHeroAlerts = ({ Icon, icons }) => {
     const [alerts, setAlerts] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
     const [currentIndex, setCurrentIndex] = useState(0);
     const intervalRef = useRef(null);
 
-    const fetchAlerts = async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            const response = await fetch('/api/generate-alerts');
-            if (!response.ok) {
-                throw new Error('Errore di rete o del server');
-            }
-            const data = await response.json();
-            setAlerts(data);
-        } catch (err) {
-            setError('Impossibile caricare gli alert');
-            console.error(err);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
     useEffect(() => {
+        const fetchAlerts = async () => {
+            setIsLoading(true);
+            setError(null);
+            try {
+                const response = await fetch('/api/generate-alerts');
+                if (!response.ok) {
+                    throw new Error('Errore di rete o del server');
+                }
+                const data = await response.json();
+                setAlerts(data);
+            } catch (err) {
+                setError('Impossibile caricare gli alert');
+                console.error(err);
+            } finally {
+                setIsLoading(false);
+            }
+        };
         fetchAlerts();
     }, []);
 
+    useEffect(() => {
+        const startRotation = () => {
+            if (alerts.length > 1) {
+                intervalRef.current = setInterval(() => {
+                    setCurrentIndex(prevIndex => (prevIndex + 1) % alerts.length);
+                }, 5000);
+            }
+        };
+        startRotation();
+        return () => clearInterval(intervalRef.current);
+    }, [alerts]);
+
+    const stopRotation = () => clearInterval(intervalRef.current);
+    
     const startRotation = () => {
         if (alerts.length > 1) {
             intervalRef.current = setInterval(() => {
@@ -95,14 +109,6 @@ const SubHeroAlerts = ({ icons }) => {
         }
     };
 
-    const stopRotation = () => {
-        clearInterval(intervalRef.current);
-    };
-
-    useEffect(() => {
-        startRotation();
-        return () => stopRotation();
-    }, [alerts]);
 
     const getAlertColors = (alert) => {
         switch (alert.categoria) {
@@ -129,11 +135,7 @@ const SubHeroAlerts = ({ icons }) => {
     };
 
     if (isLoading) {
-        return (
-            <div className="mt-8 p-4 bg-slate-100 rounded-lg animate-pulse">
-                <div className="h-4 bg-slate-200 rounded w-3/4"></div>
-            </div>
-        );
+        return <div className="mt-8 p-4 h-16 bg-slate-100 rounded-lg animate-pulse"></div>;
     }
 
     if (error) {
@@ -216,7 +218,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated && typeof window !== 'undefined' && window.Outseta) {
+    if (isAuthenticated) {
       fetchUserAnalyses();
     }
   }, [isAuthenticated]);
@@ -410,8 +412,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Posizionamento del nuovo componente Sub-Hero Alerts */}
-              <SubHeroAlerts icons={icons} />
+              <SubHeroAlerts Icon={Icon} icons={icons} />
 
               <div className="mt-10">
                 <h2 className="text-lg font-semibold leading-6 text-slate-900">I tuoi Macro Tool</h2>
