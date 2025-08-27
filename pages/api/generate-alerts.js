@@ -38,7 +38,7 @@ async function getLatestUserAnalysis(req) {
     // Step 2: Trovare l'ultima checkup_session per l'utente
     const { data: sessionData, error: sessionError } = await supabase
       .from('checkup_sessions')
-      .select('id') // ✅ FIX: La colonna si chiama 'id', non 'session_id'
+      .select('id') // La colonna si chiama 'id', non 'session_id'
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -65,7 +65,8 @@ async function getLatestUserAnalysis(req) {
     }
 
     // Step 4: Estrarre e restituire il contesto per il filtro
-    const rawData = JSON.parse(analysisData.raw_parsed_data || '{}');
+    // ✅ FIX: Rimosso JSON.parse(). Supabase restituisce già un oggetto.
+    const rawData = analysisData.raw_parsed_data || {};
     const contextData = rawData.context || {};
     
     return {
