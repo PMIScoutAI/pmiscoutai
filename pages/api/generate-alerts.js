@@ -7,7 +7,7 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function generateImpactWithAI(alert, context) {
-  const { ateco_code, region, health_score } = context;
+  const { company_name, ateco_code } = context;
   const prompt = `Sintetizza in massimo 30 parole l'impatto per ${company_name}, impresa del settore ${ateco_code}, di questo avviso: "${alert.descrizione}".`;
 
   try {
