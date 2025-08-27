@@ -54,11 +54,11 @@ async function getLatestUserAnalysisContext(userId) {
       return { hasAnalysis: false, context: null };
     }
 
-    const { data: analysisData, error: analysisError } = await supabase
-      .from('analysis_results')
-      .select('health_score, raw_parsed_data')
-      .eq('session_id', sessionData.id)
-      .single();
+const { data: analysisData, error: analysisError } = await supabase
+  .from('analysis_results')
+  .select('health_score, raw_parsed_data, company_name')
+  .eq('session_id', sessionData.id)
+  .single();
 
     if (analysisError || !analysisData) {
       console.error(`Dati di analisi non trovati per session_id: ${sessionData.id}`, analysisError);
@@ -68,11 +68,11 @@ async function getLatestUserAnalysisContext(userId) {
     const rawData = analysisData.raw_parsed_data || {};
     const contextData = rawData.context || {};
     
-    return {
-      hasAnalysis: true,
-      context: {
-  company_name: contextData.company_name || "la tua azienda",
-  ateco_code: contextData.ateco_code || null
+return {
+  hasAnalysis: true,
+  context: {
+    company_name: analysisData.company_name || "la tua azienda",
+    ateco_code: contextData.ateco_code || null
       }
     };
   } catch (error) {
