@@ -8,7 +8,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function generateImpactWithAI(alert, context) {
   const { ateco_code, region, health_score } = context;
-  const prompt = `Sintetizza in massimo 30 parole l'impatto per una piccola impresa ${region} del settore ${ateco_code} (salute ${health_score}/100) di questo avviso: "${alert.descrizione}".`;
+  const prompt = `Sintetizza in massimo 30 parole l'impatto per ${company_name}, impresa del settore ${ateco_code}, di questo avviso: "${alert.descrizione}".`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -71,9 +71,8 @@ async function getLatestUserAnalysisContext(userId) {
     return {
       hasAnalysis: true,
       context: {
-        ateco_code: contextData.ateco_code || null,
-        region: contextData.region || "Italia",
-        health_score: analysisData.health_score
+  company_name: contextData.company_name || "la tua azienda",
+  ateco_code: contextData.ateco_code || null
       }
     };
   } catch (error) {
