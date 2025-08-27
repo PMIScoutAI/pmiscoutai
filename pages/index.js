@@ -1,13 +1,16 @@
 // /pages/index.js (o il file della tua dashboard principale)
-// VERSIONE AGGIORNATA CON CRONOLOGIA ANALISI
+// VERSIONE AGGIORNATA CON LOG DI DEBUG
 
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 
-// 4. AGGIUNGERE QUESTO COMPONENTE prima della funzione Home():
+// 4. AGGIUNGERE questo componente AnalisiRecenti PRIMA della funzione Home():
 const AnalisiRecenti = ({ analyses, isLoading }) => {
+  console.log('AnalisiRecenti render:', { analyses: analyses?.length, isLoading });
+  
   if (isLoading) {
+    console.log('Showing loading state');
     return (
       <div className="px-2 py-3 border-t border-slate-200">
         <h4 className="px-2 text-xs font-medium text-slate-500 uppercase tracking-wide">Analisi Recenti</h4>
@@ -18,7 +21,12 @@ const AnalisiRecenti = ({ analyses, isLoading }) => {
     );
   }
 
-  if (!analyses || analyses.length === 0) return null;
+  if (!analyses || analyses.length === 0) {
+    console.log('No analyses, returning null');
+    return null;
+  }
+
+  console.log('Rendering analyses list');
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -63,7 +71,7 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(null); // null = loading, false = not auth, true = auth
   const [isLoading, setIsLoading] = useState(true);
 
-  // 1. AGGIUNGERE QUESTI STATE nella funzione Home() dopo gli state esistenti:
+  // 1. AGGIUNGERE questi STATE dopo gli state esistenti:
   const [userAnalyses, setUserAnalyses] = useState([]);
   const [isLoadingAnalyses, setIsLoadingAnalyses] = useState(false);
 
@@ -113,37 +121,39 @@ export default function Home() {
     waitForOutseta();
   }, []);
 
-  // 3. AGGIUNGERE QUESTO useEffect dopo quello esistente per l'autenticazione:
+  // 3. MODIFICARE il useEffect esistente per l'autenticazione aggiungendo questo dopo:
   useEffect(() => {
+    console.log('useEffect triggered:', { isAuthenticated, windowOutseta: !!window.Outseta });
     if (isAuthenticated && typeof window !== 'undefined' && window.Outseta) {
+      console.log('Chiamando fetchUserAnalyses...');
       fetchUserAnalyses();
     }
   }, [isAuthenticated]);
 
 
-  // 2. AGGIUNGERE QUESTA FUNZIONE prima del return della funzione Home():
+  // 2. AGGIUNGERE questa funzione fetchUserAnalyses prima del return:
   const fetchUserAnalyses = async () => {
+    console.log('fetchUserAnalyses iniziata');
     if (!window.Outseta) return;
     
     try {
       setIsLoadingAnalyses(true);
-      const tokens = window.Outseta.getTokens();
-      if (!tokens?.access_token) return;
-
+      console.log('Chiamata API in corso...');
+      
       const response = await fetch('/api/user-analyses', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${tokens.access_token}`,
-          'Content-Type': 'application/json'
-        }
+        method: 'GET'
       });
 
+      console.log('Response status:', response.status);
       if (response.ok) {
         const data = await response.json();
+        console.log('Dati ricevuti:', data.analyses);
         setUserAnalyses(data.analyses || []);
+      } else {
+        console.error('Errore response:', response.status);
       }
     } catch (error) {
-      console.error('Errore caricamento analisi:', error);
+      console.error('Errore fetchUserAnalyses:', error);
     } finally {
       setIsLoadingAnalyses(false);
     }
@@ -285,6 +295,9 @@ export default function Home() {
     { title: 'Semplifica Burocrazia', description: 'Gestisci documenti e adempimenti in modo facile e veloce.', linkText: 'Inizia a semplificare', href: '#', icon: icons.bureaucracy },
   ];
 
+  // 5. AGGIUNGERE questo debug log prima del return principale:
+  console.log('Dashboard state:', { userAnalyses: userAnalyses.length, isLoadingAnalyses, isAuthenticated });
+
   // --- DASHBOARD PRINCIPALE (solo per utenti autenticati) ---
   return (
     <>
@@ -334,7 +347,7 @@ export default function Home() {
                 ))}
               </nav>
               
-              {/* 5. SOSTITUIRE la sezione "Status utente nella sidebar" esistente con questa: */}
+              {/* 6. NELLA SIDEBAR, INSERIRE questo componente DOPO il nav e PRIMA di "Status utente": */}
               <AnalisiRecenti analyses={userAnalyses} isLoading={isLoadingAnalyses} />
 
               <div className="px-2 py-3 border-t border-slate-200">
