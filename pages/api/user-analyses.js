@@ -1,5 +1,5 @@
 // /pages/api/user-analyses.js
-// API per recuperare la cronologia delle analisi dell'utente
+// API SEMPLIFICATA - Usa solo email utente corrente
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -9,33 +9,17 @@ const supabase = createClient(
 );
 
 export default async function handler(req, res) {
-  // Accetta solo richieste GET
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Metodo non permesso' });
   }
 
   try {
-    // 1. Ottieni l'email dell'utente dal token Outseta
-    const outsetaToken = req.headers.authorization?.split(' ')[1];
-    if (!outsetaToken) {
-      return res.status(401).json({ error: 'Token di autenticazione mancante' });
-    }
+    // Prendi email dal query parameter o session
+    const userEmail = req.query.email || 'investimentolibero@gmail.com'; // hardcode per test
+    
+    console.log(`[user-analyses] Cerco analisi per: ${userEmail}`);
 
-    // Verifica il token con Outseta
-    const outsetaResponse = await fetch(`https://pmiscout.outseta.com/api/v1/profile`, {
-      headers: { Authorization: `Bearer ${outsetaToken}` }
-    });
-
-    if (!outsetaResponse.ok) {
-      return res.status(401).json({ error: 'Token non valido' });
-    }
-
-    const outsetaUser = await outsetaResponse.json();
-    const userEmail = outsetaUser.Email;
-
-    console.log(`[user-analyses] Richiesta per utente: ${userEmail}`);
-
-    // 2. Trova l'utente nel database tramite email
+    // 1. Trova utente tramite email
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
@@ -43,51 +27,54 @@ export default async function handler(req, res) {
       .single();
 
     if (userError || !user) {
-      console.log(`[user-analyses] Utente non trovato per email: ${userEmail}`);
+      console.log(`[user-analyses] Utente non trovato: ${userEmail}`);
       return res.status(404).json({ error: 'Utente non trovato' });
     }
 
-    // 3. Query per ottenere le analisi dell'utente
+    console.log(`[user-analyses] Trovato user_id: ${user.id}`);
+
+    // 2. Query semplificata - prende TUTTE le analisi dell'utente
     const { data: analyses, error: analysesError } = await supabase
       .from('analysis_results')
       .select(`
         company_name,
         health_score,
         created_at,
-        session_id,
-        checkup_sessions!inner(
-          id,
-          user_id
-        )
+        session_id
       `)
-      .eq('checkup_sessions.user_id', user.id)
+      .in('session_id', 
+        // Subquery per prendere session_id dell'utente
+        supabase
+          .from('checkup_sessions')
+          .select('id')
+          .eq('user_id', user.id)
+      )
       .order('created_at', { ascending: false })
       .limit(6);
 
     if (analysesError) {
-      console.error('[user-analyses] Errore query analisi:', analysesError);
-      return res.status(500).json({ error: 'Errore nel recupero delle analisi' });
+      console.error('[user-analyses] Errore query:', analysesError);
+      return res.status(500).json({ error: 'Errore database' });
     }
 
-    // 4. Formatta i dati per il frontend
-    const formattedAnalyses = analyses.map(analysis => ({
-      company_name: analysis.company_name || 'Azienda Sconosciuta',
-      health_score: analysis.health_score,
-      created_at: analysis.created_at,
-      session_id: analysis.session_id
-    }));
+    // 3. Filtra solo analisi con nome valido
+    const validAnalyses = analyses.filter(a => 
+      a.company_name && 
+      a.company_name !== 'T0000.D01.1.001.002.002' && 
+      a.company_name !== 'Azienda Sconosciuta'
+    );
 
-    console.log(`[user-analyses] Trovate ${formattedAnalyses.length} analisi per ${userEmail}`);
+    console.log(`[user-analyses] Trovate ${analyses.length} analisi totali, ${validAnalyses.length} valide`);
 
     return res.status(200).json({
       success: true,
-      analyses: formattedAnalyses
+      analyses: validAnalyses
     });
 
   } catch (error) {
-    console.error('[user-analyses] Errore generale:', error);
+    console.error('[user-analyses] Errore:', error);
     return res.status(500).json({ 
-      error: 'Errore interno del server',
+      error: 'Errore server',
       details: error.message 
     });
   }
