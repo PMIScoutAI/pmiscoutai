@@ -13,13 +13,11 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
  */
 async function getLatestUserAnalysis(req) {
   try {
-    // Step 1: Recuperare user_id dell'utente tramite email dall'header
-    // L'email viene passata da una funzione middleware o dal frontend
-    const userEmail = req.headers['x-user-email']; 
+    // Step 1: Recuperare user_id dell'utente tramite email (logica allineata a /api/user-analyses)
+    const userEmail = req.query.email || 'investimentolibero@gmail.com'; // fallback in beta
 
     if (!userEmail) {
-        // Se l'email non è presente, non possiamo procedere
-        console.warn('Email utente non trovata negli header.');
+        console.warn('Email utente non fornita nella richiesta.');
         return { hasAnalysis: false, context: null };
     }
 
@@ -156,7 +154,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // La richiesta (req) viene passata alla funzione per accedere agli header
+    // La richiesta (req) viene passata alla funzione per accedere ai query params
     const { hasAnalysis, context } = await getLatestUserAnalysis(req);
 
     if (!hasAnalysis) {
