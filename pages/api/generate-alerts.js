@@ -2,10 +2,12 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Inizializza il client Supabase (assicurati che le variabili d'ambiente siano configurate in Vercel)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// ✅ MODIFICA: Utilizzo delle variabili d'ambiente server-side per maggiore sicurezza.
+// Queste chiavi bypassano le policy RLS e sono adatte per l'uso in backend.
+// Assicurati di averle impostate nelle Environment Variables del tuo progetto Vercel.
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 /**
  * Funzione aggiornata per leggere i dati reali da Supabase.
