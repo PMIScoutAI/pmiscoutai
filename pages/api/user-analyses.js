@@ -33,22 +33,29 @@ export default async function handler(req, res) {
 
     console.log(`[user-analyses] Trovato user_id: ${user.id}`);
 
-    // 2. Query semplificata - prende TUTTE le analisi dell'utente
+    // 2. Prima prendi i session_id dell'utente
+    const { data: sessions, error: sessionsError } = await supabase
+      .from('checkup_sessions')
+      .select('id')
+      .eq('user_id', user.id);
+
+    if (sessionsError) {
+      console.error('[user-analyses] Errore sessions:', sessionsError);
+      return res.status(500).json({ error: 'Errore nel recupero delle sessioni' });
+    }
+
+    const sessionIds = sessions.map(s => s.id);
+    console.log(`[user-analyses] Session IDs trovati: ${sessionIds.length}`);
+
+    if (sessionIds.length === 0) {
+      return res.status(200).json({ success: true, analyses: [] });
+    }
+
+    // 3. Poi prendi le analisi per quei session_id
     const { data: analyses, error: analysesError } = await supabase
       .from('analysis_results')
-      .select(`
-        company_name,
-        health_score,
-        created_at,
-        session_id
-      `)
-      .in('session_id', 
-        // Subquery per prendere session_id dell'utente
-        supabase
-          .from('checkup_sessions')
-          .select('id')
-          .eq('user_id', user.id)
-      )
+      .select('company_name, health_score, created_at, session_id')
+      .in('session_id', sessionIds)
       .order('created_at', { ascending: false })
       .limit(6);
 
