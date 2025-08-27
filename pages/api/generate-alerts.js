@@ -220,22 +220,24 @@ export default async function handler(req, res) {
       } else if (insertedData) {
         console.log(`Salvati ${insertedData.length} nuovi alert per l'utente ${userId}.`);
         
-        // Esegui l'arricchimento AI in background (non blocca la risposta al client)
-        insertedData.forEach(async (alert) => {
-          const { impatto_ai, prompt_usato } = await generateImpactWithAI(alert, context);
-          
-          // Se la generazione AI ha prodotto un risultato, aggiorna il record
-          if (impatto_ai) {
-            const { error: updateError } = await supabase
-              .from('alerts')
-              .update({ impatto_ai, prompt_usato })
-              .eq('id', alert.id);
+        // ✅ FIX: Sostituito forEach con Promise.all(map) per attendere le chiamate asincrone
+        await Promise.all(
+          insertedData.map(async (alert) => {
+            const { impatto_ai, prompt_usato } = await generateImpactWithAI(alert, context);
+            
+            // Se la generazione AI ha prodotto un risultato, aggiorna il record
+            if (impatto_ai) {
+              const { error: updateError } = await supabase
+                .from('alerts')
+                .update({ impatto_ai, prompt_usato })
+                .eq('id', alert.id);
 
-            if (updateError) {
-              console.error(`Errore durante l'aggiornamento dell'alert ${alert.id} con i dati AI:`, updateError);
+              if (updateError) {
+                console.error(`Errore durante l'aggiornamento dell'alert ${alert.id} con i dati AI:`, updateError);
+              }
             }
-          }
-        });
+          })
+        );
       }
     }
 
