@@ -1,37 +1,86 @@
 // pages/api/generate-alerts.js
 
+import { createClient } from '@supabase/supabase-js';
+
+// Inizializza il client Supabase (assicurati che le variabili d'ambiente siano configurate in Vercel)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
 /**
- * NOTA PER L'INTEGRAZIONE REALE:
- * Questo è un endpoint MVP che SIMULA il recupero dei dati e la logica di business.
- * Le sezioni contrassegnate con "// TODO:" indicano dove inserire la logica reale
- * per l'autenticazione e il recupero dei dati dal tuo database (es. Supabase).
+ * Funzione aggiornata per leggere i dati reali da Supabase.
+ * Recupera l'ultima analisi dell'utente autenticato per generare alert contestuali.
  */
+async function getLatestUserAnalysis(req) {
+  try {
+    // Step 1: Recuperare user_id dell'utente tramite email dall'header
+    // L'email viene passata da una funzione middleware o dal frontend
+    const userEmail = req.headers['x-user-email']; 
 
-// Funzione per simulare il recupero dell'ultima analisi dell'utente
-async function getLatestUserAnalysis() {
-  // TODO: Sostituire questa funzione con la logica reale.
-  // 1. Recuperare l'utente autenticato dalla sessione/cookie (es. tramite Supabase Auth).
-  // 2. Interrogare il database per trovare l'ultima 'checkup_sessions' per l'user_id.
-  // 3. Eseguire una join con 'analysis_results' per ottenere i dati di contesto.
-  
-  // Esempio di dati simulati per un utente con un'analisi nel settore costruzioni in Abruzzo
-  // Questo simula il risultato della query al DB.
-  return {
-    hasAnalysis: true,
-    context: {
-      ateco_code: "41.00.00", // Costruzioni
-      region: "Abruzzo",
-      health_score: 65, // Usato come proxy per "PMI"
+    if (!userEmail) {
+        // Se l'email non è presente, non possiamo procedere
+        console.warn('Email utente non trovata negli header.');
+        return { hasAnalysis: false, context: null };
     }
-  };
 
-  // Esempio per un utente senza analisi:
-  // return { hasAnalysis: false, context: null };
-  
-  // Esempio per un'analisi senza regione:
-  // return { hasAnalysis: true, context: { ateco_code: "70.22.09", region: null, health_score: 80 } };
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', userEmail)
+      .single();
+
+    if (userError || !userData) {
+      console.error(`Utente non trovato per l'email: ${userEmail}`, userError);
+      return { hasAnalysis: false, context: null };
+    }
+    const userId = userData.id;
+
+    // Step 2: Trovare l'ultima checkup_session per l'utente
+    const { data: sessionData, error: sessionError } = await supabase
+      .from('checkup_sessions')
+      .select('session_id')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (sessionError || !sessionData) {
+      // Non è un errore, l'utente potrebbe non avere ancora analisi
+      console.log(`Nessuna sessione di analisi trovata per l'utente con id: ${userId}`);
+      return { hasAnalysis: false, context: null };
+    }
+    const { session_id } = sessionData;
+
+    // Step 3: Leggere i dati contestuali da analysis_results
+    const { data: analysisData, error: analysisError } = await supabase
+      .from('analysis_results')
+      .select('health_score, raw_parsed_data')
+      .eq('session_id', session_id)
+      .single();
+
+    if (analysisError || !analysisData) {
+      console.error(`Dati di analisi non trovati per session_id: ${session_id}`, analysisError);
+      return { hasAnalysis: false, context: null };
+    }
+
+    // Step 4: Estrarre e restituire il contesto per il filtro
+    const rawData = JSON.parse(analysisData.raw_parsed_data || '{}');
+    const contextData = rawData.context || {};
+    
+    return {
+      hasAnalysis: true,
+      context: {
+        ateco_code: contextData.ateco_code || null, // Restituisce null se non presente
+        region: contextData.region || "Italia", // Fallback a "Italia" se mancante
+        health_score: analysisData.health_score
+      }
+    };
+
+  } catch (error) {
+    console.error("Errore imprevisto in getLatestUserAnalysis:", error);
+    return { hasAnalysis: false, context: null };
+  }
 }
-
 
 // Fonte dati per gli alert (in MVP può essere una lista hardcoded)
 const allAlerts = [
@@ -107,25 +156,23 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { hasAnalysis, context } = await getLatestUserAnalysis();
+    // La richiesta (req) viene passata alla funzione per accedere agli header
+    const { hasAnalysis, context } = await getLatestUserAnalysis(req);
 
-    // Caso 1: Utente senza analisi, restituisce array vuoto
     if (!hasAnalysis) {
       return res.status(200).json([]);
     }
 
-    const ateco = context?.ateco_code; // es. "41.00.00"
-    const atecoDivision = ateco ? ateco.substring(0, 2) : null; // es. "41"
-    const region = context?.region || 'Italia'; // Fallback a 'Italia'
+    const ateco = context?.ateco_code;
+    const atecoDivision = ateco ? ateco.substring(0, 2) : null;
+    const region = context?.region || 'Italia';
 
-    // Logica di filtraggio
     const relevantAlerts = allAlerts.filter(alert => {
       const regionMatch = alert.tags.region.includes('all') || alert.tags.region.includes(region);
       const atecoMatch = alert.tags.ateco.includes('all') || (atecoDivision && alert.tags.ateco.includes(atecoDivision));
       return regionMatch && atecoMatch;
     });
 
-    // Logica di selezione e priorità (max 1 per categoria)
     const finalAlerts = [];
     const fiscalAlert = relevantAlerts.find(a => a.categoria === 'fiscale');
     const bandoAlert = relevantAlerts.find(a => a.categoria === 'bando');
@@ -135,7 +182,6 @@ export default async function handler(req, res) {
     if (bandoAlert) finalAlerts.push(bandoAlert);
     if (normativaAlert) finalAlerts.push(normativaAlert);
 
-    // Caso 2: Nessun alert specifico trovato, restituisce un alert generico
     if (finalAlerts.length === 0) {
       finalAlerts.push({
         titolo: "Calendario fiscale di fine mese",
@@ -147,7 +193,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Restituisce fino a 3 alert selezionati
     res.status(200).json(finalAlerts.slice(0, 3));
 
   } catch (error) {
