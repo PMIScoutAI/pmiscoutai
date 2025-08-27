@@ -38,7 +38,7 @@ async function getLatestUserAnalysis(req) {
     // Step 2: Trovare l'ultima checkup_session per l'utente
     const { data: sessionData, error: sessionError } = await supabase
       .from('checkup_sessions')
-      .select('session_id')
+      .select('id') // ✅ FIX: La colonna si chiama 'id', non 'session_id'
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -49,7 +49,8 @@ async function getLatestUserAnalysis(req) {
       console.log(`Nessuna sessione di analisi trovata per l'utente con id: ${userId}`);
       return { hasAnalysis: false, context: null };
     }
-    const { session_id } = sessionData;
+    // Usiamo un alias per mantenere la coerenza con il resto del codice
+    const { id: session_id } = sessionData;
 
     // Step 3: Leggere i dati contestuali da analysis_results
     const { data: analysisData, error: analysisError } = await supabase
