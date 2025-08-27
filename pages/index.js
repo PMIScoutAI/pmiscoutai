@@ -1,5 +1,5 @@
 // /pages/index.js (o il file della tua dashboard principale)
-// VERSIONE AGGIORNATA CON PASSAGGIO EMAIL UTENTE
+// VERSIONE AGGIORNATA CON NUOVO TOOL "CHECK BANCHE"
 
 import React, { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -305,7 +305,6 @@ export default function Home() {
     support: <><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
     menu: <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>,
     logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>,
-    cost: <><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z" /><path d="M12 16v-4M12 8h.01" /></>,
     time: <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
     bureaucracy: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></>,
     xbrl: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M12 18v-6"></path><path d="m9 15 3-3 3 3"></path></>,
@@ -313,6 +312,8 @@ export default function Home() {
     fiscale: <><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z"></path><path d="m15 9-6 6"></path><path d="M9 9h.01"></path><path d="M15 15h.01"></path></>,
     bando: <><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></>,
     normativa: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></>,
+    // 1. Aggiungere nuova icona per Check Banche
+    checkbanche: <><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"></path><path d="M12 5L8 21l4-7 4 7-4-16Z"></path></>,
   };
 
   const navLinks = [
@@ -323,10 +324,11 @@ export default function Home() {
     { href: '#', text: 'Marketplace', icon: icons.marketplace, active: false },
   ];
   
+  // 3. Array toolCards completo aggiornato
   const toolCards = [
     { title: 'Check-AI XBRL', description: 'Carica un file XBRL per un\'analisi finanziaria istantanea e precisa.', linkText: 'Avvia Analisi XBRL', href: '/check-ai-xbrl', icon: icons.xbrl },
     { title: 'Analisi Attività (RAG)', description: 'Analisi potenziata con tecnologia RAG per una precisione e un dettaglio superiori.', linkText: 'Avvia Analisi Attività', href: '/checkup-hd', icon: icons.rag },
-    { title: 'Risparmio Costi', description: 'Identifica e ottimizza le spese per massimizzare i profitti.', linkText: 'Scopri come', href: '#', icon: icons.cost },
+    { title: 'Check Banche', description: 'Verifica la tua bancabilità, confronta finanziamenti esistenti e trova condizioni migliori sul mercato.', linkText: 'Controlla le tue banche', href: '/check-banche', icon: icons.checkbanche },
     { title: 'Risparmio Tempo', description: 'Automatizza i processi e guadagna tempo prezioso.', linkText: 'Automatizza ora', href: '#', icon: icons.time },
     { title: 'Semplifica Burocrazia', description: 'Gestisci documenti e adempimenti in modo facile e veloce.', linkText: 'Inizia a semplificare', href: '#', icon: icons.bureaucracy },
   ];
