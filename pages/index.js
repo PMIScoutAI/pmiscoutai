@@ -1,15 +1,72 @@
 // /pages/index.js (o il file della tua dashboard principale)
-// VERSIONE AGGIORNATA CON CHECK-UP HD
+// VERSIONE AGGIORNATA CON CRONOLOGIA ANALISI
 
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
+
+// 4. AGGIUNGERE QUESTO COMPONENTE prima della funzione Home():
+const AnalisiRecenti = ({ analyses, isLoading }) => {
+  if (isLoading) {
+    return (
+      <div className="px-2 py-3 border-t border-slate-200">
+        <h4 className="px-2 text-xs font-medium text-slate-500 uppercase tracking-wide">Analisi Recenti</h4>
+        <div className="px-2 py-2">
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!analyses || analyses.length === 0) return null;
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+  };
+
+  const getScoreColor = (score) => {
+    if (score >= 75) return 'bg-green-100 text-green-800';
+    if (score >= 50) return 'bg-blue-100 text-blue-800';
+    if (score >= 25) return 'bg-yellow-100 text-yellow-800';
+    return 'bg-red-100 text-red-800';
+  };
+
+  return (
+    <div className="px-2 py-3 border-t border-slate-200">
+      <h4 className="px-2 text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Analisi Recenti</h4>
+      <div className="space-y-1">
+        {analyses.map((analysis, index) => (
+          <Link key={index} href={`/analisi/${analysis.session_id}`}>
+            <a className="block px-2 py-2 text-xs rounded-md hover:bg-slate-50 transition-colors">
+              <div className="font-medium text-slate-700 truncate">
+                {analysis.company_name}
+              </div>
+              <div className="flex items-center justify-between mt-1">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getScoreColor(analysis.health_score)}`}>
+                  {analysis.health_score}
+                </span>
+                <span className="text-slate-500">{formatDate(analysis.created_at)}</span>
+              </div>
+            </a>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 
 export default function Home() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [userName, setUserName] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(null); // null = loading, false = not auth, true = auth
   const [isLoading, setIsLoading] = useState(true);
+
+  // 1. AGGIUNGERE QUESTI STATE nella funzione Home() dopo gli state esistenti:
+  const [userAnalyses, setUserAnalyses] = useState([]);
+  const [isLoadingAnalyses, setIsLoadingAnalyses] = useState(false);
+
 
   // --- Funzione per verificare l'autenticazione ---
   const checkAuthentication = () => {
@@ -55,6 +112,43 @@ export default function Home() {
 
     waitForOutseta();
   }, []);
+
+  // 3. AGGIUNGERE QUESTO useEffect dopo quello esistente per l'autenticazione:
+  useEffect(() => {
+    if (isAuthenticated && typeof window !== 'undefined' && window.Outseta) {
+      fetchUserAnalyses();
+    }
+  }, [isAuthenticated]);
+
+
+  // 2. AGGIUNGERE QUESTA FUNZIONE prima del return della funzione Home():
+  const fetchUserAnalyses = async () => {
+    if (!window.Outseta) return;
+    
+    try {
+      setIsLoadingAnalyses(true);
+      const tokens = window.Outseta.getTokens();
+      if (!tokens?.access_token) return;
+
+      const response = await fetch('/api/user-analyses', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${tokens.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setUserAnalyses(data.analyses || []);
+      }
+    } catch (error) {
+      console.error('Errore caricamento analisi:', error);
+    } finally {
+      setIsLoadingAnalyses(false);
+    }
+  };
+
 
   // --- Loading screen mentre verifichiamo l'autenticazione ---
   if (isLoading || isAuthenticated === null) {
@@ -240,7 +334,9 @@ export default function Home() {
                 ))}
               </nav>
               
-              {/* Status utente nella sidebar */}
+              {/* 5. SOSTITUIRE la sezione "Status utente nella sidebar" esistente con questa: */}
+              <AnalisiRecenti analyses={userAnalyses} isLoading={isLoadingAnalyses} />
+
               <div className="px-2 py-3 border-t border-slate-200">
                 <div className="flex items-center px-2 py-2 text-xs text-slate-500">
                   <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
@@ -319,17 +415,17 @@ export default function Home() {
                 </div>
               </div>
               
-        {/* ✅ MODIFICA QUI: Banner principale ora punta al nuovo Check-AI XBRL */}
-<div className="relative p-8 mt-8 overflow-hidden text-white bg-center bg-cover rounded-lg shadow-lg" style={{ backgroundImage: "url('https://www.pmiscout.eu/wp-content/uploads/2022/03/115-business-consulting-agency_blog_4.jpg')" }}>
-  <div className="absolute inset-0 bg-black bg-opacity-50" />
-  <div className="relative z-10">
-    <h2 className="text-2xl font-bold md:text-3xl">Inizia con il Check-AI XBRL</h2>
-    <p className="mt-2 text-gray-200">La nuova analisi basata su file XBRL per la massima precisione.</p>
-    <Link href="/check-ai-xbrl" legacyBehavior>
-      <a className="inline-block px-5 py-2 mt-6 font-semibold text-blue-600 bg-white rounded-lg shadow-md hover:bg-blue-50 transition-colors">Esegui Analisi &rarr;</a>
-    </Link>
-  </div>
-</div>
+              {/* ✅ MODIFICA QUI: Banner principale ora punta al nuovo Check-AI XBRL */}
+              <div className="relative p-8 mt-8 overflow-hidden text-white bg-center bg-cover rounded-lg shadow-lg" style={{ backgroundImage: "url('https://www.pmiscout.eu/wp-content/uploads/2022/03/115-business-consulting-agency_blog_4.jpg')" }}>
+                <div className="absolute inset-0 bg-black bg-opacity-50" />
+                <div className="relative z-10">
+                  <h2 className="text-2xl font-bold md:text-3xl">Inizia con il Check-AI XBRL</h2>
+                  <p className="mt-2 text-gray-200">La nuova analisi basata su file XBRL per la massima precisione.</p>
+                  <Link href="/check-ai-xbrl" legacyBehavior>
+                    <a className="inline-block px-5 py-2 mt-6 font-semibold text-blue-600 bg-white rounded-lg shadow-md hover:bg-blue-50 transition-colors">Esegui Analisi &rarr;</a>
+                  </Link>
+                </div>
+              </div>
 
               <div className="mt-10">
                 <h2 className="text-lg font-semibold leading-6 text-slate-900">I tuoi Macro Tool</h2>
