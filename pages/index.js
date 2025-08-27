@@ -1,12 +1,13 @@
 // /pages/index.js (o il file della tua dashboard principale)
-// VERSIONE CORRETTA CON SUB-HERO ALERTS
+// VERSIONE CORRETTA E RIPRISTINATA CON LOG E CONFIGURAZIONE COMPLETA
 
 import React, { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 
 const AnalisiRecenti = ({ analyses, isLoading }) => {
-  // Questo componente rimane invariato
+  console.log('AnalisiRecenti render:', { analyses: analyses?.length, isLoading });
+
   if (isLoading) {
     return (
       <div className="px-2 py-3 border-t border-slate-200">
@@ -87,21 +88,12 @@ const SubHeroAlerts = ({ Icon, icons }) => {
         fetchAlerts();
     }, []);
 
-    useEffect(() => {
-        const startRotation = () => {
-            if (alerts.length > 1) {
-                intervalRef.current = setInterval(() => {
-                    setCurrentIndex(prevIndex => (prevIndex + 1) % alerts.length);
-                }, 5000);
-            }
-        };
-        startRotation();
-        return () => clearInterval(intervalRef.current);
-    }, [alerts]);
-
-    const stopRotation = () => clearInterval(intervalRef.current);
+    const stopRotation = () => {
+        clearInterval(intervalRef.current);
+    };
     
     const startRotation = () => {
+        stopRotation(); // Previene intervalli multipli
         if (alerts.length > 1) {
             intervalRef.current = setInterval(() => {
                 setCurrentIndex(prevIndex => (prevIndex + 1) % alerts.length);
@@ -109,6 +101,10 @@ const SubHeroAlerts = ({ Icon, icons }) => {
         }
     };
 
+    useEffect(() => {
+        startRotation();
+        return () => stopRotation();
+    }, [alerts]);
 
     const getAlertColors = (alert) => {
         switch (alert.categoria) {
@@ -218,7 +214,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    console.log('useEffect triggered:', { isAuthenticated, windowOutseta: !!window.Outseta });
     if (isAuthenticated) {
+      console.log('Chiamando fetchUserAnalyses...');
       fetchUserAnalyses();
     }
   }, [isAuthenticated]);
@@ -231,6 +229,8 @@ export default function Home() {
       if (response.ok) {
         const data = await response.json();
         setUserAnalyses(data.analyses || []);
+      } else {
+        console.error('Errore response:', response.status);
       }
     } catch (error) {
       console.error('Errore fetchUserAnalyses:', error);
@@ -244,6 +244,23 @@ export default function Home() {
       <>
         <Head>
           <title>Caricamento - PMIScout</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <link rel="preconnect" href="https://fonts.googleapis.com" />
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+          <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                var o_options = {
+                  domain: 'pmiscout.outseta.com',
+                  load: 'auth,customForm,emailList,leadCapture,nocode,profile,support',
+                  tokenStorage: 'cookie'
+                };
+              `,
+            }}
+          />
+          <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
         </Head>
         <div className="flex items-center justify-center min-h-screen bg-slate-50">
           <div className="text-center">
@@ -315,6 +332,8 @@ export default function Home() {
     { title: 'Semplifica Burocrazia', description: 'Gestisci documenti e adempimenti in modo facile e veloce.', linkText: 'Inizia a semplificare', href: '#', icon: icons.bureaucracy },
   ];
 
+  console.log('Dashboard state:', { userAnalyses: userAnalyses.length, isLoadingAnalyses, isAuthenticated });
+
   return (
     <>
       <Head>
@@ -324,7 +343,17 @@ export default function Home() {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <style>{` body { font-family: 'Inter', sans-serif; } `}</style>
-        <script dangerouslySetInnerHTML={{ __html: `var o_options = { domain: 'pmiscout.outseta.com', load: 'auth,profile', tokenStorage: 'cookie' };` }} />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              var o_options = {
+                domain: 'pmiscout.outseta.com',
+                load: 'auth,customForm,emailList,leadCapture,nocode,profile,support',
+                tokenStorage: 'cookie'
+              };
+            `,
+          }}
+        />
         <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
       </Head>
 
