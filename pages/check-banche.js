@@ -87,64 +87,85 @@ const AnalisiRecenti = ({ analyses, isLoading }) => {
   );
 };
 
-
 export default function CheckBanche() {
   const [user, setUser] = useState(null);
   const [userEmail, setUserEmail] = useState('');
   const [analyses, setAnalyses] = useState([]);
-  const [recentAnalyses, setRecentAnalyses] = useState([]); // Per la sidebar
+  const [recentAnalyses, setRecentAnalyses] = useState([]);
   const [selectedAnalysis, setSelectedAnalysis] = useState(null);
   const [bankingScore, setBankingScore] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingAnalyses, setIsLoadingAnalyses] = useState(false);
   const [isScoreLoading, setIsScoreLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  useEffect(() => {
-    const handleAuth = async () => {
-      try {
-        const userData = await window.Outseta.getUser();
-        if (userData && userData.Email) {
-          setUser({ name: userData.FirstName || userData.Email.split('@')[0], email: userData.Email });
-          setUserEmail(userData.Email);
-          
-          // Aspetta che finiscano ENTRAMBE le chiamate
-          await Promise.all([
-            fetchAnalyses(userData.Email),
-            fetchRecentAnalyses(userData.Email)
-          ]);
-          
-          // Spegne il loading solo dopo il completamento di entrambe
-          setIsLoading(false); 
-
-        } else {
+  // Applica lo stesso pattern di autenticazione della dashboard
+  const checkAuthentication = () => {
+    if (typeof window !== 'undefined' && window.Outseta) {
+      window.Outseta.getUser()
+        .then(user => {
+          if (user && user.Email) {
+            setIsAuthenticated(true);
+            setUser({ name: user.FirstName || user.Email.split('@')[0], email: user.Email });
+            setUserEmail(user.Email);
+            setIsLoading(false);
+          } else {
+            setIsAuthenticated(false);
+            setIsLoading(false);
+            window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login&returnUrl=' + encodeURIComponent(window.location.href);
+          }
+        })
+        .catch(error => {
+          console.error('Errore durante la verifica dell\'autenticazione:', error);
+          setIsAuthenticated(false);
           setIsLoading(false);
-        }
-      } catch (err) {
-        console.error("Errore recupero utente Outseta:", err);
-        setIsLoading(false);
+          window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login';
+        });
+    } else {
+      setTimeout(checkAuthentication, 100); // 100ms come nella dashboard
+    }
+  };
+
+  useEffect(() => {
+    const waitForOutseta = () => {
+      if (typeof window !== 'undefined' && window.Outseta) {
+        checkAuthentication();
+      } else {
+        setTimeout(waitForOutseta, 100);
       }
     };
-
-    if (typeof window !== 'undefined' && window.Outseta) {
-      handleAuth();
-    } else {
-      const timer = setTimeout(() => {
-        if (typeof window !== 'undefined' && window.Outseta) {
-          handleAuth();
-        } else {
-          console.error("Outseta non è stato caricato in tempo.");
-          setIsLoading(false);
-        }
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
+    waitForOutseta();
   }, []);
+
+  // Carica i dati solo dopo l'autenticazione
+  useEffect(() => {
+    if (isAuthenticated && userEmail) {
+      loadAllData();
+    }
+  }, [isAuthenticated, userEmail]);
+
+  const loadAllData = async () => {
+    setIsLoadingAnalyses(true);
+    try {
+      await Promise.all([
+        fetchAnalyses(userEmail),
+        fetchRecentAnalyses(userEmail)
+      ]);
+    } catch (error) {
+      console.error('Errore caricamento dati:', error);
+    } finally {
+      setIsLoadingAnalyses(false);
+    }
+  };
 
   const fetchAnalyses = async (email) => {
     try {
+      console.log("Chiamando API banking-analysis per:", email);
       const response = await fetch(`/api/banking-analysis?email=${encodeURIComponent(email)}`);
       if (!response.ok) throw new Error('Risposta non valida dal server');
       const data = await response.json();
+      console.log("Dati ricevuti da banking-analysis:", data);
       setAnalyses(data.analyses || []);
       if (data.analyses && data.analyses.length > 0) {
         await handleAnalysisSelect(data.analyses[0], email);
@@ -155,15 +176,16 @@ export default function CheckBanche() {
   };
   
   const fetchRecentAnalyses = async (email) => {
-     try {
-        const response = await fetch(`/api/user-analyses?email=${encodeURIComponent(email)}`);
-        if(response.ok) {
-            const data = await response.json();
-            setRecentAnalyses(data.analyses || []);
-        }
-     } catch (error) {
-        console.error("Errore caricamento analisi recenti:", error);
-     }
+    try {
+      const response = await fetch(`/api/user-analyses?email=${encodeURIComponent(email)}`);
+      if(response.ok) {
+        const data = await response.json();
+        console.log("Analisi recenti caricate:", data.analyses?.length || 0);
+        setRecentAnalyses(data.analyses || []);
+      }
+    } catch (error) {
+      console.error("Errore caricamento analisi recenti:", error);
+    }
   };
 
   const handleAnalysisSelect = async (analysis, email) => {
@@ -185,6 +207,56 @@ export default function CheckBanche() {
     }
   };
   
+  // Loading state come nella dashboard
+  if (isLoading || isAuthenticated === null) {
+    return (
+      <>
+        <Head>
+          <title>Check Banche - PMIScout</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                var o_options = {
+                  domain: 'pmiscout.outseta.com',
+                  load: 'auth,customForm,emailList,leadCapture,nocode,profile,support',
+                  tokenStorage: 'cookie'
+                };
+              `,
+            }}
+          />
+          <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
+        </Head>
+        <div className="flex items-center justify-center min-h-screen bg-slate-50">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+            <h2 className="text-xl font-bold text-blue-600 mb-2">PMIScout</h2>
+            <p className="text-slate-600">Caricamento Check Banche...</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (isAuthenticated === false) {
+    return (
+      <>
+        <Head>
+          <title>Accesso Richiesto - PMIScout</title>
+        </Head>
+        <div className="flex items-center justify-center min-h-screen bg-slate-50">
+          <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">Accesso Richiesto</h2>
+            <p className="text-slate-600 mb-6">Devi effettuare il login per accedere a Check Banche.</p>
+            <a href="https://pmiscout.outseta.com/auth?widgetMode=login" className="inline-block w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+              Vai al Login
+            </a>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   const Icon = ({ path, className = 'w-6 h-6' }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       {path}
@@ -214,6 +286,18 @@ export default function CheckBanche() {
       <Head>
         <title>Check Banche - PMIScout</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              var o_options = {
+                domain: 'pmiscout.outseta.com',
+                load: 'auth,customForm,emailList,leadCapture,nocode,profile,support',
+                tokenStorage: 'cookie'
+              };
+            `,
+          }}
+        />
+        <script src="https://cdn.outseta.com/outseta.min.js" data-options="o_options"></script>
       </Head>
 
       <div className="relative flex min-h-screen bg-slate-50 text-slate-800">
@@ -221,7 +305,7 @@ export default function CheckBanche() {
             isOpen={isSidebarOpen} 
             user={user} 
             analyses={recentAnalyses} 
-            isLoadingAnalyses={isLoading} // Usa lo stato di loading principale anche per la sidebar
+            isLoadingAnalyses={isLoadingAnalyses}
             navLinks={navLinks}
             icons={icons}
             Icon={Icon}
@@ -242,19 +326,17 @@ export default function CheckBanche() {
 
             <main className="relative flex-1 overflow-y-auto focus:outline-none">
                 <div className="py-8 mx-auto max-w-6xl px-4">
-                {/* Header con breadcrumb */}
                 <div className="mb-8">
                     <h1 className="text-3xl font-bold text-slate-900 mt-2">Check Banche</h1>
                     <p className="text-slate-600">Verifica la tua bancabilità e confronta le condizioni di mercato</p>
                 </div>
 
-                {isLoading ? (
+                {isLoadingAnalyses ? (
                     <div className="text-center py-8">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
                     <p className="mt-4 text-slate-600">Caricamento analisi...</p>
                     </div>
                 ) : analyses.length === 0 ? (
-                    // Nessuna analisi XBRL disponibile
                     <div className="bg-white rounded-lg shadow p-8 text-center">
                     <h2 className="text-xl font-bold text-slate-900 mb-4">Nessuna Analisi Disponibile</h2>
                     <p className="text-slate-600 mb-6">Per utilizzare Check Banche, devi prima completare un'analisi XBRL della tua azienda.</p>
@@ -266,7 +348,6 @@ export default function CheckBanche() {
                     </div>
                 ) : (
                     <div className="space-y-8">
-                    {/* Selector Analisi */}
                     <div className="bg-white rounded-lg shadow p-6">
                         <h2 className="text-xl font-bold text-slate-900 mb-4">Seleziona Analisi</h2>
                         <div className="space-y-3">
@@ -301,10 +382,8 @@ export default function CheckBanche() {
                         </div>
                     </div>
 
-                    {/* Dashboard Bancabilità */}
                     {selectedAnalysis && (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {/* Card Situazione Attuale */}
                         <div className="bg-white rounded-lg shadow p-6">
                             <h3 className="text-lg font-bold text-slate-900 mb-4">Situazione Attuale</h3>
                             <div className="space-y-3">
@@ -323,7 +402,6 @@ export default function CheckBanche() {
                             </div>
                         </div>
 
-                        {/* Card Capacità di Credito */}
                         <div className="bg-white rounded-lg shadow p-6">
                             <h3 className="text-lg font-bold text-slate-900 mb-4">Capacità di Credito</h3>
                             {isScoreLoading ? (
@@ -353,7 +431,6 @@ export default function CheckBanche() {
                             )}
                         </div>
 
-                        {/* Card Punti di Forza */}
                         <div className="bg-white rounded-lg shadow p-6">
                             <h3 className="text-lg font-bold text-slate-900 mb-4">Punti di Forza</h3>
                             <div className="space-y-2">
@@ -367,7 +444,6 @@ export default function CheckBanche() {
                         </div>
                     )}
 
-                    {/* Sezione Contratti */}
                     <div className="bg-white rounded-lg shadow p-6">
                         <h2 className="text-xl font-bold text-slate-900 mb-4">I Tuoi Finanziamenti</h2>
                         <div className="text-center py-8">
@@ -378,7 +454,6 @@ export default function CheckBanche() {
                         </div>
                     </div>
 
-                    {/* Confronto Tassi */}
                     <div className="bg-white rounded-lg shadow p-6">
                         <h2 className="text-xl font-bold text-slate-900 mb-4">Tassi di Mercato</h2>
                         <div className="text-center py-8 text-slate-600">
