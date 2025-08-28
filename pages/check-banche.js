@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
-import { useAuth } from '../hooks/useAuth'; // Se esiste, altrimenti usa pattern da dashboard
+
+// NOTA: L'hook useAuth non è utilizzato, si usa il pattern diretto con window.Outseta
+// import { useAuth } from '../hooks/useAuth'; 
 
 export default function CheckBanche() {
   const [userEmail, setUserEmail] = useState('');
@@ -9,17 +11,42 @@ export default function CheckBanche() {
   const [selectedAnalysis, setSelectedAnalysis] = useState(null);
   const [bankingScore, setBankingScore] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isScoreLoading, setIsScoreLoading] = useState(false); // Stato per il caricamento dello score
 
   // Pattern autenticazione (riutilizza da dashboard principale)
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.Outseta) {
+    // Funzione per gestire il recupero dell'utente
+    const handleAuth = () => {
       window.Outseta.getUser()
         .then(user => {
           if (user && user.Email) {
             setUserEmail(user.Email);
-            fetchAnalyses(user.Email);
+            fetchAnalyses(user.Email); // Avvia il caricamento dati
+          } else {
+            // Se non c'è utente, smetti di caricare
+            setIsLoading(false);
           }
+        })
+        .catch(err => {
+            console.error("Errore recupero utente Outseta:", err);
+            setIsLoading(false); // Sblocca il caricamento in caso di errore
         });
+    };
+
+    // Attendi che Outseta sia disponibile
+    if (typeof window !== 'undefined' && window.Outseta) {
+      handleAuth();
+    } else {
+      // Fallback per evitare che rimanga in caricamento infinito
+      const timer = setTimeout(() => {
+        if (typeof window !== 'undefined' && window.Outseta) {
+          handleAuth();
+        } else {
+          console.error("Outseta non è stato caricato in tempo.");
+          setIsLoading(false);
+        }
+      }, 2000); // Attendi 2 secondi
+      return () => clearTimeout(timer);
     }
   }, []);
 
@@ -27,11 +54,12 @@ export default function CheckBanche() {
     setIsLoading(true);
     try {
       const response = await fetch(`/api/banking-analysis?email=${encodeURIComponent(email)}`);
+      if (!response.ok) throw new Error('Risposta non valida dal server');
       const data = await response.json();
       setAnalyses(data.analyses || []);
       if (data.analyses && data.analyses.length > 0) {
-        // Seleziona automaticamente l'analisi più recente
-        handleAnalysisSelect(data.analyses[0]);
+        // Seleziona e attendi il caricamento dello score per l'analisi più recente
+        await handleAnalysisSelect(data.analyses[0], email);
       }
     } catch (error) {
       console.error('Errore caricamento analisi:', error);
@@ -40,18 +68,25 @@ export default function CheckBanche() {
     }
   };
 
-  const handleAnalysisSelect = async (analysis) => {
+  const handleAnalysisSelect = async (analysis, email) => {
     setSelectedAnalysis(analysis);
+    setBankingScore(null); // Resetta lo score precedente
+    setIsScoreLoading(true); // Attiva il caricamento dello score
     
-    // Carica score bancabilità per l'analisi selezionata
+    // Usa l'email passata come parametro per evitare lo stato non aggiornato
+    const emailToUse = email || userEmail;
+    
     try {
       const response = await fetch(
-        `/api/banking-analysis?email=${encodeURIComponent(userEmail)}&session_id=${analysis.session_id}`
+        `/api/banking-analysis?email=${encodeURIComponent(emailToUse)}&session_id=${analysis.session_id}`
       );
+      if (!response.ok) throw new Error('Risposta non valida dal server per lo score');
       const data = await response.json();
       setBankingScore(data.banking_score);
     } catch (error) {
       console.error('Errore caricamento score:', error);
+    } finally {
+      setIsScoreLoading(false); // Disattiva il caricamento dello score
     }
   };
 
@@ -117,7 +152,7 @@ export default function CheckBanche() {
                         </div>
                         <div className="text-right">
                           <span className="text-sm font-medium text-slate-900">
-                            Fatturato: €{analysis.fatturato?.toLocaleString()}
+                            Fatturato: €{analysis.fatturato?.toLocaleString('it-IT') || 'N/D'}
                           </span>
                         </div>
                       </div>
@@ -142,7 +177,7 @@ export default function CheckBanche() {
                       <div>
                         <span className="text-sm text-slate-600">Debiti/Patrimonio</span>
                         <p className="text-xl font-bold text-slate-900">
-                          {((selectedAnalysis.debiti_totali / selectedAnalysis.patrimonio_netto) || 0).toFixed(2)}
+                          {selectedAnalysis.patrimonio_netto > 0 ? ((selectedAnalysis.debiti_totali / selectedAnalysis.patrimonio_netto)).toFixed(2) : 'N/D'}
                         </p>
                       </div>
                     </div>
@@ -151,7 +186,18 @@ export default function CheckBanche() {
                   {/* Card Capacità di Credito */}
                   <div className="bg-white rounded-lg shadow p-6">
                     <h3 className="text-lg font-bold text-slate-900 mb-4">Capacità di Credito</h3>
-                    {bankingScore ? (
+                    {isScoreLoading ? (
+                       <div className="space-y-3">
+                         <div>
+                           <span className="text-sm text-slate-600">DSCR</span>
+                           <div className="h-7 bg-gray-200 rounded animate-pulse w-1/2"></div>
+                         </div>
+                         <div>
+                           <span className="text-sm text-slate-600">Classe MCC</span>
+                           <div className="h-7 bg-gray-200 rounded animate-pulse w-1/4"></div>
+                         </div>
+                       </div>
+                    ) : bankingScore ? (
                       <div className="space-y-3">
                         <div>
                           <span className="text-sm text-slate-600">DSCR</span>
@@ -163,7 +209,7 @@ export default function CheckBanche() {
                         </div>
                       </div>
                     ) : (
-                      <div className="animate-pulse">Calcolo in corso...</div>
+                      <p className="text-sm text-slate-500">Dati non disponibili.</p>
                     )}
                   </div>
 
@@ -173,36 +219,4 @@ export default function CheckBanche() {
                     <div className="space-y-2">
                       <p className="text-sm text-green-600">✓ Health Score: {selectedAnalysis.health_score}/100</p>
                       <p className="text-sm text-green-600">✓ Settore: {selectedAnalysis.ateco_code}</p>
-                      {selectedAnalysis.current_ratio > 1.5 && (
-                        <p className="text-sm text-green-600">✓ Buona liquidità</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Sezione Contratti */}
-              <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-bold text-slate-900 mb-4">I Tuoi Finanziamenti</h2>
-                <div className="text-center py-8">
-                  <p className="text-slate-600 mb-4">Nessun contratto caricato</p>
-                  <button className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700">
-                    Aggiungi Finanziamento
-                  </button>
-                </div>
-              </div>
-
-              {/* Confronto Tassi */}
-              <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-bold text-slate-900 mb-4">Tassi di Mercato</h2>
-                <div className="text-center py-8 text-slate-600">
-                  Sezione in sviluppo - Confronto con benchmark di settore
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
+                      {selectedAnalysis.current_ratio > 1.5
