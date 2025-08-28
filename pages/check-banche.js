@@ -219,4 +219,37 @@ export default function CheckBanche() {
                     <div className="space-y-2">
                       <p className="text-sm text-green-600">✓ Health Score: {selectedAnalysis.health_score}/100</p>
                       <p className="text-sm text-green-600">✓ Settore: {selectedAnalysis.ateco_code}</p>
-                      {selectedAnalysis.current_ratio > 1.5
+                      {/* ✅ FIX: Riscritto con operatore ternario per robustezza */}
+                      {selectedAnalysis.current_ratio > 1.5 ? (
+                        <p className="text-sm text-green-600">✓ Buona liquidità</p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sezione Contratti */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-bold text-slate-900 mb-4">I Tuoi Finanziamenti</h2>
+                <div className="text-center py-8">
+                  <p className="text-slate-600 mb-4">Nessun contratto caricato</p>
+                  <button className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700">
+                    Aggiungi Finanziamento
+                  </button>
+                </div>
+              </div>
+
+              {/* Confronto Tassi */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-bold text-slate-900 mb-4">Tassi di Mercato</h2>
+                <div className="text-center py-8 text-slate-600">
+                  Sezione in sviluppo - Confronto con benchmark di settore
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
