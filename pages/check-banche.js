@@ -100,26 +100,30 @@ export default function CheckBanche() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
-const handleAuth = async () => {
-  try {
-    const userData = await window.Outseta.getUser();
-    if (userData && userData.Email) {
-      setUser({ name: userData.FirstName || userData.Email.split('@')[0], email: userData.Email });
-      setUserEmail(userData.Email);
-      
-      // Aspetta che finiscano ENTRAMBE le chiamate
-      await Promise.all([
-        fetchAnalyses(userData.Email),
-        fetchRecentAnalyses(userData.Email)
-      ]);
-    } else {
-      setIsLoading(false);
-    }
-  } catch (err) {
-    console.error("Errore recupero utente Outseta:", err);
-    setIsLoading(false);
-  }
-};
+    const handleAuth = async () => {
+      try {
+        const userData = await window.Outseta.getUser();
+        if (userData && userData.Email) {
+          setUser({ name: userData.FirstName || userData.Email.split('@')[0], email: userData.Email });
+          setUserEmail(userData.Email);
+          
+          // Aspetta che finiscano ENTRAMBE le chiamate
+          await Promise.all([
+            fetchAnalyses(userData.Email),
+            fetchRecentAnalyses(userData.Email)
+          ]);
+          
+          // Spegne il loading solo dopo il completamento di entrambe
+          setIsLoading(false); 
+
+        } else {
+          setIsLoading(false);
+        }
+      } catch (err) {
+        console.error("Errore recupero utente Outseta:", err);
+        setIsLoading(false);
+      }
+    };
 
     if (typeof window !== 'undefined' && window.Outseta) {
       handleAuth();
@@ -137,7 +141,6 @@ const handleAuth = async () => {
   }, []);
 
   const fetchAnalyses = async (email) => {
-    setIsLoading(true);
     try {
       const response = await fetch(`/api/banking-analysis?email=${encodeURIComponent(email)}`);
       if (!response.ok) throw new Error('Risposta non valida dal server');
@@ -148,8 +151,6 @@ const handleAuth = async () => {
       }
     } catch (error) {
       console.error('Errore caricamento analisi:', error);
-    } finally {
-      setIsLoading(false);
     }
   };
   
@@ -220,7 +221,7 @@ const handleAuth = async () => {
             isOpen={isSidebarOpen} 
             user={user} 
             analyses={recentAnalyses} 
-            isLoadingAnalyses={false} 
+            isLoadingAnalyses={isLoading} // Usa lo stato di loading principale anche per la sidebar
             navLinks={navLinks}
             icons={icons}
             Icon={Icon}
