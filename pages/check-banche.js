@@ -100,23 +100,26 @@ export default function CheckBanche() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
-    const handleAuth = () => {
-      window.Outseta.getUser()
-        .then(userData => {
-          if (userData && userData.Email) {
-            setUser({ name: userData.FirstName || userData.Email.split('@')[0], email: userData.Email });
-            setUserEmail(userData.Email);
-            fetchAnalyses(userData.Email);
-            fetchRecentAnalyses(userData.Email);
-          } else {
-            setIsLoading(false);
-          }
-        })
-        .catch(err => {
-            console.error("Errore recupero utente Outseta:", err);
-            setIsLoading(false);
-        });
-    };
+const handleAuth = async () => {
+  try {
+    const userData = await window.Outseta.getUser();
+    if (userData && userData.Email) {
+      setUser({ name: userData.FirstName || userData.Email.split('@')[0], email: userData.Email });
+      setUserEmail(userData.Email);
+      
+      // Aspetta che finiscano ENTRAMBE le chiamate
+      await Promise.all([
+        fetchAnalyses(userData.Email),
+        fetchRecentAnalyses(userData.Email)
+      ]);
+    } else {
+      setIsLoading(false);
+    }
+  } catch (err) {
+    console.error("Errore recupero utente Outseta:", err);
+    setIsLoading(false);
+  }
+};
 
     if (typeof window !== 'undefined' && window.Outseta) {
       handleAuth();
