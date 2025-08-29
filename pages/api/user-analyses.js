@@ -1,5 +1,5 @@
 // /pages/api/user-analyses.js
-// API SEMPLIFICATA - Usa solo email utente corrente
+// VERSIONE CON FIX: Rimuove l'email di fallback e aggiunge un controllo.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -14,8 +14,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Prendi email dal query parameter o session
-    const userEmail = req.query.email || 'investimentolibero@gmail.com'; // hardcode per test
+    // *** FIX 1: Legge l'email solo dalla query, senza fallback ***
+    const userEmail = req.query.email; 
+    
+    // *** FIX 2: Aggiunge un controllo per assicurarsi che l'email sia presente ***
+    if (!userEmail) {
+      return res.status(400).json({ error: 'Email utente non fornita nella richiesta' });
+    }
     
     console.log(`[user-analyses] Cerco analisi per: ${userEmail}`);
 
@@ -27,13 +32,14 @@ export default async function handler(req, res) {
       .single();
 
     if (userError || !user) {
-      console.log(`[user-analyses] Utente non trovato: ${userEmail}`);
-      return res.status(404).json({ error: 'Utente non trovato' });
+      console.log(`[user-analyses] Utente non trovato: ${userEmail}`, userError);
+      // Restituisce una lista vuota se l'utente non è nel DB, per non mostrare un errore in UI
+      return res.status(200).json({ success: true, analyses: [] });
     }
 
     console.log(`[user-analyses] Trovato user_id: ${user.id}`);
 
-    // 2. Prima prendi i session_id dell'utente
+    // 2. Prendi i session_id dell'utente
     const { data: sessions, error: sessionsError } = await supabase
       .from('checkup_sessions')
       .select('id')
@@ -51,7 +57,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, analyses: [] });
     }
 
-    // 3. Poi prendi le analisi per quei session_id
+    // 3. Prendi le analisi per quei session_id
     const { data: analyses, error: analysesError } = await supabase
       .from('analysis_results')
       .select('company_name, health_score, created_at, session_id')
@@ -64,7 +70,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Errore database' });
     }
 
-    // 3. Filtra solo analisi con nome valido
+    // 4. Filtra solo analisi con nome valido
     const validAnalyses = analyses.filter(a => 
       a.company_name && 
       a.company_name !== 'T0000.D01.1.001.002.002' && 
@@ -79,7 +85,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('[user-analyses] Errore:', error);
+    console.error('[user-analyses] Errore generale:', error);
     return res.status(500).json({ 
       error: 'Errore server',
       details: error.message 
