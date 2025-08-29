@@ -1,8 +1,8 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 12.4 (Fix Logica Estrazione Valori Semplici)
-// - REFACTORING: Sostituita la funzione `findSimpleValue` con una logica più robusta e precisa, come suggerito.
-//   La nuova funzione prima trova l'etichetta e poi cerca il valore nelle colonne a destra, migliorando l'affidabilità.
-// - Tutti i fix precedenti (imposte, salvataggio nome azienda) sono mantenuti.
+// VERSIONE 12.5 (Debug Attivo Circolante e Prompt AI)
+// - MODIFICA 1: Aggiunti log di debug specifici per l'attivo circolante e le sue componenti.
+// - MODIFICA 2: Aggiunto l'attivo circolante ai dati inviati all'AI per un'analisi più precisa.
+// - Tutti i fix precedenti sono mantenuti.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -232,7 +232,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (versione 12.4).`);
+  console.log(`[${sessionId}] Avvio analisi XBRL (versione 12.5).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -318,6 +318,13 @@ export default async function handler(req, res) {
         imposte: findValueInSheetImproved(incomeStatementData, metricsConfigs.imposte, yearColsIS, 'Imposte')
     };
 
+    // MODIFICA 1: Aggiungere i log di debug
+    console.log(`[${sessionId}] DEBUG ATTIVO CIRCOLANTE:`);
+    console.log(`   - Valore estratto: ${metrics.attivoCircolante.currentYear}`);
+    console.log(`   - Crediti clienti: ${metrics.creditiClienti.currentYear}`);
+    console.log(`   - Debiti breve termine: ${metrics.debitiBreveTermine.currentYear}`);
+
+
     const sectorialContext = sectorInfo ? `
 - SETTORE SPECIFICO: ${sectorInfo.macro_sector.toUpperCase()}${sectorInfo.macro_sector_2 ? ` (${sectorInfo.macro_sector_2})` : ''}
 - NOTE SETTORIALI: ${sectorInfo.notes}
@@ -333,6 +340,7 @@ Contesto Aziendale:
 Principali Voci di Bilancio (Anno Corrente N / Anno Precedente N-1):
 - Fatturato: ${metrics.fatturato.currentYear} / ${metrics.fatturato.previousYear}
 - Utile/(Perdita): ${metrics.utilePerdita.currentYear} / ${metrics.utilePerdita.previousYear}
+- Attivo Circolante: ${metrics.attivoCircolante.currentYear} / ${metrics.attivoCircolante.previousYear}
 - Totale Attivo: ${metrics.totaleAttivo.currentYear} / ${metrics.totaleAttivo.previousYear}
 - Patrimonio Netto: ${metrics.patrimonioNetto.currentYear} / ${metrics.patrimonioNetto.previousYear}
 - Debiti Totali: ${metrics.debitiTotali.currentYear} / ${metrics.debitiTotali.previousYear}
