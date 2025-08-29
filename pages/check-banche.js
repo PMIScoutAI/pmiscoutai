@@ -90,19 +90,28 @@ const AnalisiRecenti = ({ analyses, isLoading }) => {
 const MarketRatesSection = ({ selectedAnalysis, userContracts, isLoading }) => {
   const [marketRates, setMarketRates] = useState(null);
   const [isLoadingRates, setIsLoadingRates] = useState(false);
+  
   useEffect(() => {
-    if (selectedAnalysis?.ateco_division) {
+    if (selectedAnalysis?.ateco_code) { // Modificato per usare ateco_code
       fetchMarketRates();
     }
   }, [selectedAnalysis]);
+
   const fetchMarketRates = async () => {
     setIsLoadingRates(true);
     try {
+      // Estrai "41" da "41.00.00"
+      const division = selectedAnalysis.ateco_code.split('.')[0]; // "41"
+          
+      console.log("Divisione estratta:", division);
+          
       const response = await fetch(
-        `/api/market-rates?ateco_division=${selectedAnalysis.ateco_division}&rating_class=3&loan_type=chirografario`
+        `/api/market-rates?ateco_division=${division}&rating_class=3&loan_type=chirografario`
       );
+          
       if (response.ok) {
         const data = await response.json();
+        console.log("Market rates ricevuti:", data);
         setMarketRates(data);
       }
     } catch (error) {
@@ -111,6 +120,7 @@ const MarketRatesSection = ({ selectedAnalysis, userContracts, isLoading }) => {
       setIsLoadingRates(false);
     }
   };
+
   const calculateUserAverage = () => {
     if (!userContracts.length) return null;
     const totalRate = userContracts.reduce((sum, contract) => sum + parseFloat(contract.rate_taeg || 0), 0);
@@ -772,4 +782,3 @@ export default function CheckBanche() {
     </>
   );
 }
-
