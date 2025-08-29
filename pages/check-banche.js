@@ -87,6 +87,111 @@ const AnalisiRecenti = ({ analyses, isLoading }) => {
   );
 };
 
+const MarketRatesSection = ({ selectedAnalysis, userContracts, isLoading }) => {
+  const [marketRates, setMarketRates] = useState(null);
+  const [isLoadingRates, setIsLoadingRates] = useState(false);
+  useEffect(() => {
+    if (selectedAnalysis?.ateco_division) {
+      fetchMarketRates();
+    }
+  }, [selectedAnalysis]);
+  const fetchMarketRates = async () => {
+    setIsLoadingRates(true);
+    try {
+      const response = await fetch(
+        `/api/market-rates?ateco_division=${selectedAnalysis.ateco_division}&rating_class=3&loan_type=chirografario`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setMarketRates(data);
+      }
+    } catch (error) {
+      console.error('Errore caricamento tassi mercato:', error);
+    } finally {
+      setIsLoadingRates(false);
+    }
+  };
+  const calculateUserAverage = () => {
+    if (!userContracts.length) return null;
+    const totalRate = userContracts.reduce((sum, contract) => sum + parseFloat(contract.rate_taeg || 0), 0);
+    return (totalRate / userContracts.length).toFixed(2);
+  };
+  const userAvgRate = calculateUserAverage();
+  if (isLoading || !selectedAnalysis) {
+    return (
+      <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-xl font-bold text-slate-900 mb-4">Tassi di Mercato</h2>
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-slate-600">Caricamento benchmark...</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="bg-white rounded-lg shadow p-6">
+      <h2 className="text-xl font-bold text-slate-900 mb-4">Tassi di Mercato</h2>
+            {isLoadingRates ? (
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-slate-600">Caricamento tassi...</p>
+        </div>
+      ) : marketRates ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <h3 className="font-medium text-slate-900">Benchmark Settore {selectedAnalysis.ateco_code}</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Tasso Medio Mercato:</span>
+                <span className="font-medium">{marketRates.market_avg}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Range Mercato:</span>
+                <span className="font-medium">{marketRates.market_range}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Range Stimato per Te:</span>
+                <span className="font-medium text-blue-600">{marketRates.your_estimated_range}</span>
+              </div>
+            </div>
+          </div>
+          {userAvgRate && (
+            <div className="space-y-4">
+              <h3 className="font-medium text-slate-900">Il Tuo Confronto</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Tuo TAEG Medio:</span>
+                  <span className="font-medium">{userAvgRate}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">vs Mercato:</span>
+                  <span className={`font-medium ${parseFloat(userAvgRate) > marketRates.market_avg ? 'text-red-600' : 'text-green-600'}`}>
+                    {parseFloat(userAvgRate) > marketRates.market_avg ?
+                      `+${(parseFloat(userAvgRate) - marketRates.market_avg).toFixed(2)}%` :
+                      `${(parseFloat(userAvgRate) - marketRates.market_avg).toFixed(2)}%`
+                    }
+                  </span>
+                </div>
+                {parseFloat(userAvgRate) > marketRates.market_avg + 1 && (
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-sm text-yellow-800">
+                      💡 I tuoi tassi sono sopra la media. Considera una rinegoziazione.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="text-center py-8 text-slate-600">
+          Dati di mercato non disponibili per il settore {selectedAnalysis.ateco_code}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function CheckBanche() {
   const [user, setUser] = useState(null);
   const [userEmail, setUserEmail] = useState('');
@@ -543,12 +648,11 @@ export default function CheckBanche() {
                       )}
                     </div>
 
-                    <div className="bg-white rounded-lg shadow p-6">
-                        <h2 className="text-xl font-bold text-slate-900 mb-4">Tassi di Mercato</h2>
-                        <div className="text-center py-8 text-slate-600">
-                        Sezione in sviluppo - Confronto con benchmark di settore
-                        </div>
-                    </div>
+                    <MarketRatesSection
+                      selectedAnalysis={selectedAnalysis}
+                      userContracts={userContracts}
+                      isLoading={isLoadingAnalyses}
+                    />
                     </div>
                 )}
                 </div>
@@ -659,3 +763,4 @@ export default function CheckBanche() {
     </>
   );
 }
+
