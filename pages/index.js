@@ -1,5 +1,5 @@
 // /pages/index.js (o il file della tua dashboard principale)
-// VERSIONE AGGIORNATA CON NUOVO TOOL "CHECK BANCHE"
+// VERSIONE AGGIORNATA CON PASSAGGIO DELL'EMAIL UTENTE ALLE API
 
 import React, { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -20,6 +20,7 @@ const AnalisiRecenti = ({ analyses, isLoading }) => {
   }
 
   if (!analyses || analyses.length === 0) {
+    // Non mostrare nulla se non ci sono analisi, per un'interfaccia più pulita.
     return null;
   }
 
@@ -40,7 +41,7 @@ const AnalisiRecenti = ({ analyses, isLoading }) => {
       <h4 className="px-2 text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Analisi Recenti</h4>
       <div className="space-y-1">
         {analyses.map((analysis, index) => (
-          <Link key={index} href={`/analisi/${analysis.session_id}`}>
+          <Link key={analysis.session_id || index} href={`/analisi/${analysis.session_id}`}>
             <a className="block px-2 py-2 text-xs rounded-md hover:bg-slate-50 transition-colors">
               <div className="font-medium text-slate-700 truncate">
                 {analysis.company_name}
@@ -69,10 +70,15 @@ const SubHeroAlerts = ({ Icon, icons, userEmail }) => {
 
     useEffect(() => {
         const fetchAlerts = async () => {
-            if (!userEmail) return; // Non fare la chiamata se l'email non è ancora pronta
+            // Non fare la chiamata se l'email non è ancora pronta
+            if (!userEmail) {
+                setIsLoading(false);
+                return;
+            }
             setIsLoading(true);
             setError(null);
             try {
+                // L'email viene già passata correttamente qui
                 const response = await fetch(`/api/generate-alerts?email=${encodeURIComponent(userEmail)}`);
                 if (!response.ok) {
                     throw new Error('Errore di rete o del server');
@@ -87,7 +93,7 @@ const SubHeroAlerts = ({ Icon, icons, userEmail }) => {
             }
         };
         fetchAlerts();
-    }, [userEmail]);
+    }, [userEmail]); // Dipendenza corretta: riesegue il fetch quando userEmail cambia
 
     const stopRotation = () => clearInterval(intervalRef.current);
     
@@ -174,8 +180,9 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [userAnalyses, setUserAnalyses] = useState([]);
-  const [isLoadingAnalyses, setIsLoadingAnalyses] = useState(false);
+  const [isLoadingAnalyses, setIsLoadingAnalyses] = useState(true); // Impostato a true di default
   const [userEmail, setUserEmail] = useState('');
+  const [icons, setIcons] = useState({}); // Stato per le icone
 
   const checkAuthentication = () => {
     if (typeof window !== 'undefined' && window.Outseta) {
@@ -184,7 +191,7 @@ export default function Home() {
           if (user && user.Email) {
             setIsAuthenticated(true);
             setUserName(user.FirstName || user.Email.split('@')[0]);
-            setUserEmail(user.Email); 
+            setUserEmail(user.Email);
             setIsLoading(false);
           } else {
             setIsAuthenticated(false);
@@ -199,44 +206,61 @@ export default function Home() {
           window.location.href = 'https://pmiscout.outseta.com/auth?widgetMode=login';
         });
     } else {
-      setTimeout(checkAuthentication, 500);
+      setTimeout(checkAuthentication, 100);
     }
   };
 
   useEffect(() => {
-    const waitForOutseta = () => {
-      if (typeof window !== 'undefined' && window.Outseta) {
-        checkAuthentication();
-      } else {
-        setTimeout(waitForOutseta, 100);
-      }
-    };
-    waitForOutseta();
+    checkAuthentication();
+    // Definizione icone
+    setIcons({
+        dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
+        profile: <><path d="M5.52 19c.64-2.2 1.84-3 3.22-3h6.52c1.38 0 2.58.8 3.22 3" /><circle cx="12" cy="10" r="3" /><circle cx="12" cy="12" r="10" /></>,
+        calculator: <><rect x="4" y="2" width="16" height="20" rx="2" ry="2" /><line x1="8" y1="6" x2="16" y2="6" /><line x1="12" y1="10" x2="12" y2="18" /><line x1="8" y1="14" x2="16" y2="14" /></>,
+        marketplace: <><path d="M12 2H6.5C4.5 2 3 3.5 3 5.5V18.5C3 20.5 4.5 22 6.5 22H17.5C19.5 22 21 20.5 21 18.5V12L12 2Z" /><path d="M12 2V12H21" /><path d="M15 22V18C15 16.9 15.9 16 17 16H19" /></>,
+        support: <><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
+        menu: <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>,
+        logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>,
+        time: <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
+        bureaucracy: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></>,
+        xbrl: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M12 18v-6"></path><path d="m9 15 3-3 3 3"></path></>,
+        rag: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></>,
+        fiscale: <><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z"></path><path d="m15 9-6 6"></path><path d="M9 9h.01"></path><path d="M15 15h.01"></path></>,
+        bando: <><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></>,
+        normativa: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></>,
+        checkbanche: <><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"></path><path d="M12 5L8 21l4-7 4 7-4-16Z"></path></>,
+    });
   }, []);
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchUserAnalyses();
-    }
-  }, [isAuthenticated]);
+  const fetchUserAnalyses = async (email) => {
+    if (!email) return;
 
-  const fetchUserAnalyses = async () => {
-    if (!window.Outseta) return;
+    setIsLoadingAnalyses(true);
     try {
-      setIsLoadingAnalyses(true);
-      const response = await fetch('/api/user-analyses', { method: 'GET' });
+      const response = await fetch(`/api/user-analyses?email=${encodeURIComponent(email)}`, { 
+        method: 'GET' 
+      });
+
       if (response.ok) {
         const data = await response.json();
         setUserAnalyses(data.analyses || []);
       } else {
-        console.error('Errore response:', response.status);
+        console.error('Errore nella risposta del server:', response.status);
+        setUserAnalyses([]);
       }
     } catch (error) {
-      console.error('Errore fetchUserAnalyses:', error);
+      console.error('Errore durante il fetch delle analisi utente:', error);
+      setUserAnalyses([]);
     } finally {
       setIsLoadingAnalyses(false);
     }
   };
+
+  useEffect(() => {
+    if (isAuthenticated && userEmail) {
+      fetchUserAnalyses(userEmail);
+    }
+  }, [isAuthenticated, userEmail]);
 
   if (isLoading || isAuthenticated === null) {
     return (
@@ -272,49 +296,11 @@ export default function Home() {
     );
   }
 
-  if (isAuthenticated === false) {
-    return (
-      <>
-        <Head>
-          <title>Accesso Richiesto - PMIScout</title>
-        </Head>
-        <div className="flex items-center justify-center min-h-screen bg-slate-50">
-          <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">Accesso Richiesto</h2>
-            <p className="text-slate-600 mb-6">Devi effettuare il login per accedere alla dashboard.</p>
-            <a href="https://pmiscout.outseta.com/auth?widgetMode=login" className="inline-block w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors font-medium">
-              Vai al Login
-            </a>
-          </div>
-        </div>
-      </>
-    );
-  }
-
   const Icon = ({ path, className = 'w-6 h-6' }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       {path}
     </svg>
   );
-
-  const icons = {
-    dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
-    profile: <><path d="M5.52 19c.64-2.2 1.84-3 3.22-3h6.52c1.38 0 2.58.8 3.22 3" /><circle cx="12" cy="10" r="3" /><circle cx="12" cy="12" r="10" /></>,
-    calculator: <><rect x="4" y="2" width="16" height="20" rx="2" ry="2" /><line x1="8" y1="6" x2="16" y2="6" /><line x1="12" y1="10" x2="12" y2="18" /><line x1="8" y1="14" x2="16" y2="14" /></>,
-    marketplace: <><path d="M12 2H6.5C4.5 2 3 3.5 3 5.5V18.5C3 20.5 4.5 22 6.5 22H17.5C19.5 22 21 20.5 21 18.5V12L12 2Z" /><path d="M12 2V12H21" /><path d="M15 22V18C15 16.9 15.9 16 17 16H19" /></>,
-    support: <><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
-    menu: <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>,
-    logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>,
-    time: <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
-    bureaucracy: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></>,
-    xbrl: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M12 18v-6"></path><path d="m9 15 3-3 3 3"></path></>,
-    rag: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></>,
-    fiscale: <><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z"></path><path d="m15 9-6 6"></path><path d="M9 9h.01"></path><path d="M15 15h.01"></path></>,
-    bando: <><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></>,
-    normativa: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></>,
-    // 1. Aggiungere nuova icona per Check Banche
-    checkbanche: <><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"></path><path d="M12 5L8 21l4-7 4 7-4-16Z"></path></>,
-  };
 
   const navLinks = [
     { href: '/', text: 'Dashboard', icon: icons.dashboard, active: true },
@@ -324,7 +310,6 @@ export default function Home() {
     { href: '#', text: 'Marketplace', icon: icons.marketplace, active: false },
   ];
   
-  // 3. Array toolCards completo aggiornato
   const toolCards = [
     { title: 'Check-AI XBRL', description: 'Carica un file XBRL per un\'analisi finanziaria istantanea e precisa.', linkText: 'Avvia Analisi XBRL', href: '/check-ai-xbrl', icon: icons.xbrl },
     { title: 'Analisi Attività (RAG)', description: 'Analisi potenziata con tecnologia RAG per una precisione e un dettaglio superiori.', linkText: 'Avvia Analisi Attività', href: '/checkup-hd', icon: icons.rag },
@@ -440,7 +425,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* 6. MODIFICARE chiamata componente nel JSX: */}
               <SubHeroAlerts Icon={Icon} icons={icons} userEmail={userEmail} />
 
               <div className="mt-10">
