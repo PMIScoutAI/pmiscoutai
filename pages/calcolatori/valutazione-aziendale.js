@@ -5,46 +5,46 @@ const useAuth = () => ({ user: { name: 'Utente Demo', email: 'demo@example.com' 
 const Link = ({ href, className, children, ...props }) => <a href={href} className={className} {...props}>{children}</a>;
 
 // Dati e configurazione
-const industryMultiples = { 
-  technology: { revenue: 3.5, ebitda: 12, pe: 18 }, 
-  healthcare: { revenue: 2.8, ebitda: 10, pe: 16 }, 
-  fintech: { revenue: 4.2, ebitda: 14, pe: 20 }, 
-  ecommerce: { revenue: 2.5, ebitda: 8, pe: 14 }, 
-  manufacturing: { revenue: 1.8, ebitda: 8, pe: 12 }, 
-  services: { revenue: 2.2, ebitda: 9, pe: 14 }, 
-  energy: { revenue: 1.5, ebitda: 6, pe: 10 }, 
-  real_estate: { revenue: 2.0, ebitda: 8, pe: 12 }, 
-  media: { revenue: 2.8, ebitda: 10, pe: 15 }, 
-  retail: { revenue: 1.2, ebitda: 5, pe: 10 }, 
-  automotive: { revenue: 1.6, ebitda: 7, pe: 11 }, 
-  food: { revenue: 1.8, ebitda: 8, pe: 13 } 
+const industryMultiples = {
+  technology: { revenue: 3.5, ebitda: 12, pe: 18 },
+  healthcare: { revenue: 2.8, ebitda: 10, pe: 16 },
+  fintech: { revenue: 4.2, ebitda: 14, pe: 20 },
+  ecommerce: { revenue: 2.5, ebitda: 8, pe: 14 },
+  manufacturing: { revenue: 1.8, ebitda: 8, pe: 12 },
+  services: { revenue: 2.2, ebitda: 9, pe: 14 },
+  energy: { revenue: 1.5, ebitda: 6, pe: 10 },
+  real_estate: { revenue: 2.0, ebitda: 8, pe: 12 },
+  media: { revenue: 2.8, ebitda: 10, pe: 15 },
+  retail: { revenue: 1.2, ebitda: 5, pe: 10 },
+  automotive: { revenue: 1.6, ebitda: 7, pe: 11 },
+  food: { revenue: 1.8, ebitda: 8, pe: 13 }
 };
 
-const initialFormData = { 
-  industry: 'technology', companySize: 'small', marketPosition: 'challenger', geography: 'national', 
-  revenue: '4500000', ebitda: '900000', netIncome: '675000', 
-  previousRevenue: '3500000', previousEbitda: '560000', previousNetIncome: '420000', 
-  grossMargin: '50', recurringRevenue: '70', debtLevel: 'low', customerConcentration: '30', 
-  technologyRisk: 'medium', managementQuality: 'good' 
+const initialFormData = {
+  industry: 'technology', companySize: 'small', marketPosition: 'challenger', geography: 'national',
+  revenue: '4500000', ebitda: '900000', netIncome: '675000',
+  previousRevenue: '3500000', previousEbitda: '560000', previousNetIncome: '420000',
+  grossMargin: '50', recurringRevenue: '70', debtLevel: 'low', customerConcentration: '30',
+  technologyRisk: 'medium', managementQuality: 'good'
 };
 
-const blankFormData = { 
-  industry: 'technology', companySize: 'micro', marketPosition: 'follower', geography: 'local', 
-  revenue: '', ebitda: '', netIncome: '', previousRevenue: '', previousEbitda: '', previousNetIncome: '', 
-  grossMargin: '', recurringRevenue: '', debtLevel: 'medium', customerConcentration: '', 
-  technologyRisk: 'medium', managementQuality: 'average' 
+const blankFormData = {
+  industry: 'technology', companySize: 'micro', marketPosition: 'follower', geography: 'local',
+  revenue: '', ebitda: '', netIncome: '', previousRevenue: '', previousEbitda: '', previousNetIncome: '',
+  grossMargin: '', recurringRevenue: '', debtLevel: 'medium', customerConcentration: '',
+  technologyRisk: 'medium', managementQuality: 'average'
 };
 
 const formConfig = [
-  { 
-    id: 'companyInfo', 
-    title: 'Informazioni Azienda', 
-    icon: '🏢', 
+  {
+    id: 'companyInfo',
+    title: 'Informazioni Azienda',
+    icon: '🏢',
     fields: [
-      { 
-        id: 'industry', 
-        label: 'Settore', 
-        type: 'select', 
+      {
+        id: 'industry',
+        label: 'Settore',
+        type: 'select',
         options: [
           { value: 'technology', label: 'Tecnologia & Software' },
           { value: 'healthcare', label: 'Sanità & Life Sciences' },
@@ -58,103 +58,103 @@ const formConfig = [
           { value: 'retail', label: 'Retail & Consumer' },
           { value: 'automotive', label: 'Automotive & Componentistica' },
           { value: 'food', label: 'Food & Beverage' }
-        ] 
+        ]
       },
-      { 
-        id: 'companySize', 
-        label: 'Dimensione', 
-        type: 'select', 
+      {
+        id: 'companySize',
+        label: 'Dimensione',
+        type: 'select',
         options: [
           { value: 'micro', label: 'Micro (< €2M fatturato)' },
           { value: 'small', label: 'Piccola (€2M - €10M)' },
           { value: 'medium', label: 'Media (€10M - €50M)' },
           { value: 'large', label: 'Grande (> €50M)' }
-        ] 
+        ]
       },
-      { 
-        id: 'marketPosition', 
-        label: 'Posizione di Mercato', 
-        type: 'select', 
+      {
+        id: 'marketPosition',
+        label: 'Posizione di Mercato',
+        type: 'select',
         options: [
           { value: 'leader', label: 'Leader di Mercato' },
           { value: 'challenger', label: 'Challenger' },
           { value: 'follower', label: 'Follower' },
           { value: 'niche', label: 'Nicchia Specializzata' }
-        ] 
+        ]
       },
-      { 
-        id: 'geography', 
-        label: 'Copertura Geografica', 
-        type: 'select', 
+      {
+        id: 'geography',
+        label: 'Copertura Geografica',
+        type: 'select',
         options: [
           { value: 'local', label: 'Locale/Regionale' },
           { value: 'national', label: 'Nazionale' },
           { value: 'european', label: 'Europea' },
           { value: 'international', label: 'Internazionale' }
-        ] 
+        ]
       }
-    ] 
+    ]
   },
-  { 
-    id: 'currentFinancials', 
-    title: 'Dati Finanziari Anno Corrente', 
-    icon: '💰', 
+  {
+    id: 'currentFinancials',
+    title: 'Dati Finanziari Anno Corrente',
+    icon: '💰',
     fields: [
       { id: 'revenue', label: 'Ricavi (€)', type: 'number', placeholder: 'es. 4500000' },
       { id: 'ebitda', label: 'EBITDA (€)', type: 'number', placeholder: 'es. 900000' },
       { id: 'netIncome', label: 'Utile Netto (€)', type: 'number', placeholder: 'es. 675000' }
-    ] 
+    ]
   },
-  { 
-    id: 'previousFinancials', 
-    title: 'Dati Anno Precedente', 
-    icon: '📊', 
+  {
+    id: 'previousFinancials',
+    title: 'Dati Anno Precedente',
+    icon: '📊',
     fields: [
       { id: 'previousRevenue', label: 'Ricavi Anno Precedente (€)', type: 'number', placeholder: 'es. 3500000' },
       { id: 'previousEbitda', label: 'EBITDA Anno Precedente (€)', type: 'number', placeholder: 'es. 560000' },
       { id: 'previousNetIncome', label: 'Utile Netto Anno Precedente (€)', type: 'number', placeholder: 'es. 420000' }
-    ] 
+    ]
   },
-  { 
-    id: 'performanceMetrics', 
-    title: 'Metriche di Performance', 
-    icon: '🎯', 
+  {
+    id: 'performanceMetrics',
+    title: 'Metriche di Performance',
+    icon: '🎯',
     fields: [
       { id: 'grossMargin', label: 'Margine Lordo (%)', type: 'number', placeholder: 'es. 50' },
       { id: 'recurringRevenue', label: 'Ricavi Ricorrenti (%)', type: 'number', placeholder: 'es. 70' },
       { id: 'customerConcentration', label: 'Concentrazione Clienti (%)', type: 'number', placeholder: 'es. 30' },
-      { 
-        id: 'debtLevel', 
-        label: 'Livello Indebitamento', 
-        type: 'select', 
+      {
+        id: 'debtLevel',
+        label: 'Livello Indebitamento',
+        type: 'select',
         options: [
           { value: 'low', label: 'Basso (< 2x EBITDA)' },
           { value: 'medium', label: 'Medio (2-4x EBITDA)' },
           { value: 'high', label: 'Alto (> 4x EBITDA)' }
-        ] 
+        ]
       },
-      { 
-        id: 'technologyRisk', 
-        label: 'Rischio Tecnologico', 
-        type: 'select', 
+      {
+        id: 'technologyRisk',
+        label: 'Rischio Tecnologico',
+        type: 'select',
         options: [
           { value: 'low', label: 'Basso' },
           { value: 'medium', label: 'Medio' },
           { value: 'high', label: 'Alto' }
-        ] 
+        ]
       },
-      { 
-        id: 'managementQuality', 
-        label: 'Qualità Management', 
-        type: 'select', 
+      {
+        id: 'managementQuality',
+        label: 'Qualità Management',
+        type: 'select',
         options: [
           { value: 'excellent', label: 'Eccellente' },
           { value: 'good', label: 'Buona' },
           { value: 'average', label: 'Media' },
           { value: 'poor', label: 'Scarsa' }
-        ] 
+        ]
       }
-    ] 
+    ]
   }
 ];
 
@@ -185,18 +185,18 @@ const performCalculation = (formData) => {
   adjustmentFactor += geographyAdjustments[data.geography] || 0;
   
   const revenueGrowth = data.previousRevenue > 0 ? ((data.revenue - data.previousRevenue) / data.previousRevenue) * 100 : 0;
-  if (revenueGrowth > 20) adjustmentFactor += 0.12; 
-  else if (revenueGrowth > 10) adjustmentFactor += 0.06; 
-  else if (revenueGrowth > 3) adjustmentFactor += 0.02; 
+  if (revenueGrowth > 20) adjustmentFactor += 0.12;
+  else if (revenueGrowth > 10) adjustmentFactor += 0.06;
+  else if (revenueGrowth > 3) adjustmentFactor += 0.02;
   else if (revenueGrowth < 0) adjustmentFactor -= 0.20;
   
-  if (data.grossMargin > 60) adjustmentFactor += 0.08; 
-  else if (data.grossMargin > 40) adjustmentFactor += 0.04; 
+  if (data.grossMargin > 60) adjustmentFactor += 0.08;
+  else if (data.grossMargin > 40) adjustmentFactor += 0.04;
   else if (data.grossMargin < 25) adjustmentFactor -= 0.12;
   
-  if (data.recurringRevenue > 80) adjustmentFactor += 0.10; 
-  else if (data.recurringRevenue > 60) adjustmentFactor += 0.06; 
-  else if (data.recurringRevenue > 40) adjustmentFactor += 0.03; 
+  if (data.recurringRevenue > 80) adjustmentFactor += 0.10;
+  else if (data.recurringRevenue > 60) adjustmentFactor += 0.06;
+  else if (data.recurringRevenue > 40) adjustmentFactor += 0.03;
   else if (data.recurringRevenue < 20) adjustmentFactor -= 0.08;
   
   const marketPosAdjustments = { leader: 0.08, challenger: 0.03, follower: -0.08, niche: 0.02 };
@@ -205,8 +205,8 @@ const performCalculation = (formData) => {
   const techRiskAdjustments = { low: 0.05, high: -0.15, medium: 0 };
   adjustmentFactor += techRiskAdjustments[data.technologyRisk] || 0;
   
-  if (data.customerConcentration > 50) adjustmentFactor -= 0.20; 
-  else if (data.customerConcentration > 30) adjustmentFactor -= 0.10; 
+  if (data.customerConcentration > 50) adjustmentFactor -= 0.20;
+  else if (data.customerConcentration > 30) adjustmentFactor -= 0.10;
   else if (data.customerConcentration < 15) adjustmentFactor += 0.05;
   
   const debtLevelAdjustments = { high: -0.15, medium: -0.05, low: 0.03 };
@@ -221,17 +221,17 @@ const performCalculation = (formData) => {
   const adjustedValuation = Math.max(0, baseValuation * adjustmentFactor);
   const ebitdaGrowth = data.previousEbitda > 0 ? ((data.ebitda - data.previousEbitda) / data.previousEbitda) * 100 : 0;
   
-  const qualityScore = Math.min(100, Math.max(0, 
-    (data.grossMargin * 0.25) + 
-    (data.recurringRevenue * 0.35) + 
-    (Math.max(0, Math.min(revenueGrowth, 30)) * 0.25) + 
+  const qualityScore = Math.min(100, Math.max(0,
+    (data.grossMargin * 0.25) +
+    (data.recurringRevenue * 0.35) +
+    (Math.max(0, Math.min(revenueGrowth, 30)) * 0.25) +
     ({ international: 15, european: 10, national: 5, local: 0 }[data.geography] || 0)
   ));
   
-  const riskScore = Math.min(100, Math.max(0, 
-    100 - data.customerConcentration * 0.8 + 
-    ({ low: 15, medium: 5, high: -15 }[data.technologyRisk] || 0) + 
-    ({ excellent: 15, good: 8, poor: -15, average: 0 }[data.managementQuality] || 0) + 
+  const riskScore = Math.min(100, Math.max(0,
+    100 - data.customerConcentration * 0.8 +
+    ({ low: 15, medium: 5, high: -15 }[data.technologyRisk] || 0) +
+    ({ excellent: 15, good: 8, poor: -15, average: 0 }[data.managementQuality] || 0) +
     ({ low: 10, high: -15, medium: -5 }[data.debtLevel] || 0)
   ));
 
@@ -251,9 +251,19 @@ const Icon = ({ name, size = 24, color = "currentColor" }) => {
   const icons = {
     menu: <path d="M3 12h18M3 6h18M3 18h18" />,
     home: <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
-    user: <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />,
-    calculator: <rect x="4" y="2" width="16" height="20" rx="2" /><path d="M8 6h8M8 10h8M8 14h2M8 18h2M14 14h2M14 18h2" />,
-    briefcase: <rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />,
+    user: (
+      <>
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </>
+    ),
+    calculator: (
+      <>
+        <rect x="4" y="2" width="16" height="20" rx="2" />
+        <path d="M8 6h8M8 10h8M8 14h2M8 18h2M14 14h2M14 18h2" />
+      </>
+    ),
+    briefcase: <rect x="2" y="7" width="20" height="14" rx="2" />,
     x: <path d="M18 6 6 18M6 6l12 12" />,
     chevronLeft: <path d="M15 18l-6-6 6-6" />,
     chevronRight: <path d="M9 18l6-6-6-6" />
@@ -277,11 +287,11 @@ const Icon = ({ name, size = 24, color = "currentColor" }) => {
 
 const FormField = ({ config, value, onChange }) => {
   const { id, label, type, options, placeholder } = config;
-  const commonProps = { 
-    id, 
-    value, 
-    onChange, 
-    className: `form-${type}` 
+  const commonProps = {
+    id,
+    value,
+    onChange,
+    className: `form-${type}`
   };
 
   return (
@@ -294,12 +304,12 @@ const FormField = ({ config, value, onChange }) => {
           ))}
         </select>
       ) : (
-        <input 
-          type="number" 
-          min="0" 
-          step="1" 
-          placeholder={placeholder} 
-          {...commonProps} 
+        <input
+          type="number"
+          min="0"
+          step="1"
+          placeholder={placeholder}
+          {...commonProps}
         />
       )}
     </div>
@@ -314,11 +324,11 @@ const FormSection = ({ config, formData, handleInputChange }) => (
     </div>
     <div className="form-grid">
       {config.fields.map(field => (
-        <FormField 
-          key={field.id} 
-          config={field} 
-          value={formData[field.id]} 
-          onChange={handleInputChange} 
+        <FormField
+          key={field.id}
+          config={field}
+          value={formData[field.id]}
+          onChange={handleInputChange}
         />
       ))}
     </div>
@@ -326,12 +336,12 @@ const FormSection = ({ config, formData, handleInputChange }) => (
 );
 
 const ResultsPanel = ({ results, onSave, onPrint, isSubmitting, saveSuccess }) => {
-  const formatCurrency = (amount) => 
-    new Intl.NumberFormat('it-IT', { 
-      style: 'currency', 
-      currency: 'EUR', 
-      minimumFractionDigits: 0, 
-      maximumFractionDigits: 0 
+  const formatCurrency = (amount) =>
+    new Intl.NumberFormat('it-IT', {
+      style: 'currency',
+      currency: 'EUR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
     }).format(amount || 0);
 
   const formatPercentage = (value) => `${value >= 0 ? '+' : ''}${(value || 0).toFixed(1)}%`;
@@ -412,9 +422,9 @@ const ResultsPanel = ({ results, onSave, onPrint, isSubmitting, saveSuccess }) =
         </div>
 
         <div className="action-buttons">
-          <button 
-            onClick={onSave} 
-            disabled={isSubmitting || saveSuccess} 
+          <button
+            onClick={onSave}
+            disabled={isSubmitting || saveSuccess}
             className="btn btn-primary"
           >
             {isSubmitting ? '⏳ Salvataggio...' : (saveSuccess ? '✅ Salvato!' : '💾 Salva Valutazione')}
@@ -453,23 +463,23 @@ const ValutazioneAziendaleCalculator = () => {
     setFormData(prev => ({ ...prev, [id]: sanitizedValue }));
   };
 
-  const handlePrint = () => { 
-    if (typeof window !== 'undefined') window.print(); 
+  const handlePrint = () => {
+    if (typeof window !== 'undefined') window.print();
   };
 
-  const saveValuation = async () => { 
-    if (!user || Object.keys(results).length === 0) return; 
-    setIsSubmitting(true); 
-    setSaveSuccess(false); 
-    try { 
-      await new Promise(resolve => setTimeout(resolve, 1500)); 
-      setSaveSuccess(true); 
-      setTimeout(() => setSaveSuccess(false), 3000); 
-    } catch (error) { 
-      console.error("Errore nel salvataggio:", error); 
-    } finally { 
-      setIsSubmitting(false); 
-    } 
+  const saveValuation = async () => {
+    if (!user || Object.keys(results).length === 0) return;
+    setIsSubmitting(true);
+    setSaveSuccess(false);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (error) {
+      console.error("Errore nel salvataggio:", error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const loadUserAnalyses = async () => {
@@ -493,8 +503,8 @@ const ValutazioneAziendaleCalculator = () => {
   const loadCompanyDataFromAnalysis = async (analysis) => {
     try {
       // Simulazione caricamento dati
-      setFormData(prev => ({ 
-        ...prev, 
+      setFormData(prev => ({
+        ...prev,
         revenue: '5200000',
         ebitda: '1040000',
         netIncome: '780000'
@@ -1168,14 +1178,14 @@ const ValutazioneAziendaleCalculator = () => {
 
       <div className="app-container">
         {/* Sidebar Overlay */}
-        <div 
+        <div
           className={`sidebar-overlay ${isSidebarOpen ? 'visible' : ''}`}
           onClick={() => setIsSidebarOpen(false)}
         />
 
         {/* Sidebar */}
         <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
-          <button 
+          <button
             className="close-sidebar"
             onClick={() => setIsSidebarOpen(false)}
           >
@@ -1189,9 +1199,9 @@ const ValutazioneAziendaleCalculator = () => {
           
           <nav className="sidebar-nav">
             {navLinks.map((link) => (
-              <Link 
-                key={link.label} 
-                href={link.href} 
+              <Link
+                key={link.label}
+                href={link.href}
                 className={`nav-link ${link.active ? 'active' : ''}`}
               >
                 <Icon name={link.icon} size={20} />
@@ -1205,7 +1215,7 @@ const ValutazioneAziendaleCalculator = () => {
         <div className="main-content">
           {/* Mobile Header */}
           <div className="mobile-header">
-            <button 
+            <button
               className="mobile-menu-btn"
               onClick={() => setIsSidebarOpen(true)}
             >
@@ -1227,21 +1237,21 @@ const ValutazioneAziendaleCalculator = () => {
               <div className="form-sections">
                 {/* Action Buttons */}
                 <div className="button-group">
-                  <button 
-                    className="btn btn-danger" 
+                  <button
+                    className="btn btn-danger"
                     onClick={() => setFormData({...blankFormData})}
                   >
                     Pulisci Dati
                   </button>
-                  <button 
-                    className="btn btn-secondary" 
+                  <button
+                    className="btn btn-secondary"
                     onClick={() => setFormData({...initialFormData})}
                   >
                     Carica Esempio
                   </button>
-                  <button 
-                    className="btn btn-secondary" 
-                    onClick={loadUserAnalyses} 
+                  <button
+                    className="btn btn-secondary"
+                    onClick={loadUserAnalyses}
                     disabled={!user || loadingCompanies}
                   >
                     {loadingCompanies ? 'Caricamento...' : 'Carica da Cronologia'}
@@ -1258,8 +1268,8 @@ const ValutazioneAziendaleCalculator = () => {
                     <div className="company-list-content">
                       {availableCompanies.length > 0 ? (
                         availableCompanies.map((analysis) => (
-                          <div 
-                            key={analysis.session_id} 
+                          <div
+                            key={analysis.session_id}
                             className="company-item"
                             onClick={() => loadCompanyDataFromAnalysis(analysis)}
                           >
@@ -1276,8 +1286,8 @@ const ValutazioneAziendaleCalculator = () => {
                         <p>Nessuna analisi trovata.</p>
                       )}
                     </div>
-                    <button 
-                      className="btn btn-outline" 
+                    <button
+                      className="btn btn-outline"
                       onClick={() => setShowCompanyList(false)}
                       style={{marginTop: '1rem'}}
                     >
@@ -1288,22 +1298,22 @@ const ValutazioneAziendaleCalculator = () => {
 
                 {/* Form Sections */}
                 {formConfig.map(section => (
-                  <FormSection 
-                    key={section.id} 
-                    config={section} 
-                    formData={formData} 
-                    handleInputChange={handleInputChange} 
+                  <FormSection
+                    key={section.id}
+                    config={section}
+                    formData={formData}
+                    handleInputChange={handleInputChange}
                   />
                 ))}
               </div>
 
               {/* Results Panel */}
-              <ResultsPanel 
-                results={results} 
-                onSave={saveValuation} 
-                onPrint={handlePrint} 
-                isSubmitting={isSubmitting} 
-                saveSuccess={saveSuccess} 
+              <ResultsPanel
+                results={results}
+                onSave={saveValuation}
+                onPrint={handlePrint}
+                isSubmitting={isSubmitting}
+                saveSuccess={saveSuccess}
               />
             </div>
           </div>
