@@ -1,13 +1,18 @@
 // pages/calcolatori/valutazione-aziendale.js
 import React, { useState, useMemo } from 'react';
 
-// --- SIMULAZIONE DELLE DIPENDENZE ESTERNE ---
-// Simulo l'hook useAuth per fornire un utente di esempio
+// --- QUANDO INTEGRI NEL TUO PROGETTO, CANCELLA LA SEZIONE SOTTOSTANTE ---
+// --- SIMULAZIONE DELLE DIPENDENZE ESTERNE (PER FUNZIONARE NELL'ANTEPRIMA) ---
 const useAuth = () => ({ user: { name: 'Utente Demo', email: 'demo@example.com' } }); 
-// Simulo il componente Layout che semplicemente renderizza i figli
-const Layout = ({ children }) => <>{children}</>;
-// Simulo il componente Link con un tag <a> standard
+const Layout = ({ children, pageTitle }) => <div title={pageTitle}>{children}</div>;
 const Link = ({ href, children }) => <a href={href}>{children}</a>;
+// --- FINE SEZIONE DA CANCELLARE ---
+
+
+// --- E DE-COMMENTA GLI IMPORT ORIGINALI QUI SOTTO ---
+// import Link from 'next/link';
+// import { useAuth } from '../../hooks/useAuth';
+// import Layout from '../../components/Layout';
 
 
 // --- CONFIGURAZIONE E DATI INIZIALI ---
