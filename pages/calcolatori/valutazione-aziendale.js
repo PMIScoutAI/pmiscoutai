@@ -1,9 +1,14 @@
 // pages/calcolatori/valutazione-aziendale.js
 import React, { useState, useMemo } from 'react';
 
-// --- MOCK DATA E FUNZIONI (per sostituire le dipendenze esterne) ---
-const useAuth = () => ({ user: { name: 'Utente Demo', email: 'demo@example.com' } }); // Simula l'hook useAuth
-const Layout = ({ children }) => <>{children}</>; // Simula il componente Layout
+// --- SIMULAZIONE DELLE DIPENDENZE ESTERNE ---
+// Simulo l'hook useAuth per fornire un utente di esempio
+const useAuth = () => ({ user: { name: 'Utente Demo', email: 'demo@example.com' } }); 
+// Simulo il componente Layout che semplicemente renderizza i figli
+const Layout = ({ children }) => <>{children}</>;
+// Simulo il componente Link con un tag <a> standard
+const Link = ({ href, children }) => <a href={href}>{children}</a>;
+
 
 // --- CONFIGURAZIONE E DATI INIZIALI ---
 
@@ -138,7 +143,7 @@ const FormSection = ({ config, formData, handleInputChange }) => (
     </div>
 );
 
-const ResultsPanel = ({ results, formData, onSave, onPrint, onExportExcel, isSubmitting, saveSuccess }) => {
+const ResultsPanel = ({ results, onSave, onPrint, onExportExcel, isSubmitting, saveSuccess }) => {
     const formatCurrency = (amount) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount || 0);
     const formatPercentage = (value) => `${value >= 0 ? '+' : ''}${(value || 0).toFixed(1)}%`;
     const getMetricClass = (value) => value >= 0 ? 'metric-positive' : 'metric-negative';
@@ -263,8 +268,9 @@ const ValutazioneAziendaleCalculator = () => {
     const handlePrint = () => window.print();
 
     const handleExportExcel = () => {
-        if (typeof XLSX === 'undefined') {
+        if (typeof window.XLSX === 'undefined') {
             console.error("La libreria XLSX non è caricata.");
+            // Potresti voler mostrare un avviso all'utente qui
             return;
         }
         const inputDataForSheet = [['Metrica', 'Valore Inserito']];
@@ -295,14 +301,14 @@ const ValutazioneAziendaleCalculator = () => {
             ['Sconto Liquidità', results.liquidityDiscount ? `${(results.liquidityDiscount * 100).toFixed(0)}%` : '0%']
         ];
         
-        const ws_inputs = XLSX.utils.aoa_to_sheet(inputDataForSheet);
-        const ws_results = XLSX.utils.aoa_to_sheet(resultsDataForSheet);
+        const ws_inputs = window.XLSX.utils.aoa_to_sheet(inputDataForSheet);
+        const ws_results = window.XLSX.utils.aoa_to_sheet(resultsDataForSheet);
         ws_inputs['!cols'] = [{ wch: 40 }, { wch: 30 }];
         ws_results['!cols'] = [{ wch: 30 }, { wch: 20 }];
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws_inputs, "Dati Input");
-        XLSX.utils.book_append_sheet(wb, ws_results, "Risultati Valutazione");
-        XLSX.writeFile(wb, "Valutazione_Aziendale.xlsx");
+        const wb = window.XLSX.utils.book_new();
+        window.XLSX.utils.book_append_sheet(wb, ws_inputs, "Dati Input");
+        window.XLSX.utils.book_append_sheet(wb, ws_results, "Risultati Valutazione");
+        window.XLSX.writeFile(wb, "Valutazione_Aziendale.xlsx");
     };
 
     const saveValuation = async () => {
@@ -313,6 +319,7 @@ const ValutazioneAziendaleCalculator = () => {
         setIsSubmitting(true);
         setSaveSuccess(false);
         try {
+            // Qui andrebbe la vera chiamata API per il salvataggio
             console.log("Tentativo di salvataggio (simulato):", { user, inputs: formData, outputs: results });
             await new Promise(resolve => setTimeout(resolve, 1500)); 
             setSaveSuccess(true);
@@ -382,7 +389,9 @@ const ValutazioneAziendaleCalculator = () => {
 
             <div className="container">
                 <div className="main-wrapper">
-                    <a href="#" className="back-link">← Torna ai calcolatori</a>
+                    <Link href="/calcolatori">
+                        <div className="back-link">← Torna ai calcolatori</div>
+                    </Link>
 
                     <div className="header">
                         <h1>📊 Calcolatore Valutazione Aziendale</h1>
@@ -454,7 +463,6 @@ const ValutazioneAziendaleCalculator = () => {
 
                         <ResultsPanel 
                             results={results}
-                            formData={formData}
                             onSave={saveValuation}
                             onPrint={handlePrint}
                             onExportExcel={handleExportExcel}
@@ -468,6 +476,11 @@ const ValutazioneAziendaleCalculator = () => {
     );
 };
 
-// Esporta il componente principale per il rendering
-export default ValutazioneAziendaleCalculator;
+export default function ValutazioneAziendalePage() {
+    return (
+        <Layout pageTitle="Calcolatore Valutazione Aziendale">
+            <ValutazioneAziendaleCalculator />
+        </Layout>
+    );
+}
 
