@@ -253,21 +253,27 @@ const findAtecoValue = (sheetData, sessionId) => {
         "attività prevalente"
     ];
     for (const searchTerm of searchTerms) {
+        console.log(`[${sessionId}] 🔎 Cercando: "${searchTerm}"`);
         for (let i = 0; i < sheetData.length; i++) {
             const row = sheetData[i];
             for (let j = 0; j < Math.min(row.length, 6); j++) {
                 const cellValue = String(row[j] || '').toLowerCase().trim();
                 if (cellValue.includes(searchTerm.toLowerCase())) {
+                    console.log(`[${sessionId}] 🎯 Trovato termine "${searchTerm}" alla riga ${i}, colonna ${j}`);
                     for (let k = j + 1; k < row.length; k++) {
                         const valueCell = String(row[k] || '').trim();
-                        if (valueCell && (valueCell.includes('(') || valueCell.match(/\d{2}\.\d{2}/))) {
+                        // FIX: Aggiunta ricerca per codici a 6 cifre
+                        if (valueCell && (valueCell.includes('(') || valueCell.match(/\d{2}\.\d{2}/) || valueCell.match(/^\d{6}$/))) {
+                            console.log(`[${sessionId}] ✅ Valore ATECO trovato: "${valueCell}"`);
                             return valueCell;
                         }
                     }
                     for (let nextRow = i + 1; nextRow < Math.min(i + 3, sheetData.length); nextRow++) {
                         for (let col = 0; col < sheetData[nextRow].length; col++) {
                             const nextValue = String(sheetData[nextRow][col] || '').trim();
-                            if (nextValue && (nextValue.includes('(') || nextValue.match(/\d{2}\.\d{2}/))) {
+                            // FIX: Aggiunta ricerca per codici a 6 cifre anche nelle righe successive
+                            if (nextValue && (nextValue.includes('(') || nextValue.match(/\d{2}\.\d{2}/) || nextValue.match(/^\d{6}$/))) {
+                                console.log(`[${sessionId}] ✅ Valore ATECO trovato riga successiva: "${nextValue}"`);
                                 return nextValue;
                             }
                         }
@@ -276,12 +282,19 @@ const findAtecoValue = (sheetData, sessionId) => {
             }
         }
     }
+    console.log(`[${sessionId}] ❌ Nessun codice ATECO trovato con ricerca specifica`);
     return null;
 };
 
 const extractAtecoCode = (atecoString, sessionId) => {
-    if (!atecoString) return null;
+    if (!atecoString) {
+        console.log(`[${sessionId}] ❌ ATECO string vuota`);
+        return null;
+    }
+    console.log(`[${sessionId}] 🔍 Estrazione ATECO da: "${atecoString}"`);
     const patterns = [
+        // FIX: Aggiunto pattern per 6 cifre in PRIMA POSIZIONE
+        { regex: /(\d{6})/, name: "Formato 6 cifre (139500)" },
         { regex: /\((\d{2})\.(\d{2})\.(\d{2})\)/, name: "Standard con parentesi (41.00.00)" },
         { regex: /(\d{2})\.(\d{2})\.(\d{2})/, name: "Standard senza parentesi 41.00.00" },
         { regex: /(\d{2})\.(\d{2})/, name: "Formato breve 41.00" },
@@ -292,11 +305,28 @@ const extractAtecoCode = (atecoString, sessionId) => {
     for (const { regex, name } of patterns) {
         const match = atecoString.match(regex);
         if (match) {
-            const division = match[1];
-            const fullCode = match[0].replace(/[()]/g, '').replace(/[-\s]/g, '.');
-            return { full: fullCode, division: division, raw: atecoString, pattern_used: name };
+            let division, fullCode;
+            
+            // FIX: Gestione speciale per codici a 6 cifre
+            if (name.includes("6 cifre")) {
+                division = match[1].substring(0, 2); // Prime 2 cifre come divisione
+                fullCode = match[1]; // Tutto il codice a 6 cifre
+            } else {
+                division = match[1];
+                fullCode = match[0].replace(/[()]/g, '').replace(/[-\s]/g, '.');
+            }
+            
+            console.log(`[${sessionId}] ✅ MATCH con pattern "${name}"`);
+            console.log(`[${sessionId}] 📋 Divisione: ${division}, Codice completo: ${fullCode}`);
+            return {
+                full: fullCode,
+                division: division,
+                raw: atecoString,
+                pattern_used: name
+            };
         }
     }
+    console.log(`[${sessionId}] 💥 NESSUN PATTERN ATECO RICONOSCIUTO in: "${atecoString}"`);
     return null;
 };
 
@@ -312,13 +342,13 @@ const getSectorInfo = async (divisionCode, sessionId) => {
             console.log(`[${sessionId}] [ATECO] ⚠️ Divisione ${divisionCode} non trovata nel mapping`);
             return null;
         }
+        console.log(`[${sessionId}] [ATECO] ✅ Trovato: ${data.macro_sector}${data.macro_sector_2 ? ` - ${data.macro_sector_2}` : ''}`);
         return data;
     } catch (err) {
         console.error(`[${sessionId}] [ATECO] Errore query per divisione ${divisionCode}:`, err);
         return null;
     }
 };
-
 // === FUNZIONE PRE-CALCOLO INDICATORI ===
 const calculateFinancialIndicators = (metrics, sessionId) => {
     console.log(`[${sessionId}] 🧮 Inizio calcolo indicatori derivati...`);
