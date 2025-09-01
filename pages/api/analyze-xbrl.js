@@ -1,8 +1,8 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 12.5 (Debug Attivo Circolante e Prompt AI)
-// - MODIFICA 1: Aggiunti log di debug specifici per l'attivo circolante e le sue componenti.
-// - MODIFICA 2: Aggiunto l'attivo circolante ai dati inviati all'AI per un'analisi più precisa.
-// - Tutti i fix precedenti sono mantenuti.
+// VERSIONE 13.0 - AUTO-DETECTION FOGLI XBRL
+// - AGGIUNTO: Sistema di auto-detection dei fogli basato sul tipo di società
+// - AGGIUNTO: Mappatura fallback per fogli alternativi (T0001, T0005, etc.)
+// - MIGLIORATO: Gestione robusta di diverse strutture XBRL
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -17,7 +17,113 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Funzioni di utility per il parsing (invariate)
+// === NUOVA SEZIONE: AUTO-DETECTION FOGLI ===
+
+/**
+ * Mappatura dei fogli XBRL per diverse tipologie societarie
+ */
+const SHEET_MAPPINGS = {
+  // Standard per SRL, SPA, etc.
+  standard: {
+    companyInfo: ['T0000'],
+    balanceSheet: ['T0002'],
+    incomeStatement: ['T0006']
+  },
+  
+  // Fallback per altre tipologie
+  alternative: {
+    companyInfo: ['T0000'],
+    balanceSheet: ['T0001', 'T0002'], // T0001 come fallback
+    incomeStatement: ['T0005', 'T0006'] // T0005 come fallback
+  }
+};
+
+/**
+ * Auto-detection del tipo di file XBRL basato sui fogli presenti
+ */
+const detectXbrlType = (workbook, sessionId) => {
+  const availableSheets = Object.keys(workbook.Sheets);
+  console.log(`[${sessionId}] 📋 Fogli disponibili:`, availableSheets.slice(0, 10)); // Log primi 10
+  
+  // Verifica presenza fogli standard
+  const hasStandardSheets = ['T0000', 'T0002', 'T0006'].every(sheet => 
+    availableSheets.includes(sheet)
+  );
+  
+  if (hasStandardSheets) {
+    console.log(`[${sessionId}] ✅ Rilevato formato XBRL STANDARD (SRL/SPA)`);
+    return 'standard';
+  } else {
+    console.log(`[${sessionId}] 🔄 Rilevato formato XBRL ALTERNATIVO - usando fallback`);
+    return 'alternative';
+  }
+};
+
+/**
+ * Ottiene i fogli corretti basandosi sul tipo rilevato
+ */
+const getCorrectSheets = (workbook, xbrlType, sessionId) => {
+  const mapping = SHEET_MAPPINGS[xbrlType];
+  const availableSheets = Object.keys(workbook.Sheets);
+  
+  const result = {
+    companyInfo: null,
+    balanceSheet: null,
+    incomeStatement: null
+  };
+  
+  // Trova il foglio delle informazioni aziendali
+  for (const sheetName of mapping.companyInfo) {
+    if (availableSheets.includes(sheetName)) {
+      result.companyInfo = workbook.Sheets[sheetName];
+      console.log(`[${sessionId}] 🏢 Info aziendali: ${sheetName}`);
+      break;
+    }
+  }
+  
+  // Trova il foglio dello stato patrimoniale
+  for (const sheetName of mapping.balanceSheet) {
+    if (availableSheets.includes(sheetName)) {
+      result.balanceSheet = workbook.Sheets[sheetName];
+      console.log(`[${sessionId}] 📊 Stato Patrimoniale: ${sheetName}`);
+      break;
+    }
+  }
+  
+  // Trova il foglio del conto economico
+  for (const sheetName of mapping.incomeStatement) {
+    if (availableSheets.includes(sheetName)) {
+      result.incomeStatement = workbook.Sheets[sheetName];
+      console.log(`[${sessionId}] 💰 Conto Economico: ${sheetName}`);
+      break;
+    }
+  }
+  
+  return result;
+};
+
+/**
+ * Validazione della presenza di fogli critici
+ */
+const validateSheets = (sheets, sessionId) => {
+  const missing = [];
+  
+  if (!sheets.companyInfo) missing.push('Informazioni Aziendali (T0000)');
+  if (!sheets.balanceSheet) missing.push('Stato Patrimoniale (T0002/T0001)');
+  if (!sheets.incomeStatement) missing.push('Conto Economico (T0006/T0005)');
+  
+  if (missing.length > 0) {
+    const error = `Fogli mancanti: ${missing.join(', ')}`;
+    console.error(`[${sessionId}] ❌ ${error}`);
+    throw new Error(error);
+  }
+  
+  console.log(`[${sessionId}] ✅ Tutti i fogli necessari sono stati trovati`);
+  return true;
+};
+
+// === FUNZIONI UTILITY ORIGINALI (invariate) ===
+
 const parseValue = (val) => {
     if (val === null || val === undefined || String(val).trim() === '') return null;
     if (typeof val === 'number') return val;
@@ -53,20 +159,16 @@ const findYearColumns = (sheetData) => {
     return { currentYearCol: years[0].col, previousYearCol: years[1].col };
 };
 
-// --- NUOVA FUNZIONE findSimpleValue ---
 const findSimpleValue = (sheetData, searchTexts) => {
     const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
     
     for (const row of sheetData) {
-        // Cerco in quale colonna si trova il termine di ricerca
         for (let j = 0; j < row.length; j++) {
             const cellContent = String(row[j] || '').toLowerCase().trim();
             
-            // Se trovo un termine di ricerca in questa cella
             if (normalizedSearchTexts.some(searchText => cellContent.includes(searchText))) {
                 console.log(`🔍 Trovato termine di ricerca in colonna ${j}: "${cellContent}"`);
                 
-                // Cerco il valore nelle colonne successive della stessa riga
                 for (let k = j + 1; k < row.length; k++) {
                     const valueCell = String(row[k] || '').trim();
                     if (valueCell && valueCell !== '' && !normalizedSearchTexts.some(st => valueCell.toLowerCase().includes(st))) {
@@ -110,7 +212,7 @@ const findValueInSheetImproved = (sheetData, searchConfigs, yearCols, metricName
     return { currentYear: null, previousYear: null };
 };
 
-// Configurazioni metriche
+// Configurazioni metriche (invariate)
 const metricsConfigs = {
     fatturato: [{ primary: ["a) ricavi delle vendite e delle prestazioni"] }, { primary: ["ricavi delle vendite"] }, { primary: ["valore della produzione"], exclusion: ["costi", "differenza"] }],
     utilePerdita: [{ primary: ["utile (perdita) dell'esercizio"] }, { primary: ["risultato dell'esercizio"] }, { primary: ["risultato prima delle imposte"] }],
@@ -227,12 +329,14 @@ const getSectorInfo = async (divisionCode, sessionId) => {
     }
 };
 
+// === HANDLER PRINCIPALE MODIFICATO ===
+
 export default async function handler(req, res) {
   const { sessionId } = req.query;
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] Avvio analisi XBRL (versione 12.5).`);
+  console.log(`[${sessionId}] 🚀 Avvio analisi XBRL (versione 13.0 - Auto-Detection).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -243,13 +347,21 @@ export default async function handler(req, res) {
     
     const fileBuffer = Buffer.from(await fileBlob.arrayBuffer());
     const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
-    const { T0000, T0002, T0006 } = workbook.Sheets;
-    if (!T0000 || !T0002 || !T0006) throw new Error("Fogli di lavoro standard (T0000, T0002, T0006) non trovati.");
 
-    const companyInfoData = xlsx.utils.sheet_to_json(T0000, { header: 1 });
-    const balanceSheetData = xlsx.utils.sheet_to_json(T0002, { header: 1 });
-    const incomeStatementData = xlsx.utils.sheet_to_json(T0006, { header: 1 });
+    // === NUOVA LOGICA: AUTO-DETECTION ===
+    console.log(`[${sessionId}] 🔍 Avvio auto-detection tipo XBRL...`);
+    const xbrlType = detectXbrlType(workbook, sessionId);
+    const sheets = getCorrectSheets(workbook, xbrlType, sessionId);
+    validateSheets(sheets, sessionId);
 
+    // Conversione fogli a dati
+    const companyInfoData = xlsx.utils.sheet_to_json(sheets.companyInfo, { header: 1 });
+    const balanceSheetData = xlsx.utils.sheet_to_json(sheets.balanceSheet, { header: 1 });
+    const incomeStatementData = xlsx.utils.sheet_to_json(sheets.incomeStatement, { header: 1 });
+
+    console.log(`[${sessionId}] 📊 Dati estratti: Info=${companyInfoData.length} righe, SP=${balanceSheetData.length} righe, CE=${incomeStatementData.length} righe`);
+
+    // Continua con la logica originale...
     const yearColsBS = findYearColumns(balanceSheetData);
     const yearColsIS = findYearColumns(incomeStatementData);
 
@@ -279,7 +391,7 @@ export default async function handler(req, res) {
 
     const sectorInfo = await getSectorInfo(atecoData?.division, sessionId);
 
-    console.log(`[${sessionId}] 🏁 RISULTATO FINALE ATECO:`);
+    console.log(`[${sessionId}] 🎯 RISULTATO FINALE ATECO:`);
     console.log(`   - Testo originale: "${rawAtecoString}"`);
     console.log(`   - Divisione estratta: ${atecoData?.division || 'NONE'}`);
     console.log(`   - Settore trovato: ${sectorInfo?.macro_sector || 'NONE'}`);
@@ -290,6 +402,7 @@ export default async function handler(req, res) {
     }
 
     const context = {
+        xbrl_type: xbrlType, // Nuovo campo per tracciare il tipo
         ateco_code: atecoData?.full || rawAtecoString,
         ateco_division: atecoData?.division,
         region: region,
@@ -318,12 +431,11 @@ export default async function handler(req, res) {
         imposte: findValueInSheetImproved(incomeStatementData, metricsConfigs.imposte, yearColsIS, 'Imposte')
     };
 
-    // MODIFICA 1: Aggiungere i log di debug
-    console.log(`[${sessionId}] DEBUG ATTIVO CIRCOLANTE:`);
-    console.log(`   - Valore estratto: ${metrics.attivoCircolante.currentYear}`);
-    console.log(`   - Crediti clienti: ${metrics.creditiClienti.currentYear}`);
-    console.log(`   - Debiti breve termine: ${metrics.debitiBreveTermine.currentYear}`);
-
+    console.log(`[${sessionId}] 📈 DEBUG METRICHE ESTRATTE:`);
+    console.log(`   - Tipo XBRL: ${xbrlType.toUpperCase()}`);
+    console.log(`   - Fatturato: ${metrics.fatturato.currentYear}`);
+    console.log(`   - Totale Attivo: ${metrics.totaleAttivo.currentYear}`);
+    console.log(`   - Patrimonio Netto: ${metrics.patrimonioNetto.currentYear}`);
 
     const sectorialContext = sectorInfo ? `
 - SETTORE SPECIFICO: ${sectorInfo.macro_sector.toUpperCase()}${sectorInfo.macro_sector_2 ? ` (${sectorInfo.macro_sector_2})` : ''}
@@ -335,7 +447,8 @@ Dati Aziendali per ${companyName}:
 
 Contesto Aziendale:
 - Regione: ${context.region || 'N/D'}
-- Codice ATECO: ${context.ateco_code || 'N/D'}${sectorialContext}
+- Codice ATECO: ${context.ateco_code || 'N/D'}
+- Tipo XBRL: ${context.xbrl_type}${sectorialContext}
 
 Principali Voci di Bilancio (Anno Corrente N / Anno Precedente N-1):
 - Fatturato: ${metrics.fatturato.currentYear} / ${metrics.fatturato.previousYear}
@@ -376,14 +489,14 @@ Principali Voci di Bilancio (Anno Corrente N / Anno Precedente N-1):
       detailed_swot: analysisResult.detailed_swot,
       risk_analysis: analysisResult.risk_analysis,
       pro_features_teaser: analysisResult.pro_features_teaser,
-      raw_parsed_data: { metrics, context, companyName }
+      raw_parsed_data: { metrics, context, companyName, xbrl_type: xbrlType }
     };
     
     await supabase.from('analysis_results').insert(resultToSave);
     await supabase.from('checkup_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', sessionId);
 
-    console.log(`[${sessionId}] 🎉 Analisi XBRL completata con successo!`);
-    return res.status(200).json({ success: true, sessionId: sessionId });
+    console.log(`[${sessionId}] 🎉 Analisi XBRL completata con successo! Tipo: ${xbrlType}`);
+    return res.status(200).json({ success: true, sessionId: sessionId, xbrl_type: xbrlType });
 
   } catch (error) {
     console.error(`💥 [${sessionId || 'NO_SESSION'}] Errore fatale in analyze-xbrl:`, error);
