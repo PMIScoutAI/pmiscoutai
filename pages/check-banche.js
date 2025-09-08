@@ -216,6 +216,9 @@ export default function CheckBanche() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   const [showAddContractModal, setShowAddContractModal] = useState(false);
+  const [showEditContractModal, setShowEditContractModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [selectedContract, setSelectedContract] = useState(null);
   const [userContracts, setUserContracts] = useState([]);
   const [isLoadingContracts, setIsLoadingContracts] = useState(false);
   const [contractForm, setContractForm] = useState({
@@ -338,29 +341,84 @@ export default function CheckBanche() {
     }
   };
 
+  const resetContractForm = () => {
+    setContractForm({
+      bank_name: '',
+      amount: '',
+      rate_tan: '',
+      rate_taeg: '',
+      duration_months: '',
+      loan_type: 'chirografario',
+      monthly_payment: '',
+      start_date: '',
+      guarantees: ''
+    });
+  };
+
   const handleSaveContract = async () => {
     try {
-      const response = await fetch('/api/save-contract', {
-        method: 'POST',
+      const url = selectedContract ? '/api/update-contract' : '/api/save-contract';
+      const body = selectedContract 
+        ? { contract_id: selectedContract.id, contract_data: contractForm }
+        : { user_email: userEmail, contract_data: contractForm };
+
+      const response = await fetch(url, {
+        method: selectedContract ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_email: userEmail,
-          contract_data: contractForm
-        })
+        body: JSON.stringify(body)
       });
 
       if (response.ok) {
         setShowAddContractModal(false);
-        setContractForm({
-          bank_name: '', amount: '', rate_tan: '', rate_taeg: '',
-          duration_months: '', loan_type: 'chirografario',
-          monthly_payment: '', start_date: '', guarantees: ''
-        });
+        setShowEditContractModal(false);
+        setSelectedContract(null);
+        resetContractForm();
         fetchUserContracts();
       }
     } catch (error) {
       console.error('Errore salvataggio contratto:', error);
     }
+  };
+
+  const handleEditContract = (contract) => {
+    setSelectedContract(contract);
+    setContractForm({
+      bank_name: contract.bank_name || '',
+      amount: contract.amount || '',
+      rate_tan: contract.rate_tan || '',
+      rate_taeg: contract.rate_taeg || '',
+      duration_months: contract.duration_months || '',
+      loan_type: contract.loan_type || 'chirografario',
+      monthly_payment: contract.monthly_payment || '',
+      start_date: contract.start_date || '',
+      guarantees: contract.guarantees || ''
+    });
+    setShowEditContractModal(true);
+  };
+
+  const handleDeleteContract = async () => {
+    if (!selectedContract) return;
+    
+    try {
+      const response = await fetch('/api/delete-contract', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contract_id: selectedContract.id })
+      });
+
+      if (response.ok) {
+        setShowDeleteConfirm(false);
+        setSelectedContract(null);
+        fetchUserContracts();
+      }
+    } catch (error) {
+      console.error('Errore eliminazione contratto:', error);
+    }
+  };
+
+  const confirmDelete = (contract) => {
+    setSelectedContract(contract);
+    setShowDeleteConfirm(true);
   };
 
   const fetchUserContracts = async () => {
@@ -444,6 +502,8 @@ export default function CheckBanche() {
     menu: <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>,
     xbrl: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M12 18v-6"></path><path d="m9 15 3-3 3 3"></path></>,
     checkbanche: <><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"></path><path d="M12 5L8 21l4-7 4 7-4-16Z"></path></>,
+    edit: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="m18.5 2.5 a2.12 2.12 0 0 1 3 3l-9.5 9.5-4 1 1-4z"></path></>,
+    delete: <><polyline points="3,6 5,6 21,6"></polyline><path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></>,
   };
 
   const navLinks = [
@@ -616,7 +676,7 @@ export default function CheckBanche() {
                         </div>
                     )}
                     
-                    {/* Sezione Contratti */}
+                    {/* Sezione Contratti con Edit/Delete */}
                     <div className="bg-white rounded-lg shadow p-6">
                       <h2 className="text-xl font-bold text-slate-900 mb-4">I Tuoi Finanziamenti</h2>
                       {isLoadingContracts ? (
@@ -639,11 +699,30 @@ export default function CheckBanche() {
                           {userContracts.map((contract) => (
                             <div key={contract.id} className="border rounded-lg p-4">
                               <div className="flex justify-between items-start">
-                                <div>
+                                <div className="flex-1">
                                   <h3 className="font-medium text-slate-900">{contract.bank_name}</h3>
                                   <p className="text-sm text-slate-600">
                                     Importo: €{contract.amount?.toLocaleString('it-IT')} | TAN: {contract.rate_tan}% | TAEG: {contract.rate_taeg}%
                                   </p>
+                                  <p className="text-sm text-slate-500">
+                                    Durata: {contract.duration_months} mesi | Rata: €{contract.monthly_payment?.toLocaleString('it-IT')}
+                                  </p>
+                                </div>
+                                <div className="flex items-center space-x-2 ml-4">
+                                  <button
+                                    onClick={() => handleEditContract(contract)}
+                                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                    title="Modifica finanziamento"
+                                  >
+                                    <Icon path={icons.edit} className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => confirmDelete(contract)}
+                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Elimina finanziamento"
+                                  >
+                                    <Icon path={icons.delete} className="w-4 h-4" />
+                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -773,6 +852,150 @@ export default function CheckBanche() {
                       Salva Finanziamento
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Modifica Finanziamento */}
+        {showEditContractModal && (
+          <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg max-w-2xl w-full max-h-90vh overflow-y-auto">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-slate-900">Modifica Finanziamento</h2>
+                  <button
+                     onClick={() => { setShowEditContractModal(false); setSelectedContract(null); resetContractForm(); }}
+                    className="text-slate-500 hover:text-slate-700"
+                  >
+                    ✕
+                  </button>
+                </div>
+                        
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Banca</label>
+                      <input
+                        type="text"
+                        value={contractForm.bank_name}
+                        onChange={(e) => setContractForm({...contractForm, bank_name: e.target.value})}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="es. Intesa Sanpaolo"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Importo (€)</label>
+                      <input
+                        type="number"
+                        value={contractForm.amount}
+                        onChange={(e) => setContractForm({...contractForm, amount: e.target.value})}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="es. 100000"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">TAN (%)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={contractForm.rate_tan}
+                        onChange={(e) => setContractForm({...contractForm, rate_tan: e.target.value})}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="es. 4.50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">TAEG (%)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={contractForm.rate_taeg}
+                        onChange={(e) => setContractForm({...contractForm, rate_taeg: e.target.value})}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="es. 4.80"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Durata (mesi)</label>
+                      <input
+                        type="number"
+                        value={contractForm.duration_months}
+                        onChange={(e) => setContractForm({...contractForm, duration_months: e.target.value})}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="es. 60"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Rata Mensile (€)</label>
+                      <input
+                        type="number"
+                        value={contractForm.monthly_payment}
+                        onChange={(e) => setContractForm({...contractForm, monthly_payment: e.target.value})}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="es. 1850"
+                      />
+                    </div>
+                     <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Data Inizio</label>
+                      <input
+                        type="date"
+                        value={contractForm.start_date}
+                        onChange={(e) => setContractForm({...contractForm, start_date: e.target.value})}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+                            
+                  <div className="flex gap-4 pt-6">
+                    <button
+                      onClick={() => { setShowEditContractModal(false); setSelectedContract(null); resetContractForm(); }}
+                      className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50"
+                    >
+                      Annulla
+                    </button>
+                    <button
+                      onClick={handleSaveContract}
+                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      Salva Modifiche
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Conferma Cancellazione */}
+        {showDeleteConfirm && selectedContract && (
+          <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg max-w-md w-full">
+              <div className="p-6">
+                <div className="flex items-center justify-center w-12 h-12 mx-auto bg-red-100 rounded-full mb-4">
+                  <Icon path={icons.delete} className="w-6 h-6 text-red-600" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 text-center mb-2">Conferma Cancellazione</h2>
+                <p className="text-slate-600 text-center mb-6">
+                  Sei sicuro di voler eliminare il finanziamento con <strong>{selectedContract.bank_name}</strong>?
+                  <br />
+                  <span className="text-sm">Questa azione non può essere annullata.</span>
+                </p>
+                            
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => { setShowDeleteConfirm(false); setSelectedContract(null); }}
+                    className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50"
+                  >
+                    Annulla
+                  </button>
+                  <button
+                    onClick={handleDeleteContract}
+                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  >
+                    Elimina
+                  </button>
                 </div>
               </div>
             </div>
