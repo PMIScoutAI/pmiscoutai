@@ -400,7 +400,7 @@ export default function CheckBanche() {
     if (!selectedContract) return;
     
     try {
-      const response = await fetch('/api/delete-contract', {
+      const response = await fetch('/api/save-contract', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contract_id: selectedContract.id })
