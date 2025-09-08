@@ -1,5 +1,6 @@
 // /pages/index.js (o il file della tua dashboard principale)
 // VERSIONE AGGIORNATA CON PASSAGGIO DELL'EMAIL UTENTE ALLE API
+// RIMOSSO IL COLLEGAMENTO MARKETPLACE
 
 import React, { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -60,7 +61,7 @@ const AnalisiRecenti = ({ analyses, isLoading }) => {
   );
 };
 
-// Componente UI “Sub-Hero Alert”
+// Componente UI "Sub-Hero Alert"
 const SubHeroAlerts = ({ Icon, icons, userEmail }) => {
     const [alerts, setAlerts] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -217,7 +218,6 @@ export default function Home() {
         dashboard: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
         profile: <><path d="M5.52 19c.64-2.2 1.84-3 3.22-3h6.52c1.38 0 2.58.8 3.22 3" /><circle cx="12" cy="10" r="3" /><circle cx="12" cy="12" r="10" /></>,
         calculator: <><rect x="4" y="2" width="16" height="20" rx="2" ry="2" /><line x1="8" y1="6" x2="16" y2="6" /><line x1="12" y1="10" x2="12" y2="18" /><line x1="8" y1="14" x2="16" y2="14" /></>,
-        marketplace: <><path d="M12 2H6.5C4.5 2 3 3.5 3 5.5V18.5C3 20.5 4.5 22 6.5 22H17.5C19.5 22 21 20.5 21 18.5V12L12 2Z" /><path d="M12 2V12H21" /><path d="M15 22V18C15 16.9 15.9 16 17 16H19" /></>,
         support: <><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
         menu: <><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></>,
         logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>,
@@ -302,12 +302,12 @@ export default function Home() {
     </svg>
   );
 
+  // NAVIGAZIONE AGGIORNATA: RIMOSSO MARKETPLACE
   const navLinks = [
     { href: '/', text: 'Dashboard', icon: icons.dashboard, active: true },
     { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
     { href: 'https://pmiscoutai.vercel.app/check-ai-xbrl', text: 'Check-AI XBRL', icon: icons.xbrl, active: false },
     { href: '/calcolatori', text: 'Calcolatori', icon: icons.calculator, active: false },
-    { href: '#', text: 'Marketplace', icon: icons.marketplace, active: false },
   ];
   
   const toolCards = [
