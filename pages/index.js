@@ -306,7 +306,6 @@ export default function Home() {
     { href: '/', text: 'Dashboard', icon: icons.dashboard, active: true },
     { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
     { href: 'https://pmiscoutai.vercel.app/check-ai-xbrl', text: 'Check-AI XBRL', icon: icons.xbrl, active: false },
-    { href: '/calcolatori', text: 'Calcolatori', icon: icons.calculator, active: false },
     { href: '#', text: 'Marketplace', icon: icons.marketplace, active: false },
   ];
   
