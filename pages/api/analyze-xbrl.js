@@ -78,7 +78,7 @@ const getCorrectSheets = (workbook, xbrlType, sessionId) => {
   for (const sheetName of mapping.companyInfo) {
     if (availableSheets.includes(sheetName)) {
       result.companyInfo = workbook.Sheets[sheetName];
-      console.log(`[${sessionId}] � Info aziendali: ${sheetName}`);
+      console.log(`[${sessionId}] 🏢 Info aziendali: ${sheetName}`);
       break;
     }
   }
@@ -541,3 +541,134 @@ export default async function handler(req, res) {
         
         // 🆕 ESTRAZIONE PASSIVITÀ CORRENTI PER CURRENT RATIO
         passivitaCorrente: findValueInSheetImproved(balanceSheetData, metricsConfigs.passivitaCorrente, yearColsBS, 'Passività Correnti')
+    };
+
+    // Calcola indicatori derivati (EBITDA, EBIT, Current Ratio, etc.)
+    metrics = calculateFinancialIndicators(metrics, sessionId);
+
+    console.log(`[${sessionId}] 📈 DEBUG METRICHE FINALI:`);
+    console.log(`   - Tipo XBRL: ${xbrlType.toUpperCase()}`);
+    console.log(`   - Fatturato: ${metrics.fatturato.currentYear}`);
+    console.log(`   - EBITDA: ${metrics.ebitda.currentYear}`);
+    console.log(`   - EBIT: ${metrics.ebit.currentYear}`);
+    console.log(`   - Totale Attivo: ${metrics.totaleAttivo.currentYear}`);
+    console.log(`   - Attivo Circolante: ${metrics.attivoCircolante.currentYear}`);
+    console.log(`   - Passività Correnti: ${metrics.passivitaCorrente.currentYear}`);
+    console.log(`   - Current Ratio: ${metrics.currentRatio.currentYear?.toFixed(2) || 'N/D'}`);
+    console.log(`   - Patrimonio Netto: ${metrics.patrimonioNetto.currentYear}`);
+
+    const sectorialContext = sectorInfo ? `
+- SETTORE SPECIFICO: ${sectorInfo.macro_sector.toUpperCase()}${sectorInfo.macro_sector_2 ? ` (${sectorInfo.macro_sector_2})` : ''}
+- NOTE SETTORIALI: ${sectorInfo.notes}
+- ISTRUZIONE AI: Analizza i dati considerando i KPI e le dinamiche specifiche del settore ${sectorInfo.macro_sector}.` : '';
+
+    // Prompt migliorato con valori pre-calcolati e Current Ratio
+    const dataForPrompt = `
+Dati Aziendali per ${companyName}:
+
+Contesto Aziendale:
+- Regione: ${context.region || 'N/D'}
+- Codice ATECO: ${context.ateco_code || 'N/D'}
+- Tipo XBRL: ${context.xbrl_type}${sectorialContext}
+
+Principali Voci di Bilancio (Anno Corrente N / Anno Precedente N-1):
+- Fatturato: ${metrics.fatturato.currentYear} / ${metrics.fatturato.previousYear}
+- EBITDA: ${metrics.ebitda.currentYear} / ${metrics.ebitda.previousYear} (PRE-CALCOLATO)
+- EBIT: ${metrics.ebit.currentYear} / ${metrics.ebit.previousYear} (PRE-CALCOLATO)
+- Utile/(Perdita): ${metrics.utilePerdita.currentYear} / ${metrics.utilePerdita.previousYear}
+- Attivo Circolante: ${metrics.attivoCircolante.currentYear} / ${metrics.attivoCircolante.previousYear}
+- Passività Correnti: ${metrics.passivitaCorrente.currentYear} / ${metrics.passivitaCorrente.previousYear}
+- Totale Attivo: ${metrics.totaleAttivo.currentYear} / ${metrics.totaleAttivo.previousYear}
+- Patrimonio Netto: ${metrics.patrimonioNetto.currentYear} / ${metrics.patrimonioNetto.previousYear}
+- Debiti Totali: ${metrics.debitiTotali.currentYear} / ${metrics.debitiTotali.previousYear}
+- Debiti a Breve Termine: ${metrics.debitiBreveTermine.currentYear} / ${metrics.debitiBreveTermine.previousYear}
+- Crediti: ${metrics.creditiClienti.currentYear} / ${metrics.creditiClienti.previousYear}
+- Imposte: ${metrics.imposte.currentYear} / ${metrics.imposte.previousYear}
+
+Indicatori Calcolati:
+- Margine EBITDA: ${metrics.margineEbitda.currentYear?.toFixed(2) || 'N/D'}%
+- ROE: ${metrics.roe.currentYear?.toFixed(2) || 'N/D'}%
+- Current Ratio: ${metrics.currentRatio.currentYear?.toFixed(2) || 'N/D'}
+
+ISTRUZIONE IMPORTANTE: 
+- I valori EBITDA, EBIT e Current Ratio sono già stati calcolati correttamente nel sistema. NON ricalcolarli.
+- Usa questi valori pre-calcolati per le tue analisi e confronti settoriali.
+- Concentrati sull'interpretazione e raccomandazioni basate su questi dati certi.
+`;
+
+    const { data: promptData, error: promptError } = await supabase.from('ai_prompts').select('prompt_template').eq('name', 'FINANCIAL_ANALYSIS_V2').single();
+    if (promptError || !promptData) throw new Error("Prompt 'FINANCIAL_ANALYSIS_V2' non trovato.");
+
+    const finalPrompt = `${promptData.prompt_template}\n\n### DATI ESTRATTI DAL BILANCIO ###\n${dataForPrompt}`;
+
+    console.log(`[${sessionId}] 🤖 Invio dati all'AI per analisi...`);
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4-turbo',
+      messages: [{ role: 'user', content: finalPrompt }],
+      response_format: { type: "json_object" },
+      temperature: 0.1,
+    });
+
+    const analysisResult = JSON.parse(response.choices[0].message.content);
+    
+    // Salvataggio risultati con metriche calcolate
+    const resultToSave = {
+      session_id: sessionId,
+      company_name: companyName,
+      health_score: analysisResult.health_score,
+      key_metrics: analysisResult.key_metrics,
+      swot: analysisResult.detailed_swot,
+      recommendations: analysisResult.recommendations,
+      charts_data: analysisResult.charts_data,
+      summary: analysisResult.summary,
+      raw_ai_response: analysisResult,
+      detailed_swot: analysisResult.detailed_swot,
+      risk_analysis: analysisResult.risk_analysis,
+      pro_features_teaser: analysisResult.pro_features_teaser,
+      raw_parsed_data: { 
+        metrics, 
+        context, 
+        companyName, 
+        xbrl_type: xbrlType,
+        calculated_indicators: {
+          ebitda: metrics.ebitda,
+          ebit: metrics.ebit,
+          margineEbitda: metrics.margineEbitda,
+          roe: metrics.roe,
+          currentRatio: metrics.currentRatio
+        }
+      }
+    };
+    
+    await supabase.from('analysis_results').insert(resultToSave);
+    await supabase.from('checkup_sessions').update({ 
+      status: 'completed', 
+      completed_at: new Date().toISOString() 
+    }).eq('id', sessionId);
+
+    console.log(`[${sessionId}] 🎉 Analisi XBRL completata con successo!`);
+    console.log(`[${sessionId}] 📊 Tipo rilevato: ${xbrlType}`);
+    console.log(`[${sessionId}] 💰 EBITDA calcolato: ${metrics.ebitda.currentYear}`);
+    console.log(`[${sessionId}] 📊 Current Ratio calcolato: ${metrics.currentRatio.currentYear?.toFixed(2) || 'N/D'}`);
+    console.log(`[${sessionId}] 📈 Health Score: ${analysisResult.health_score}`);
+    
+    return res.status(200).json({ 
+      success: true, 
+      sessionId: sessionId, 
+      xbrl_type: xbrlType,
+      calculated_ebitda: metrics.ebitda.currentYear,
+      calculated_current_ratio: metrics.currentRatio.currentYear?.toFixed(2) || 'N/D',
+      health_score: analysisResult.health_score
+    });
+
+  } catch (error) {
+    console.error(`💥 [${sessionId || 'NO_SESSION'}] Errore fatale in analyze-xbrl:`, error);
+    if (sessionId) {
+      await supabase.from('checkup_sessions').update({ 
+        status: 'failed', 
+        error_message: error.message 
+      }).eq('id', sessionId);
+    }
+    return res.status(500).json({ error: error.message });
+  }
+}
