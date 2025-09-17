@@ -743,3 +743,5 @@ ISTRUZIONE IMPORTANTE:
 }
 "
 
+Ho selezionato questo codice nel Canvas e vorrei che tu lo correggessi
+
