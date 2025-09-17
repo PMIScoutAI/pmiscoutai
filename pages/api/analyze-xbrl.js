@@ -1,9 +1,9 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 13.4 (Fix Avanzato Passività Correnti)
-// - Mantiene la nuova struttura di auto-detection dei fogli.
-// - Mantiene il pre-calcolo affidabile di EBITDA, EBIT e altri indicatori.
-// - AGGIUNGE una configurazione di ricerca estesa per "Passività Correnti".
-// - AGGIUNGE un fallback intelligente a "Debiti a Breve Termine" se "Passività Correnti" non viene trovato.
+// VERSIONE 13.5 (Somma specializzata Passività Correnti)
+// - Mantiene tutte le feature precedenti.
+// - INTRODUCE una funzione specializzata 'findAndSumCurrentLiabilities' per sommare tutte
+//   le voci di passività a breve termine, migliorando drasticamente l'accuratezza del Current Ratio.
+// - Mantiene il fallback intelligente a "Debiti a Breve Termine" come sicurezza.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -213,6 +213,69 @@ const findValueInSheetImproved = (sheetData, searchConfigs, yearCols, metricName
     return { currentYear: null, previousYear: null };
 };
 
+// 🔧 STEP 1: Creare nuova funzione specializzata
+const findAndSumCurrentLiabilities = (sheetData, yearCols, sessionId) => {
+    console.log(`[${sessionId}] 🚀 Inizio calcolo specializzato per Passività Correnti...`);
+    
+    let totalCurrentLiabilities = { currentYear: 0, previousYear: 0 };
+    const logDetails = [];
+    let inPassiveSection = false; // Flag per sapere se siamo nella sezione corretta
+
+    const searchPatterns = ["esigibili entro l'esercizio successivo", "debiti esigibili entro", "entro l'esercizio successivo", "passività correnti"];
+    const exclusionPatterns = ["crediti", "attivo"];
+    const passiveSectionStarters = ["d) debiti", "passivo", "passività"];
+    
+    for (const row of sheetData) {
+        let description = '';
+        for (let i = 0; i < Math.min(row.length, 6); i++) {
+            description += String(row[i] || '').toLowerCase().trim() + ' ';
+        }
+        description = description.replace(/\s+/g, ' ').trim();
+
+        // STEP 4: Identificazione della sezione PASSIVO
+        if (!inPassiveSection && passiveSectionStarters.some(starter => description.includes(starter))) {
+            console.log(`[${sessionId}] ✅ Sezione PASSIVO identificata dalla riga: "${description.substring(0,50)}..."`);
+            inPassiveSection = true;
+        }
+
+        if (!inPassiveSection) {
+            continue; // Salta le righe finché non siamo nella sezione passivo
+        }
+
+        const containsSearchPattern = searchPatterns.some(pattern => description.includes(pattern));
+        const containsExclusionPattern = exclusionPatterns.some(pattern => description.includes(pattern));
+
+        if (containsSearchPattern && !containsExclusionPattern) {
+            const currentYearValue = parseValue(row[yearCols.currentYearCol]);
+            const previousYearValue = parseValue(row[yearCols.previousYearCol]);
+
+            if (currentYearValue !== null && currentYearValue > 0) {
+                totalCurrentLiabilities.currentYear += currentYearValue;
+                const logEntry = `   - Voce: "${description.substring(0, 70)}..." = ${currentYearValue.toLocaleString('it-IT')}€`;
+                logDetails.push(logEntry);
+            }
+             if (previousYearValue !== null && previousYearValue > 0) {
+                totalCurrentLiabilities.previousYear += previousYearValue;
+            }
+        }
+    }
+
+    // STEP 5: Logging avanzato
+    if (logDetails.length > 0) {
+        console.log(`[${sessionId}] 🔍 VOCI TROVATE E SOMMATE PER PASSIVITÀ CORRENTI (Anno Corrente):`);
+        logDetails.forEach(log => console.log(log));
+        console.log(`   ➡️ TOTALE CALCOLATO: ${totalCurrentLiabilities.currentYear.toLocaleString('it-IT')}€`);
+    } else {
+        console.log(`[${sessionId}] ⚠️ Nessuna voce specifica trovata per la somma delle Passività Correnti. Si tenterà il fallback.`);
+    }
+
+    if (totalCurrentLiabilities.currentYear === 0 && totalCurrentLiabilities.previousYear === 0) {
+        return { currentYear: null, previousYear: null };
+    }
+    
+    return totalCurrentLiabilities;
+};
+
 // === CONFIGURAZIONI METRICHE - CON FIX TOTALE ATTIVO E PASSIVITÀ CORRENTI ===
 const metricsConfigs = {
     fatturato: [{ primary: ["a) ricavi delle vendite e delle prestazioni"] }, { primary: ["ricavi delle vendite"] }, { primary: ["valore della produzione"], exclusion: ["costi", "differenza"] }],
@@ -238,21 +301,6 @@ const metricsConfigs = {
         { primary: ["imposte sul reddito"] },
         { primary: ["totale imposte"] }
     ],
-    
-    // 🔧 FIX: Configurazione più completa per Passività Correnti
-    passivitaCorrente: [
-        { primary: ["c) passività correnti"] },
-        { primary: ["passività correnti"], exclusion: ["immobilizzazioni"] },
-        { primary: ["totale passività correnti"] },
-        { primary: ["passivo corrente"] },
-        { primary: ["passività a breve termine"] },
-        { primary: ["passivo a breve termine"] },
-        // 🆕 AGGIUNTI fallback come richiesto:
-        { primary: ["debiti esigibili entro l'esercizio successivo"] },
-        { primary: ["totale debiti entro l'esercizio successivo"] },
-        { primary: ["debiti correnti"] },
-        { primary: ["debiti a breve"] }
-    ]
 };
 
 // === FUNZIONI ATECO ===
@@ -395,19 +443,24 @@ const calculateFinancialIndicators = (metrics, sessionId) => {
         previousYear: null
     };
     
-    // 🆕 FALLBACK INTELLIGENTE PER CURRENT RATIO
+    // 🔧 STEP 3: Gestire il fallback nel calcolo
     let passivitaCorrente_current = metrics.passivitaCorrente.currentYear;
     let passivitaCorrente_previous = metrics.passivitaCorrente.previousYear;
 
+    // Se la somma specializzata non ha dato risultati (restituisce null), usa debitiBreveTermine
     if (passivitaCorrente_current === null && metrics.debitiBreveTermine.currentYear !== null) {
         passivitaCorrente_current = metrics.debitiBreveTermine.currentYear;
-        console.log(`[${sessionId}] ⚠️ FALLBACK ANNO CORRENTE: Passività Correnti non trovate. Usando Debiti Breve Termine (${passivitaCorrente_current}) per il calcolo del Current Ratio.`);
+        console.log(`[${sessionId}] ⚠️ FALLBACK ANNO CORRENTE: Somma non riuscita. Usando Debiti Breve Termine (${passivitaCorrente_current}) per il Current Ratio.`);
     }
     if (passivitaCorrente_previous === null && metrics.debitiBreveTermine.previousYear !== null) {
         passivitaCorrente_previous = metrics.debitiBreveTermine.previousYear;
-        console.log(`[${sessionId}] ⚠️ FALLBACK ANNO PRECEDENTE: Passività Correnti non trovate. Usando Debiti Breve Termine (${passivitaCorrente_previous}) per il calcolo del Current Ratio.`);
+        console.log(`[${sessionId}] ⚠️ FALLBACK ANNO PRECEDENTE: Somma non riuscita. Usando Debiti Breve Termine (${passivitaCorrente_previous}) per il Current Ratio.`);
     }
     
+    // Riassegna il valore finale (somma o fallback) a metrics per coerenza nel prompt
+    metrics.passivitaCorrente.currentYear = passivitaCorrente_current;
+    metrics.passivitaCorrente.previousYear = passivitaCorrente_previous;
+
     const attivoCorrente_current = metrics.attivoCircolante.currentYear || 0;
     const attivoCorrente_previous = metrics.attivoCircolante.previousYear || 0;
     
@@ -416,7 +469,7 @@ const calculateFinancialIndicators = (metrics, sessionId) => {
         previousYear: passivitaCorrente_previous !== 0 && passivitaCorrente_previous !== null ? (attivoCorrente_previous / passivitaCorrente_previous) : null
     };
     
-    console.log(`[${sessionId}] 📊 CURRENT RATIO CALCOLATO:`);
+    console.log(`[${sessionId}] 📊 CURRENT RATIO FINALE CALCOLATO:`);
     console.log(`   Anno Corrente: ${attivoCorrente_current} / ${passivitaCorrente_current} = ${metrics.currentRatio.currentYear?.toFixed(2) || 'N/D'}`);
     console.log(`   Anno Precedente: ${attivoCorrente_previous} / ${passivitaCorrente_previous} = ${metrics.currentRatio.previousYear?.toFixed(2) || 'N/D'}`);
     
@@ -432,7 +485,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] 🚀 Avvio analisi XBRL (versione 13.4 - Fix Avanzato Passività Correnti).`);
+  console.log(`[${sessionId}] 🚀 Avvio analisi XBRL (versione 13.5 - Somma specializzata Passività Correnti).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -517,8 +570,10 @@ export default async function handler(req, res) {
         rimanenze: findValueInSheetImproved(balanceSheetData, metricsConfigs.rimanenze, yearColsBS, 'Rimanenze'),
         disponibilitaLiquide: findValueInSheetImproved(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide'),
         imposte: findValueInSheetImproved(incomeStatementData, metricsConfigs.imposte, yearColsIS, 'Imposte'),
-        passivitaCorrente: findValueInSheetImproved(balanceSheetData, metricsConfigs.passivitaCorrente, yearColsBS, 'Passività Correnti')
     };
+
+    // 🔧 STEP 2: Modificare la logica di estrazione
+    metrics.passivitaCorrente = findAndSumCurrentLiabilities(balanceSheetData, yearColsBS, sessionId);
 
     metrics = calculateFinancialIndicators(metrics, sessionId);
 
@@ -529,7 +584,7 @@ export default async function handler(req, res) {
     console.log(`   - EBIT: ${metrics.ebit.currentYear}`);
     console.log(`   - Totale Attivo: ${metrics.totaleAttivo.currentYear}`);
     console.log(`   - Attivo Circolante: ${metrics.attivoCircolante.currentYear}`);
-    console.log(`   - Passività Correnti: ${metrics.passivitaCorrente.currentYear}`);
+    console.log(`   - Passività Correnti (Finale): ${metrics.passivitaCorrente.currentYear}`);
     console.log(`   - Current Ratio: ${metrics.currentRatio.currentYear?.toFixed(2) || 'N/D'}`);
     console.log(`   - Patrimonio Netto: ${metrics.patrimonioNetto.currentYear}`);
 
