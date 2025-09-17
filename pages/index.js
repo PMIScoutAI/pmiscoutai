@@ -1,6 +1,5 @@
 // /pages/index.js (o il file della tua dashboard principale)
-// VERSIONE AGGIORNATA CON PASSAGGIO DELL'EMAIL UTENTE ALLE API
-// RIMOSSO IL COLLEGAMENTO MARKETPLACE
+// VERSIONE AGGIORNATA SECONDO IL BRIEF DEL 16/09/2025
 
 import React, { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -71,7 +70,6 @@ const SubHeroAlerts = ({ Icon, icons, userEmail }) => {
 
     useEffect(() => {
         const fetchAlerts = async () => {
-            // Non fare la chiamata se l'email non è ancora pronta
             if (!userEmail) {
                 setIsLoading(false);
                 return;
@@ -79,7 +77,6 @@ const SubHeroAlerts = ({ Icon, icons, userEmail }) => {
             setIsLoading(true);
             setError(null);
             try {
-                // L'email viene già passata correttamente qui
                 const response = await fetch(`/api/generate-alerts?email=${encodeURIComponent(userEmail)}`);
                 if (!response.ok) {
                     throw new Error('Errore di rete o del server');
@@ -94,12 +91,12 @@ const SubHeroAlerts = ({ Icon, icons, userEmail }) => {
             }
         };
         fetchAlerts();
-    }, [userEmail]); // Dipendenza corretta: riesegue il fetch quando userEmail cambia
+    }, [userEmail]);
 
     const stopRotation = () => clearInterval(intervalRef.current);
     
     const startRotation = () => {
-        stopRotation(); // Previene intervalli multipli
+        stopRotation();
         if (alerts.length > 1) {
             intervalRef.current = setInterval(() => {
                 setCurrentIndex(prevIndex => (prevIndex + 1) % alerts.length);
@@ -181,9 +178,9 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [userAnalyses, setUserAnalyses] = useState([]);
-  const [isLoadingAnalyses, setIsLoadingAnalyses] = useState(true); // Impostato a true di default
+  const [isLoadingAnalyses, setIsLoadingAnalyses] = useState(true);
   const [userEmail, setUserEmail] = useState('');
-  const [icons, setIcons] = useState({}); // Stato per le icone
+  const [icons, setIcons] = useState({});
 
   const checkAuthentication = () => {
     if (typeof window !== 'undefined' && window.Outseta) {
@@ -229,6 +226,8 @@ export default function Home() {
         bando: <><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></>,
         normativa: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></>,
         checkbanche: <><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"></path><path d="M12 5L8 21l4-7 4 7-4-16Z"></path></>,
+        // MODIFICA 7: AGGIUNTA ICONA GARANZIA
+        garanzia: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path></>,
     });
   }, []);
 
@@ -302,20 +301,36 @@ export default function Home() {
     </svg>
   );
 
-  // NAVIGAZIONE AGGIORNATA: RIMOSSO MARKETPLACE
+  // MODIFICA 1: RIMOSSO ELEMENTO "CALCOLATORI" DAL MENU
   const navLinks = [
     { href: '/', text: 'Dashboard', icon: icons.dashboard, active: true },
     { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
     { href: 'https://pmiscoutai.vercel.app/check-ai-xbrl', text: 'Check-AI XBRL', icon: icons.xbrl, active: false },
-    { href: '/calcolatori', text: 'Calcolatori', icon: icons.calculator, active: false },
   ];
   
+  // MODIFICA 2: SOSTITUITO INTERO ARRAY toolCards
   const toolCards = [
-    { title: 'Check-AI XBRL', description: 'Carica un file XBRL per un\'analisi finanziaria istantanea e precisa.', linkText: 'Avvia Analisi XBRL', href: '/check-ai-xbrl', icon: icons.xbrl },
-    { title: 'Analisi Attività (RAG)', description: 'Analisi potenziata con tecnologia RAG per una precisione e un dettaglio superiori.', linkText: 'Avvia Analisi Attività', href: '/checkup-hd', icon: icons.rag },
-    { title: 'Check Banche', description: 'Verifica la tua bancabilità, confronta finanziamenti esistenti e trova condizioni migliori sul mercato.', linkText: 'Controlla le tue banche', href: '/check-banche', icon: icons.checkbanche },
-    { title: 'Risparmio Tempo', description: 'Automatizza i processi e guadagna tempo prezioso.', linkText: 'Automatizza ora', href: '#', icon: icons.time },
-    { title: 'Semplifica Burocrazia', description: 'Gestisci documenti e adempimenti in modo facile e veloce.', linkText: 'Inizia a semplificare', href: '#', icon: icons.bureaucracy },
+    {
+      title: 'Check-AI XBRL',
+      description: 'Carica un file XBRL per analisi finanziaria istantanea con ROE, ROI, EBITDA e indicatori chiave.',
+      linkText: 'Carica Bilancio',
+      href: '/check-ai-xbrl',
+      icon: icons.xbrl
+    },
+    {
+      title: 'Check Bancabilità',
+      description: 'Verifica DSCR, classe MCC e confronta tassi di mercato per ottimizzare i tuoi finanziamenti.',
+      linkText: 'Verifica Bancabilità',
+      href: 'https://pmiscoutai.vercel.app/check-banche',
+      icon: icons.checkbanche
+    },
+    {
+      title: 'Fondo Garanzia PMI',
+      description: 'Simula la percentuale di copertura del fondo e genera PDF con analisi di fattibilità.',
+      linkText: 'Simula Garanzia',
+      href: 'https://pmiscoutai.vercel.app/calcolatori/simulazione-fondo-garanzia',
+      icon: icons.bando
+    }
   ];
 
   return (
@@ -428,18 +443,31 @@ export default function Home() {
               <SubHeroAlerts Icon={Icon} icons={icons} userEmail={userEmail} />
 
               <div className="mt-10">
-                <h2 className="text-lg font-semibold leading-6 text-slate-900">I tuoi Macro Tool</h2>
-                <div className="grid grid-cols-1 gap-6 mt-4 sm:grid-cols-2 lg:grid-cols-3">
+                {/* MODIFICA 5: AGGIORNATO TITOLO DELLA SEZIONE */}
+                <h2 className="text-2xl font-bold text-slate-900 mb-2">I tuoi Strumenti di Analisi</h2>
+                <p className="text-slate-600 mb-8">Scegli il modulo di analisi più adatto alle tue esigenze</p>
+                
+                {/* MODIFICA 3: AGGIORNATO LAYOUT GRID */}
+                <div className="grid grid-cols-1 gap-8 mt-6 lg:grid-cols-3">
                   {toolCards.map((card) => (
-                    <div key={card.title} className="flex flex-col h-full p-6 transition-all duration-300 bg-white border rounded-lg shadow-sm hover:shadow-xl hover:-translate-y-1">
-                      <div className="flex-grow">
-                        <div className="p-3 bg-blue-100 rounded-lg w-fit">
-                          <Icon path={card.icon} className="w-6 h-6 text-blue-600" />
+                    // MODIFICA 4: MIGLIORATE LE CARD DEI TOOL
+                    <div key={card.title} className="flex flex-col h-full p-8 transition-all duration-300 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-lg hover:border-blue-300">
+                        <div className="flex-grow">
+                            <div className="flex items-center justify-center w-16 h-16 mb-6 bg-blue-50 rounded-xl">
+                                <Icon path={card.icon} className="w-8 h-8 text-blue-600" />
+                            </div>
+                            <h3 className="text-xl font-bold text-slate-900 mb-3">{card.title}</h3>
+                            <p className="text-slate-600 leading-relaxed">{card.description}</p>
                         </div>
-                        <h3 className="mt-4 text-lg font-semibold text-slate-900">{card.title}</h3>
-                        <p className="mt-1 text-sm text-slate-500">{card.description}</p>
-                      </div>
-                      <a href={card.href} className="inline-block mt-4 text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors">{card.linkText} &rarr;</a>
+                        <a 
+                            href={card.href} 
+                            className="inline-flex items-center justify-center mt-8 px-6 py-3 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                            {card.linkText}
+                            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </a>
                     </div>
                   ))}
                 </div>
