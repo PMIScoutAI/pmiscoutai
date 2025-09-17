@@ -1,7 +1,8 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 13.7 (Logging KPI Completo)
+// VERSIONE 13.8 (Ricerca Strict Debiti a Breve)
 // - Mantiene tutte le feature precedenti.
-// - AGGIUNGE il logging di debug specifico per ROI e Debt/Equity.
+// - Sostituisce la ricerca generica dei debiti a breve con una funzione specializzata
+//   'findDebitiBreveTermineStrict' che opera solo nella sezione PASSIVO per massima accuratezza.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -271,6 +272,39 @@ const findAndSumCurrentLiabilities = (sheetData, yearCols, sessionId) => {
     return totalCurrentLiabilities;
 };
 
+const findDebitiBreveTermineStrict = (sheetData, yearCols, sessionId) => {
+  console.log(`[${sessionId}] 🔎 Ricerca STRICT Debiti a breve in sezione PASSIVO...`);
+  let inPassive = false;
+
+  for (const row of sheetData) {
+    let desc = '';
+    for (let i = 0; i < Math.min(row.length, 6); i++) desc += String(row[i] || '').toLowerCase().trim() + ' ';
+    desc = desc.replace(/\s+/g, ' ').trim();
+
+    if (!inPassive && (desc.includes('d) debiti') || desc.includes('passivo') || desc.includes('passività'))) {
+      inPassive = true;
+      continue;
+    }
+    if (!inPassive) continue;
+
+    const hasDebiti = desc.includes('debiti');
+    const hasEntro = desc.includes("esigibili entro l'esercizio successivo") || desc.includes("entro l'esercizio successivo");
+    const hasCredito = desc.includes('crediti') || desc.includes('attivo');
+
+    if (hasDebiti && hasEntro && !hasCredito) {
+      const cur = parseValue(row[yearCols.currentYearCol]);
+      const prev = parseValue(row[yearCols.previousYearCol]);
+      console.log(`[${sessionId}] ✅ Debiti breve (STRICT) trovati: N=${cur} N-1=${prev} | "${desc.substring(0,60)}..."`);
+      return { currentYear: cur, previousYear: prev, _source: 'strict' };
+    }
+
+    if (desc.startsWith('e) ') || desc.includes('totale passivo')) break;
+  }
+
+  console.log(`[${sessionId}] ⚠️ Nessun match STRICT per Debiti a breve`);
+  return { currentYear: null, previousYear: null, _source: 'none' };
+};
+
 // === CONFIGURAZIONI METRICHE ===
 const metricsConfigs = {
     fatturato: [{ primary: ["a) ricavi delle vendite e delle prestazioni"] }, { primary: ["ricavi delle vendite"] }, { primary: ["valore della produzione"], exclusion: ["costi", "differenza"] }],
@@ -278,7 +312,6 @@ const metricsConfigs = {
     totaleAttivo: [ { primary: ["totale attivo", "a+b+c"] }, { primary: ["totale attivo"], exclusion: ["circolante", "corrente", "c)"] }, { primary: ["totale attivo"] } ],
     patrimonioNetto: [{ primary: ["totale patrimonio netto"] }, { primary: ["a) patrimonio netto"] }],
     debitiTotali: [{ primary: ["totale debiti"] }, { primary: ["d) debiti"] }],
-    debitiBreveTermine: [{ primary: ["esigibili entro l'esercizio successivo"] }, { primary: ["debiti esigibili entro l'esercizio successivo"] }, { primary: ["entro l'esercizio successivo"] }],
     creditiClienti: [{ primary: ["crediti verso clienti"] }, { primary: ["totale crediti"] }, { primary: ["ii - crediti"], exclusion: ["soci"] }],
     debitiLungoTermine: [{ primary: ["esigibili oltre l'esercizio successivo"] }, { primary: ["debiti esigibili oltre l'esercizio successivo"] }],
     costiProduzione: [{ primary: ["b) costi della produzione"] }, { primary: ["costi della produzione"], exclusion: ["valore"] }],
@@ -442,7 +475,6 @@ const calculateFinancialIndicators = (metrics, sessionId) => {
         previousYear: patrimonioNetto_previous !== 0 ? (debitiTotali_previous / patrimonioNetto_previous) : null
     };
     
-    // ❌ PROBLEMA IDENTIFICATO - LOG MANCANTI - ORA CORRETTO
     console.log(`[${sessionId}] 📊 ROI CALCOLATO:`);
     console.log(`   Anno Corrente: ${ebit_current} / ${totaleAttivo_current} = ${metrics.roi.currentYear?.toFixed(2) || 'N/D'}%`);
     console.log(`   Anno Precedente: ${ebit_previous} / ${totaleAttivo_previous} = ${metrics.roi.previousYear?.toFixed(2) || 'N/D'}%`);
@@ -490,7 +522,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] 🚀 Avvio analisi XBRL (versione 13.7 - Logging KPI Completo).`);
+  console.log(`[${sessionId}] 🚀 Avvio analisi XBRL (versione 13.8 - Ricerca Strict Debiti a Breve).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -565,7 +597,7 @@ export default async function handler(req, res) {
         totaleAttivo: findValueInSheetImproved(balanceSheetData, metricsConfigs.totaleAttivo, yearColsBS, 'Totale Attivo'),
         patrimonioNetto: findValueInSheetImproved(balanceSheetData, metricsConfigs.patrimonioNetto, yearColsBS, 'Patrimonio Netto'),
         debitiTotali: findValueInSheetImproved(balanceSheetData, metricsConfigs.debitiTotali, yearColsBS, 'Debiti Totali'),
-        debitiBreveTermine: findValueInSheetImproved(balanceSheetData, metricsConfigs.debitiBreveTermine, yearColsBS, 'Debiti Breve Termine'),
+        debitiBreveTermine: findDebitiBreveTermineStrict(balanceSheetData, yearColsBS, sessionId),
         creditiClienti: findValueInSheetImproved(balanceSheetData, metricsConfigs.creditiClienti, yearColsBS, 'Crediti'),
         debitiLungoTermine: findValueInSheetImproved(balanceSheetData, metricsConfigs.debitiLungoTermine, yearColsBS, 'Debiti Lungo Termine'),
         costiProduzione: findValueInSheetImproved(incomeStatementData, metricsConfigs.costiProduzione, yearColsIS, 'Costi Produzione'),
@@ -581,7 +613,6 @@ export default async function handler(req, res) {
 
     metrics = calculateFinancialIndicators(metrics, sessionId);
 
-    // Aggiungere nei log di debug
     console.log(`[${sessionId}] 📈 DEBUG METRICHE FINALI:`);
     console.log(`   - Tipo XBRL: ${xbrlType.toUpperCase()}`);
     console.log(`   - Fatturato: ${metrics.fatturato.currentYear}`);
@@ -600,7 +631,6 @@ export default async function handler(req, res) {
 - NOTE SETTORIALI: ${sectorInfo.notes}
 - ISTRUZIONE AI: Analizza i dati considerando i KPI e le dinamiche specifiche del settore ${sectorInfo.macro_sector}.` : '';
 
-    // Includere nel prompt AI
     const dataForPrompt = `
 Dati Aziendali per ${companyName}:
 Contesto Aziendale:
@@ -650,7 +680,6 @@ ISTRUZIONE IMPORTANTE:
 
     const analysisResult = JSON.parse(response.choices[0].message.content);
     
-    // Aggiungere in calculated_indicators
     const resultToSave = {
       session_id: sessionId,
       company_name: companyName,
@@ -690,7 +719,6 @@ ISTRUZIONE IMPORTANTE:
     console.log(`[${sessionId}] 🎉 Analisi XBRL completata con successo!`);
     console.log(`[${sessionId}] 📈 Health Score: ${analysisResult.health_score}`);
     
-    // Aggiornare response finale
     return res.status(200).json({ 
       success: true, 
       sessionId: sessionId, 
@@ -713,4 +741,5 @@ ISTRUZIONE IMPORTANTE:
     return res.status(500).json({ error: error.message });
   }
 }
+"
 
