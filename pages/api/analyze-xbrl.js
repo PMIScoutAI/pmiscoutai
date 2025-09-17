@@ -1,9 +1,10 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 13.2 (Fix Definitivo e Completo)
+// VERSIONE 13.3 (Fix Current Ratio Definitivo)
 // - Mantiene la nuova struttura di auto-detection dei fogli.
 // - Corregge il flusso logico riposizionando i blocchi di codice errati.
 // - Mantiene il fix per la ricerca del "Totale Attivo".
 // - Mantiene il pre-calcolo affidabile di EBITDA, EBIT e altri indicatori.
+// - AGGIUNGE il calcolo corretto del Current Ratio
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -55,7 +56,7 @@ const detectXbrlType = (workbook, sessionId) => {
     console.log(`[${sessionId}] ✅ Rilevato formato XBRL STANDARD (SRL/SPA)`);
     return 'standard';
   } else {
-    console.log(`[${sessionId}] 🔄 Rilevato formato XBRL ALTERNATIVO - usando fallback`);
+    console.log(`[${sessionId}] 📄 Rilevato formato XBRL ALTERNATIVO - usando fallback`);
     return 'alternative';
   }
 };
@@ -77,7 +78,7 @@ const getCorrectSheets = (workbook, xbrlType, sessionId) => {
   for (const sheetName of mapping.companyInfo) {
     if (availableSheets.includes(sheetName)) {
       result.companyInfo = workbook.Sheets[sheetName];
-      console.log(`[${sessionId}] 🏢 Info aziendali: ${sheetName}`);
+      console.log(`[${sessionId}] � Info aziendali: ${sheetName}`);
       break;
     }
   }
@@ -213,7 +214,7 @@ const findValueInSheetImproved = (sheetData, searchConfigs, yearCols, metricName
     return { currentYear: null, previousYear: null };
 };
 
-// === CONFIGURAZIONI METRICHE - CON FIX TOTALE ATTIVO ===
+// === CONFIGURAZIONI METRICHE - CON FIX TOTALE ATTIVO E PASSIVITÀ CORRENTI ===
 const metricsConfigs = {
     fatturato: [{ primary: ["a) ricavi delle vendite e delle prestazioni"] }, { primary: ["ricavi delle vendite"] }, { primary: ["valore della produzione"], exclusion: ["costi", "differenza"] }],
     utilePerdita: [{ primary: ["utile (perdita) dell'esercizio"] }, { primary: ["risultato dell'esercizio"] }, { primary: ["risultato prima delle imposte"] }],
@@ -240,6 +241,15 @@ const metricsConfigs = {
         { primary: ["imposte sul reddito dell'esercizio"] },
         { primary: ["imposte sul reddito"] },
         { primary: ["totale imposte"] }
+    ],
+    
+    // 🆕 NUOVA CONFIGURAZIONE PER PASSIVITÀ CORRENTI (FIX CURRENT RATIO)
+    passivitaCorrente: [
+        { primary: ["c) passività correnti"] },
+        { primary: ["passività correnti"], exclusion: ["immobilizzazioni"] },
+        { primary: ["totale passività correnti"] },
+        { primary: ["passivo corrente"] },
+        { primary: ["debiti esigibili entro l'esercizio successivo"] } // fallback con debiti a breve
     ]
 };
 
@@ -349,7 +359,8 @@ const getSectorInfo = async (divisionCode, sessionId) => {
         return null;
     }
 };
-// === FUNZIONE PRE-CALCOLO INDICATORI ===
+
+// === FUNZIONE PRE-CALCOLO INDICATORI (CON FIX CURRENT RATIO) ===
 const calculateFinancialIndicators = (metrics, sessionId) => {
     console.log(`[${sessionId}] 🧮 Inizio calcolo indicatori derivati...`);
     
@@ -369,7 +380,7 @@ const calculateFinancialIndicators = (metrics, sessionId) => {
         ammortamenti: metrics.ammortamenti.previousYear || 0,
     };
     
-    // FIX 2: CALCOLO EBITDA E EBIT - Nel codice, non nell'AI
+    // CALCOLO EBITDA E EBIT
     const ebitda_current = currentYearMetrics.utile + currentYearMetrics.imposte + currentYearMetrics.oneriFinanziari + currentYearMetrics.ammortamenti;
     const ebit_current = ebitda_current - currentYearMetrics.ammortamenti;
     
@@ -410,6 +421,21 @@ const calculateFinancialIndicators = (metrics, sessionId) => {
         previousYear: null
     };
     
+    // 🆕 FIX CURRENT RATIO - CALCOLO CORRETTO
+    const attivoCorrente_current = metrics.attivoCircolante.currentYear || 0;
+    const passivitaCorrente_current = metrics.passivitaCorrente.currentYear || 0;
+    const attivoCorrente_previous = metrics.attivoCircolante.previousYear || 0;
+    const passivitaCorrente_previous = metrics.passivitaCorrente.previousYear || 0;
+    
+    metrics.currentRatio = {
+        currentYear: passivitaCorrente_current !== 0 ? (attivoCorrente_current / passivitaCorrente_current) : null,
+        previousYear: passivitaCorrente_previous !== 0 ? (attivoCorrente_previous / passivitaCorrente_previous) : null
+    };
+    
+    console.log(`[${sessionId}] 📊 CURRENT RATIO CALCOLATO:`);
+    console.log(`   Anno Corrente: ${attivoCorrente_current} / ${passivitaCorrente_current} = ${metrics.currentRatio.currentYear?.toFixed(2) || 'N/D'}`);
+    console.log(`   Anno Precedente: ${attivoCorrente_previous} / ${passivitaCorrente_previous} = ${metrics.currentRatio.previousYear?.toFixed(2) || 'N/D'}`);
+    
     console.log(`[${sessionId}] ✅ Indicatori calcolati con successo`);
     return metrics;
 };
@@ -421,7 +447,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] 🚀 Avvio analisi XBRL (versione 13.2 - Auto-Detection + Fix).`);
+  console.log(`[${sessionId}] 🚀 Avvio analisi XBRL (versione 13.3 - Auto-Detection + Fix Current Ratio).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -495,145 +521,7 @@ export default async function handler(req, res) {
         ateco_pattern_used: atecoData?.pattern_used
     };
 
-    // Estrai metriche base
+    // Estrai metriche base (CON PASSIVITÀ CORRENTI)
     let metrics = {
         fatturato: findValueInSheetImproved(incomeStatementData, metricsConfigs.fatturato, yearColsIS, 'Fatturato'),
-        utilePerdita: findValueInSheetImproved(incomeStatementData, metricsConfigs.utilePerdita, yearColsIS, 'Utile/Perdita CE') || findValueInSheetImproved(balanceSheetData, metricsConfigs.utilePerdita, yearColsBS, 'Utile/Perdita SP'),
-        totaleAttivo: findValueInSheetImproved(balanceSheetData, metricsConfigs.totaleAttivo, yearColsBS, 'Totale Attivo'),
-        patrimonioNetto: findValueInSheetImproved(balanceSheetData, metricsConfigs.patrimonioNetto, yearColsBS, 'Patrimonio Netto'),
-        debitiTotali: findValueInSheetImproved(balanceSheetData, metricsConfigs.debitiTotali, yearColsBS, 'Debiti Totali'),
-        debitiBreveTermine: findValueInSheetImproved(balanceSheetData, metricsConfigs.debitiBreveTermine, yearColsBS, 'Debiti Breve Termine'),
-        creditiClienti: findValueInSheetImproved(balanceSheetData, metricsConfigs.creditiClienti, yearColsBS, 'Crediti'),
-        debitiLungoTermine: findValueInSheetImproved(balanceSheetData, metricsConfigs.debitiLungoTermine, yearColsBS, 'Debiti Lungo Termine'),
-        costiProduzione: findValueInSheetImproved(incomeStatementData, metricsConfigs.costiProduzione, yearColsIS, 'Costi Produzione'),
-        ammortamenti: findValueInSheetImproved(incomeStatementData, metricsConfigs.ammortamenti, yearColsIS, 'Ammortamenti'),
-        oneriFinanziari: findValueInSheetImproved(incomeStatementData, metricsConfigs.oneriFinanziari, yearColsIS, 'Oneri Finanziari'),
-        attivoCircolante: findValueInSheetImproved(balanceSheetData, metricsConfigs.attivoCircolante, yearColsBS, 'Attivo Circolante'),
-        rimanenze: findValueInSheetImproved(balanceSheetData, metricsConfigs.rimanenze, yearColsBS, 'Rimanenze'),
-        disponibilitaLiquide: findValueInSheetImproved(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide'),
-        imposte: findValueInSheetImproved(incomeStatementData, metricsConfigs.imposte, yearColsIS, 'Imposte')
-    };
-
-    // FIX 2: Calcola indicatori derivati (EBITDA, EBIT, etc.)
-    metrics = calculateFinancialIndicators(metrics, sessionId);
-
-    console.log(`[${sessionId}] 📈 DEBUG METRICHE FINALI:`);
-    console.log(`   - Tipo XBRL: ${xbrlType.toUpperCase()}`);
-    console.log(`   - Fatturato: ${metrics.fatturato.currentYear}`);
-    console.log(`   - EBITDA: ${metrics.ebitda.currentYear}`);
-    console.log(`   - EBIT: ${metrics.ebit.currentYear}`);
-    console.log(`   - Totale Attivo: ${metrics.totaleAttivo.currentYear}`);
-    console.log(`   - Attivo Circolante: ${metrics.attivoCircolante.currentYear}`);
-    console.log(`   - Patrimonio Netto: ${metrics.patrimonioNetto.currentYear}`);
-
-    const sectorialContext = sectorInfo ? `
-- SETTORE SPECIFICO: ${sectorInfo.macro_sector.toUpperCase()}${sectorInfo.macro_sector_2 ? ` (${sectorInfo.macro_sector_2})` : ''}
-- NOTE SETTORIALI: ${sectorInfo.notes}
-- ISTRUZIONE AI: Analizza i dati considerando i KPI e le dinamiche specifiche del settore ${sectorInfo.macro_sector}.` : '';
-
-    // FIX 2: Prompt migliorato con valori pre-calcolati
-    const dataForPrompt = `
-Dati Aziendali per ${companyName}:
-
-Contesto Aziendale:
-- Regione: ${context.region || 'N/D'}
-- Codice ATECO: ${context.ateco_code || 'N/D'}
-- Tipo XBRL: ${context.xbrl_type}${sectorialContext}
-
-Principali Voci di Bilancio (Anno Corrente N / Anno Precedente N-1):
-- Fatturato: ${metrics.fatturato.currentYear} / ${metrics.fatturato.previousYear}
-- EBITDA: ${metrics.ebitda.currentYear} / ${metrics.ebitda.previousYear} (PRE-CALCOLATO)
-- EBIT: ${metrics.ebit.currentYear} / ${metrics.ebit.previousYear} (PRE-CALCOLATO)
-- Utile/(Perdita): ${metrics.utilePerdita.currentYear} / ${metrics.utilePerdita.previousYear}
-- Attivo Circolante: ${metrics.attivoCircolante.currentYear} / ${metrics.attivoCircolante.previousYear}
-- Totale Attivo: ${metrics.totaleAttivo.currentYear} / ${metrics.totaleAttivo.previousYear}
-- Patrimonio Netto: ${metrics.patrimonioNetto.currentYear} / ${metrics.patrimonioNetto.previousYear}
-- Debiti Totali: ${metrics.debitiTotali.currentYear} / ${metrics.debitiTotali.previousYear}
-- Debiti a Breve Termine: ${metrics.debitiBreveTermine.currentYear} / ${metrics.debitiBreveTermine.previousYear}
-- Crediti: ${metrics.creditiClienti.currentYear} / ${metrics.creditiClienti.previousYear}
-- Imposte: ${metrics.imposte.currentYear} / ${metrics.imposte.previousYear}
-
-Indicatori Calcolati:
-- Margine EBITDA: ${metrics.margineEbitda.currentYear?.toFixed(2) || 'N/D'}%
-- ROE: ${metrics.roe.currentYear?.toFixed(2) || 'N/D'}%
-
-ISTRUZIONE IMPORTANTE: 
-- I valori EBITDA e EBIT sono già stati calcolati correttamente nel sistema. NON ricalcolarli.
-- Usa questi valori pre-calcolati per le tue analisi e confronti settoriali.
-- Concentrati sull'interpretazione e raccomandazioni basate su questi dati certi.
-`;
-
-    const { data: promptData, error: promptError } = await supabase.from('ai_prompts').select('prompt_template').eq('name', 'FINANCIAL_ANALYSIS_V2').single();
-    if (promptError || !promptData) throw new Error("Prompt 'FINANCIAL_ANALYSIS_V2' non trovato.");
-
-    const finalPrompt = `${promptData.prompt_template}\n\n### DATI ESTRATTI DAL BILANCIO ###\n${dataForPrompt}`;
-
-    console.log(`[${sessionId}] 🤖 Invio dati all'AI per analisi...`);
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4-turbo',
-      messages: [{ role: 'user', content: finalPrompt }],
-      response_format: { type: "json_object" },
-      temperature: 0.1,
-    });
-
-    const analysisResult = JSON.parse(response.choices[0].message.content);
-    
-    // Salvataggio risultati con metriche calcolate
-    const resultToSave = {
-      session_id: sessionId,
-      company_name: companyName,
-      health_score: analysisResult.health_score,
-      key_metrics: analysisResult.key_metrics,
-      swot: analysisResult.detailed_swot,
-      recommendations: analysisResult.recommendations,
-      charts_data: analysisResult.charts_data,
-      summary: analysisResult.summary,
-      raw_ai_response: analysisResult,
-      detailed_swot: analysisResult.detailed_swot,
-      risk_analysis: analysisResult.risk_analysis,
-      pro_features_teaser: analysisResult.pro_features_teaser,
-      raw_parsed_data: { 
-        metrics, 
-        context, 
-        companyName, 
-        xbrl_type: xbrlType,
-        calculated_indicators: {
-          ebitda: metrics.ebitda,
-          ebit: metrics.ebit,
-          margineEbitda: metrics.margineEbitda,
-          roe: metrics.roe
-        }
-      }
-    };
-    
-    await supabase.from('analysis_results').insert(resultToSave);
-    await supabase.from('checkup_sessions').update({ 
-      status: 'completed', 
-      completed_at: new Date().toISOString() 
-    }).eq('id', sessionId);
-
-    console.log(`[${sessionId}] 🎉 Analisi XBRL completata con successo!`);
-    console.log(`[${sessionId}] 📊 Tipo rilevato: ${xbrlType}`);
-    console.log(`[${sessionId}] 💰 EBITDA calcolato: ${metrics.ebitda.currentYear}`);
-    console.log(`[${sessionId}] 📈 Health Score: ${analysisResult.health_score}`);
-    
-    return res.status(200).json({ 
-      success: true, 
-      sessionId: sessionId, 
-      xbrl_type: xbrlType,
-      calculated_ebitda: metrics.ebitda.currentYear,
-      health_score: analysisResult.health_score
-    });
-
-  } catch (error) {
-    console.error(`💥 [${sessionId || 'NO_SESSION'}] Errore fatale in analyze-xbrl:`, error);
-    if (sessionId) {
-      await supabase.from('checkup_sessions').update({ 
-        status: 'failed', 
-        error_message: error.message 
-      }).eq('id', sessionId);
-    }
-    return res.status(500).json({ error: error.message });
-  }
-}
-
+        utilePerdita: findValueInSheetImproved(incomeStatementData, metricsConfigs.utilePerdita, yearColsIS, 'Utile/Perdita
