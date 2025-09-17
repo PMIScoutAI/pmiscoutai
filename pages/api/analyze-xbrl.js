@@ -1,10 +1,9 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 13.3 (Fix Current Ratio Definitivo)
+// VERSIONE 13.4 (Fix Avanzato Passività Correnti)
 // - Mantiene la nuova struttura di auto-detection dei fogli.
-// - Corregge il flusso logico riposizionando i blocchi di codice errati.
-// - Mantiene il fix per la ricerca del "Totale Attivo".
 // - Mantiene il pre-calcolo affidabile di EBITDA, EBIT e altri indicatori.
-// - AGGIUNGE il calcolo corretto del Current Ratio
+// - AGGIUNGE una configurazione di ricerca estesa per "Passività Correnti".
+// - AGGIUNGE un fallback intelligente a "Debiti a Breve Termine" se "Passività Correnti" non viene trovato.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -218,14 +217,11 @@ const findValueInSheetImproved = (sheetData, searchConfigs, yearCols, metricName
 const metricsConfigs = {
     fatturato: [{ primary: ["a) ricavi delle vendite e delle prestazioni"] }, { primary: ["ricavi delle vendite"] }, { primary: ["valore della produzione"], exclusion: ["costi", "differenza"] }],
     utilePerdita: [{ primary: ["utile (perdita) dell'esercizio"] }, { primary: ["risultato dell'esercizio"] }, { primary: ["risultato prima delle imposte"] }],
-    
-    // FIX 1: TOTALE ATTIVO - Reso più specifico per evitare conflitti
     totaleAttivo: [
-        { primary: ["totale attivo", "a+b+c"] }, // Prima cerca con riferimento alle macro-classi
-        { primary: ["totale attivo"], exclusion: ["circolante", "corrente", "c)"] }, // Poi fallback escludendo circolante
-        { primary: ["totale attivo"] } // Ultima risorsa
+        { primary: ["totale attivo", "a+b+c"] },
+        { primary: ["totale attivo"], exclusion: ["circolante", "corrente", "c)"] },
+        { primary: ["totale attivo"] }
     ],
-    
     patrimonioNetto: [{ primary: ["totale patrimonio netto"] }, { primary: ["a) patrimonio netto"] }],
     debitiTotali: [{ primary: ["totale debiti"] }, { primary: ["d) debiti"] }],
     debitiBreveTermine: [{ primary: ["esigibili entro l'esercizio successivo"] }, { primary: ["debiti esigibili entro l'esercizio successivo"] }, { primary: ["entro l'esercizio successivo"] }],
@@ -243,13 +239,19 @@ const metricsConfigs = {
         { primary: ["totale imposte"] }
     ],
     
-    // 🆕 NUOVA CONFIGURAZIONE PER PASSIVITÀ CORRENTI (FIX CURRENT RATIO)
+    // 🔧 FIX: Configurazione più completa per Passività Correnti
     passivitaCorrente: [
         { primary: ["c) passività correnti"] },
         { primary: ["passività correnti"], exclusion: ["immobilizzazioni"] },
         { primary: ["totale passività correnti"] },
         { primary: ["passivo corrente"] },
-        { primary: ["debiti esigibili entro l'esercizio successivo"] } // fallback con debiti a breve
+        { primary: ["passività a breve termine"] },
+        { primary: ["passivo a breve termine"] },
+        // 🆕 AGGIUNTI fallback come richiesto:
+        { primary: ["debiti esigibili entro l'esercizio successivo"] },
+        { primary: ["totale debiti entro l'esercizio successivo"] },
+        { primary: ["debiti correnti"] },
+        { primary: ["debiti a breve"] }
     ]
 };
 
@@ -272,7 +274,6 @@ const findAtecoValue = (sheetData, sessionId) => {
                     console.log(`[${sessionId}] 🎯 Trovato termine "${searchTerm}" alla riga ${i}, colonna ${j}`);
                     for (let k = j + 1; k < row.length; k++) {
                         const valueCell = String(row[k] || '').trim();
-                        // FIX: Aggiunta ricerca per codici a 6 cifre
                         if (valueCell && (valueCell.includes('(') || valueCell.match(/\d{2}\.\d{2}/) || valueCell.match(/^\d{6}$/))) {
                             console.log(`[${sessionId}] ✅ Valore ATECO trovato: "${valueCell}"`);
                             return valueCell;
@@ -281,7 +282,6 @@ const findAtecoValue = (sheetData, sessionId) => {
                     for (let nextRow = i + 1; nextRow < Math.min(i + 3, sheetData.length); nextRow++) {
                         for (let col = 0; col < sheetData[nextRow].length; col++) {
                             const nextValue = String(sheetData[nextRow][col] || '').trim();
-                            // FIX: Aggiunta ricerca per codici a 6 cifre anche nelle righe successive
                             if (nextValue && (nextValue.includes('(') || nextValue.match(/\d{2}\.\d{2}/) || nextValue.match(/^\d{6}$/))) {
                                 console.log(`[${sessionId}] ✅ Valore ATECO trovato riga successiva: "${nextValue}"`);
                                 return nextValue;
@@ -303,7 +303,6 @@ const extractAtecoCode = (atecoString, sessionId) => {
     }
     console.log(`[${sessionId}] 🔍 Estrazione ATECO da: "${atecoString}"`);
     const patterns = [
-        // FIX: Aggiunto pattern per 6 cifre in PRIMA POSIZIONE
         { regex: /(\d{6})/, name: "Formato 6 cifre (139500)" },
         { regex: /\((\d{2})\.(\d{2})\.(\d{2})\)/, name: "Standard con parentesi (41.00.00)" },
         { regex: /(\d{2})\.(\d{2})\.(\d{2})/, name: "Standard senza parentesi 41.00.00" },
@@ -316,16 +315,13 @@ const extractAtecoCode = (atecoString, sessionId) => {
         const match = atecoString.match(regex);
         if (match) {
             let division, fullCode;
-            
-            // FIX: Gestione speciale per codici a 6 cifre
             if (name.includes("6 cifre")) {
-                division = match[1].substring(0, 2); // Prime 2 cifre come divisione
-                fullCode = match[1]; // Tutto il codice a 6 cifre
+                division = match[1].substring(0, 2);
+                fullCode = match[1];
             } else {
                 division = match[1];
                 fullCode = match[0].replace(/[()]/g, '').replace(/[-\s]/g, '.');
             }
-            
             console.log(`[${sessionId}] ✅ MATCH con pattern "${name}"`);
             console.log(`[${sessionId}] 📋 Divisione: ${division}, Codice completo: ${fullCode}`);
             return {
@@ -364,7 +360,6 @@ const getSectorInfo = async (divisionCode, sessionId) => {
 const calculateFinancialIndicators = (metrics, sessionId) => {
     console.log(`[${sessionId}] 🧮 Inizio calcolo indicatori derivati...`);
     
-    // Estrai valori dell'anno corrente, con fallback a 0
     const currentYearMetrics = {
         utile: metrics.utilePerdita.currentYear || 0,
         imposte: metrics.imposte.currentYear || 0,
@@ -372,7 +367,6 @@ const calculateFinancialIndicators = (metrics, sessionId) => {
         ammortamenti: metrics.ammortamenti.currentYear || 0,
     };
     
-    // Estrai valori dell'anno precedente, con fallback a 0
     const previousYearMetrics = {
         utile: metrics.utilePerdita.previousYear || 0,
         imposte: metrics.imposte.previousYear || 0,
@@ -380,40 +374,20 @@ const calculateFinancialIndicators = (metrics, sessionId) => {
         ammortamenti: metrics.ammortamenti.previousYear || 0,
     };
     
-    // CALCOLO EBITDA E EBIT
     const ebitda_current = currentYearMetrics.utile + currentYearMetrics.imposte + currentYearMetrics.oneriFinanziari + currentYearMetrics.ammortamenti;
     const ebit_current = ebitda_current - currentYearMetrics.ammortamenti;
-    
     const ebitda_previous = previousYearMetrics.utile + previousYearMetrics.imposte + previousYearMetrics.oneriFinanziari + previousYearMetrics.ammortamenti;
     const ebit_previous = ebitda_previous - previousYearMetrics.ammortamenti;
     
-    // Log per debugging
-    console.log(`[${sessionId}] 📊 CALCOLI ANNO CORRENTE:`);
-    console.log(`   Utile: ${currentYearMetrics.utile}`);
-    console.log(`   Imposte: ${currentYearMetrics.imposte}`);
-    console.log(`   Oneri Finanziari: ${currentYearMetrics.oneriFinanziari}`);
-    console.log(`   Ammortamenti: ${currentYearMetrics.ammortamenti}`);
-    console.log(`   ➡️ EBITDA: ${ebitda_current}`);
-    console.log(`   ➡️ EBIT: ${ebit_current}`);
+    metrics.ebitda = { currentYear: ebitda_current, previousYear: ebitda_previous };
+    metrics.ebit = { currentYear: ebit_current, previousYear: ebit_previous };
     
-    // Aggiungi gli indicatori calcolati all'oggetto metrics
-    metrics.ebitda = { 
-        currentYear: ebitda_current, 
-        previousYear: ebitda_previous 
-    };
-    
-    metrics.ebit = { 
-        currentYear: ebit_current, 
-        previousYear: ebit_previous 
-    };
-    
-    // Calcola altri ratio utili
     const fatturato_current = metrics.fatturato.currentYear || 0;
     const patrimonioNetto_current = metrics.patrimonioNetto.currentYear || 0;
     
     metrics.margineEbitda = {
         currentYear: fatturato_current !== 0 ? ((ebitda_current / fatturato_current) * 100) : null,
-        previousYear: null // Estendere se necessario
+        previousYear: null
     };
     
     metrics.roe = {
@@ -421,15 +395,25 @@ const calculateFinancialIndicators = (metrics, sessionId) => {
         previousYear: null
     };
     
-    // 🆕 FIX CURRENT RATIO - CALCOLO CORRETTO
+    // 🆕 FALLBACK INTELLIGENTE PER CURRENT RATIO
+    let passivitaCorrente_current = metrics.passivitaCorrente.currentYear;
+    let passivitaCorrente_previous = metrics.passivitaCorrente.previousYear;
+
+    if (passivitaCorrente_current === null && metrics.debitiBreveTermine.currentYear !== null) {
+        passivitaCorrente_current = metrics.debitiBreveTermine.currentYear;
+        console.log(`[${sessionId}] ⚠️ FALLBACK ANNO CORRENTE: Passività Correnti non trovate. Usando Debiti Breve Termine (${passivitaCorrente_current}) per il calcolo del Current Ratio.`);
+    }
+    if (passivitaCorrente_previous === null && metrics.debitiBreveTermine.previousYear !== null) {
+        passivitaCorrente_previous = metrics.debitiBreveTermine.previousYear;
+        console.log(`[${sessionId}] ⚠️ FALLBACK ANNO PRECEDENTE: Passività Correnti non trovate. Usando Debiti Breve Termine (${passivitaCorrente_previous}) per il calcolo del Current Ratio.`);
+    }
+    
     const attivoCorrente_current = metrics.attivoCircolante.currentYear || 0;
-    const passivitaCorrente_current = metrics.passivitaCorrente.currentYear || 0;
     const attivoCorrente_previous = metrics.attivoCircolante.previousYear || 0;
-    const passivitaCorrente_previous = metrics.passivitaCorrente.previousYear || 0;
     
     metrics.currentRatio = {
-        currentYear: passivitaCorrente_current !== 0 ? (attivoCorrente_current / passivitaCorrente_current) : null,
-        previousYear: passivitaCorrente_previous !== 0 ? (attivoCorrente_previous / passivitaCorrente_previous) : null
+        currentYear: passivitaCorrente_current !== 0 && passivitaCorrente_current !== null ? (attivoCorrente_current / passivitaCorrente_current) : null,
+        previousYear: passivitaCorrente_previous !== 0 && passivitaCorrente_previous !== null ? (attivoCorrente_previous / passivitaCorrente_previous) : null
     };
     
     console.log(`[${sessionId}] 📊 CURRENT RATIO CALCOLATO:`);
@@ -440,6 +424,7 @@ const calculateFinancialIndicators = (metrics, sessionId) => {
     return metrics;
 };
 
+
 // === HANDLER PRINCIPALE ===
 
 export default async function handler(req, res) {
@@ -447,7 +432,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] 🚀 Avvio analisi XBRL (versione 13.3 - Auto-Detection + Fix Current Ratio).`);
+  console.log(`[${sessionId}] 🚀 Avvio analisi XBRL (versione 13.4 - Fix Avanzato Passività Correnti).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -459,24 +444,20 @@ export default async function handler(req, res) {
     const fileBuffer = Buffer.from(await fileBlob.arrayBuffer());
     const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
 
-    // Auto-detection del tipo XBRL
     console.log(`[${sessionId}] 🔍 Avvio auto-detection tipo XBRL...`);
     const xbrlType = detectXbrlType(workbook, sessionId);
     const sheets = getCorrectSheets(workbook, xbrlType, sessionId);
     validateSheets(sheets, sessionId);
 
-    // Conversione fogli a dati
     const companyInfoData = xlsx.utils.sheet_to_json(sheets.companyInfo, { header: 1 });
     const balanceSheetData = xlsx.utils.sheet_to_json(sheets.balanceSheet, { header: 1 });
     const incomeStatementData = xlsx.utils.sheet_to_json(sheets.incomeStatement, { header: 1 });
 
     console.log(`[${sessionId}] 📊 Dati estratti: Info=${companyInfoData.length} righe, SP=${balanceSheetData.length} righe, CE=${incomeStatementData.length} righe`);
 
-    // Trova colonne anni
     const yearColsBS = findYearColumns(balanceSheetData);
     const yearColsIS = findYearColumns(incomeStatementData);
 
-    // Estrai info azienda
     const companyName = findSimpleValue(companyInfoData, [
         'denominazione', 
         'ragione sociale',
@@ -490,7 +471,6 @@ export default async function handler(req, res) {
     const regionMatch = sedeRow ? sedeRow.match(/\(([^)]+)\)/) : null;
     const region = regionMatch ? regionMatch[1] : null;
 
-    // Gestione ATECO
     console.log(`[${sessionId}] 🚀 Avvio ricerca ATECO migliorata`);
     let rawAtecoString = findAtecoValue(companyInfoData, sessionId);
     if (!rawAtecoString) {
@@ -521,7 +501,6 @@ export default async function handler(req, res) {
         ateco_pattern_used: atecoData?.pattern_used
     };
 
-    // Estrai metriche base (CON PASSIVITÀ CORRENTI)
     let metrics = {
         fatturato: findValueInSheetImproved(incomeStatementData, metricsConfigs.fatturato, yearColsIS, 'Fatturato'),
         utilePerdita: findValueInSheetImproved(incomeStatementData, metricsConfigs.utilePerdita, yearColsIS, 'Utile/Perdita CE') || findValueInSheetImproved(balanceSheetData, metricsConfigs.utilePerdita, yearColsBS, 'Utile/Perdita SP'),
@@ -538,12 +517,9 @@ export default async function handler(req, res) {
         rimanenze: findValueInSheetImproved(balanceSheetData, metricsConfigs.rimanenze, yearColsBS, 'Rimanenze'),
         disponibilitaLiquide: findValueInSheetImproved(balanceSheetData, metricsConfigs.disponibilitaLiquide, yearColsBS, 'Disponibilità Liquide'),
         imposte: findValueInSheetImproved(incomeStatementData, metricsConfigs.imposte, yearColsIS, 'Imposte'),
-        
-        // 🆕 ESTRAZIONE PASSIVITÀ CORRENTI PER CURRENT RATIO
         passivitaCorrente: findValueInSheetImproved(balanceSheetData, metricsConfigs.passivitaCorrente, yearColsBS, 'Passività Correnti')
     };
 
-    // Calcola indicatori derivati (EBITDA, EBIT, Current Ratio, etc.)
     metrics = calculateFinancialIndicators(metrics, sessionId);
 
     console.log(`[${sessionId}] 📈 DEBUG METRICHE FINALI:`);
@@ -562,10 +538,8 @@ export default async function handler(req, res) {
 - NOTE SETTORIALI: ${sectorInfo.notes}
 - ISTRUZIONE AI: Analizza i dati considerando i KPI e le dinamiche specifiche del settore ${sectorInfo.macro_sector}.` : '';
 
-    // Prompt migliorato con valori pre-calcolati e Current Ratio
     const dataForPrompt = `
 Dati Aziendali per ${companyName}:
-
 Contesto Aziendale:
 - Regione: ${context.region || 'N/D'}
 - Codice ATECO: ${context.ateco_code || 'N/D'}
@@ -611,7 +585,6 @@ ISTRUZIONE IMPORTANTE:
 
     const analysisResult = JSON.parse(response.choices[0].message.content);
     
-    // Salvataggio risultati con metriche calcolate
     const resultToSave = {
       session_id: sessionId,
       company_name: companyName,
@@ -672,3 +645,4 @@ ISTRUZIONE IMPORTANTE:
     return res.status(500).json({ error: error.message });
   }
 }
+
