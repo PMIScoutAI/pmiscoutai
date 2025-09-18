@@ -1,4 +1,4 @@
-ù// /pages/api/analyze-xbrl.js
+// /pages/api/analyze-xbrl.js
 // VERSIONE 13.8 (Ricerca Strict Debiti a Breve)
 // - Mantiene tutte le feature precedenti.
 // - Sostituisce la ricerca generica dei debiti a breve con una funzione specializzata
