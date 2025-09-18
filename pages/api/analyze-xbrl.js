@@ -741,9 +741,3 @@ ISTRUZIONE IMPORTANTE:
     return res.status(500).json({ error: error.message });
   }
 }
-"
-
-Ho selezionato questo codice nel Canvas e vorrei che tu lo correggessi
-
-"
-
