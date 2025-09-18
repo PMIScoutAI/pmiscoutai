@@ -305,6 +305,39 @@ const findDebitiBreveTermineStrict = (sheetData, yearCols, sessionId) => {
   return { currentYear: null, previousYear: null, _source: 'none' };
 };
 
+const findDebitiLungoTermineStrict = (sheetData, yearCols, sessionId) => {
+  console.log(`[${sessionId}] 🔎 Ricerca STRICT Debiti a lungo termine in sezione PASSIVO...`);
+  let inPassive = false;
+
+  for (const row of sheetData) {
+    let desc = '';
+    for (let i = 0; i < Math.min(row.length, 6); i++) desc += String(row[i] || '').toLowerCase().trim() + ' ';
+    desc = desc.replace(/\s+/g, ' ').trim();
+
+    if (!inPassive && (desc.includes('d) debiti') || desc.includes('passivo') || desc.includes('passività'))) {
+      inPassive = true;
+      continue;
+    }
+    if (!inPassive) continue;
+
+    const hasDebiti = desc.includes('debiti');
+    const hasOltre = desc.includes("esigibili oltre l'esercizio successivo") || desc.includes("oltre l'esercizio successivo");
+    const hasCredito = desc.includes('crediti') || desc.includes('attivo');
+
+    if (hasDebiti && hasOltre && !hasCredito) {
+      const cur = parseValue(row[yearCols.currentYearCol]);
+      const prev = parseValue(row[yearCols.previousYearCol]);
+      console.log(`[${sessionId}] ✅ Debiti lungo termine (STRICT) trovati: N=${cur} N-1=${prev} | "${desc.substring(0,60)}..."`);
+      return { currentYear: cur, previousYear: prev, _source: 'strict' };
+    }
+
+    if (desc.startsWith('e) ') || desc.includes('totale passivo')) break;
+  }
+
+  console.log(`[${sessionId}] ⚠️ Nessun match STRICT per Debiti a lungo termine`);
+  return { currentYear: null, previousYear: null, _source: 'none' };
+};
+
 // === CONFIGURAZIONI METRICHE ===
 const metricsConfigs = {
     fatturato: [{ primary: ["a) ricavi delle vendite e delle prestazioni"] }, { primary: ["ricavi delle vendite"] }, { primary: ["valore della produzione"], exclusion: ["costi", "differenza"] }],
