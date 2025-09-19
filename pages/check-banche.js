@@ -293,34 +293,67 @@ export default function CheckBanche() {
     }
   };
 
-  const fetchAnalyses = async (email) => {
-    try {
-      console.log("Chiamando API banking-analysis per:", email);
-      const response = await fetch(`/api/banking-analysis?email=${encodeURIComponent(email)}`);
-      if (!response.ok) throw new Error('Risposta non valida dal server');
+const fetchAnalyses = async (email) => {
+  try {
+    console.log("Chiamando API banking-analysis per:", email);
+    const response = await fetch(`/api/banking-analysis?email=${encodeURIComponent(email)}`);
+    if (!response.ok) throw new Error('Risposta non valida dal server');
+    const data = await response.json();
+    console.log("Dati ricevuti da banking-analysis:", data);
+    
+    // MODIFICA: Estrai i dati dal JSONB raw_parsed_data
+    const enrichedAnalyses = (data.analyses || []).map(analysis => {
+      console.log("🔍 Analisi raw_parsed_data:", analysis.raw_parsed_data);
+      
+      return {
+        ...analysis,
+        // Estrai current_ratio dal JSONB
+        current_ratio: analysis.raw_parsed_data?.calculated_indicators?.currentRatio?.currentYear || 
+                       analysis.raw_parsed_data?.metrics?.currentRatio?.currentYear || 
+                       null,
+        // Estrai ateco_code
+        ateco_code: analysis.raw_parsed_data?.context?.ateco_code || 
+                    analysis.ateco_code || 
+                    null,
+        // Estrai fatturato
+        fatturato: analysis.raw_parsed_data?.metrics?.fatturato?.currentYear || 
+                   analysis.fatturato || 
+                   null,
+        // Estrai debiti_totali
+        debiti_totali: analysis.raw_parsed_data?.metrics?.debitiTotali?.currentYear || 
+                       analysis.debiti_totali || 
+                       null,
+        // Estrai patrimonio_netto
+        patrimonio_netto: analysis.raw_parsed_data?.metrics?.patrimonioNetto?.currentYear || 
+                          analysis.patrimonio_netto || 
+                          null,
+      };
+    });
+    
+    console.log("📊 Analisi arricchite con current_ratio:", enrichedAnalyses);
+    setAnalyses(enrichedAnalyses);
+    
+    if (enrichedAnalyses && enrichedAnalyses.length > 0) {
+      console.log("✅ Current Ratio della prima analisi:", enrichedAnalyses[0].current_ratio);
+      await handleAnalysisSelect(enrichedAnalyses[0], email);
+    }
+  } catch (error) {
+    console.error('Errore caricamento analisi:', error);
+  }
+};
+
+const fetchRecentAnalyses = async (email) => {
+  try {
+    const response = await fetch(`/api/user-analyses?email=${encodeURIComponent(email)}`);
+    if(response.ok) {
       const data = await response.json();
-      console.log("Dati ricevuti da banking-analysis:", data);
-      setAnalyses(data.analyses || []);
-      if (data.analyses && data.analyses.length > 0) {
-        await handleAnalysisSelect(data.analyses[0], email);
-      }
-    } catch (error) {
-      console.error('Errore caricamento analisi:', error);
+      console.log("Analisi recenti caricate:", data.analyses?.length || 0);
+      setRecentAnalyses(data.analyses || []);
     }
-  };
-  
-  const fetchRecentAnalyses = async (email) => {
-    try {
-      const response = await fetch(`/api/user-analyses?email=${encodeURIComponent(email)}`);
-      if(response.ok) {
-        const data = await response.json();
-        console.log("Analisi recenti caricate:", data.analyses?.length || 0);
-        setRecentAnalyses(data.analyses || []);
-      }
-    } catch (error) {
-      console.error("Errore caricamento analisi recenti:", error);
-    }
-  };
+  } catch (error) {
+    console.error("Errore caricamento analisi recenti:", error);
+  }
+};
 
   const handleAnalysisSelect = async (analysis, email) => {
     setSelectedAnalysis(analysis);
