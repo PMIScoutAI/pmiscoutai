@@ -1,8 +1,8 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 12.2 (Aggiunta Score Section)
-// - NUOVO: Creato il componente <ScoreSection /> per visualizzare i 3 score principali.
-// - NUOVO: Creato il componente <ScoreGauge /> per mostrare un indicatore circolare dinamico.
-// - AGGIORNAMENTO: Inserita la nuova sezione degli score in cima al report, subito dopo l'header, per massima visibilità.
+// VERSIONE 13.0 (UI Report Avanzata)
+// - NUOVO: Componente `RecommendationsSection` potenziato per visualizzare raccomandazioni strutturate con priorità (Urgente, Importante, etc.) e stili dinamici.
+// - NUOVO: Aggiunto il componente `HowToReadReport` con una guida rapida e benchmark per commercialisti e imprenditori.
+// - AGGIORNAMENTO: Migliorata la retrocompatibilità per gestire sia il vecchio che il nuovo formato delle raccomandazioni.
 
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -148,7 +148,6 @@ function AnalisiReportPage({ user }) {
             summary={analysisData.summary}
         />
         
-        {/* --- NUOVA SEZIONE SCORE --- */}
         <ScoreSection
           healthScore={analysisData.raw_ai_response?.health_score}
           healthRating={analysisData.raw_ai_response?.health_score_rating}
@@ -160,8 +159,14 @@ function AnalisiReportPage({ user }) {
         
         <KeyMetricsSection keyMetrics={analysisData.key_metrics} />
         <SwotAnalysisSection swotData={analysisData.detailed_swot} />
-        <RecommendationsSection recommendations={analysisData.recommendations} />
-        
+
+        <RecommendationsSection 
+          recommendations={analysisData.recommendations}
+          rawAiResponse={analysisData.raw_ai_response}
+        />
+
+        <HowToReadReport />
+
         <div className="flex justify-center items-center space-x-4 mt-10 no-print">
             <button onClick={() => window.print()} className="flex items-center justify-center px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg shadow-sm hover:bg-slate-50 transition-colors">
                 <Icon path={icons.print} className="w-5 h-5 mr-2" />
@@ -198,7 +203,6 @@ const ReportHeader = ({ companyName, summary }) => (
   </div>
 );
 
-// --- NUOVO COMPONENTE PER GLI SCORE ---
 const ScoreGauge = ({ score, colorClass }) => {
   const radius = 50;
   const circumference = 2 * Math.PI * radius;
@@ -465,23 +469,174 @@ const SwotAnalysisSection = ({ swotData }) => {
   );
 };
 
-const RecommendationsSection = ({ recommendations }) => {
-  if (!recommendations || recommendations.length === 0) return null;
-  const recs = typeof recommendations === 'string' ? JSON.parse(recommendations) : recommendations;
-  
+const RecommendationsSection = ({ recommendations, rawAiResponse }) => {
+  // Priorità alle strategic_recommendations se disponibili
+  const strategicRecs = rawAiResponse?.strategic_recommendations || [];
+  const displayRecs = strategicRecs.length > 0 ? strategicRecs : recommendations;
+
+  if (!displayRecs || displayRecs.length === 0) return null;
+
+  // Funzione per ottenere gli stili in base alla priorità
+  const getPriorityStyle = (priority) => {
+    const styles = {
+      'URGENTE': {
+        border: 'border-red-500 bg-red-50',
+        badge: 'bg-red-100 text-red-800',
+        dot: 'bg-red-500'
+      },
+      'IMPORTANTE': {
+        border: 'border-yellow-500 bg-yellow-50',
+        badge: 'bg-yellow-100 text-yellow-800',
+        dot: 'bg-yellow-500'
+      },
+      'OPPORTUNITÀ': {
+        border: 'border-green-500 bg-green-50',
+        badge: 'bg-green-100 text-green-800',
+        dot: 'bg-green-500'
+      },
+      'MONITORAGGIO': {
+        border: 'border-blue-500 bg-blue-50',
+        badge: 'bg-blue-100 text-blue-800',
+        dot: 'bg-blue-500'
+      }
+    };
+    return styles[priority] || styles['IMPORTANTE'];
+  };
+
   return (
     <section>
       <h2 className="text-xl font-bold text-slate-800 mb-4">Raccomandazioni Strategiche</h2>
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <ul className="space-y-3">
-          {recs.map((rec, index) => (
-            <li key={index} className="flex items-start">
-              <svg className="w-5 h-5 text-blue-600 mr-3 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"></path></svg>
-              <p className="text-slate-700">{rec}</p>
-            </li>
-          ))}
-        </ul>
+      
+      <div className="space-y-4">
+        {displayRecs.map((rec, index) => {
+          // Gestione retrocompatibilità: se è una stringa (vecchio formato)
+          if (typeof rec === 'string') {
+            return (
+              <div key={index} className="flex items-start bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <svg className="w-5 h-5 text-blue-600 mr-3 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"></path>
+                </svg>
+                <p className="text-slate-700">{rec}</p>
+              </div>
+            );
+          }
+          
+          // Nuovo formato strutturato
+          const style = getPriorityStyle(rec.priority);
+          
+          return (
+            <div key={index} className={`p-5 rounded-xl shadow-sm border-l-4 ${style.border}`}>
+              <div className="flex items-start justify-between mb-3">
+                <h3 className="font-bold text-slate-800 flex items-center">
+                  <span className={`inline-block w-2 h-2 rounded-full mr-2 ${style.dot}`}></span>
+                  {rec.title}
+                  {rec.indicator && (
+                    <span className="ml-2 text-sm font-normal text-slate-600">({rec.indicator})</span>
+                  )}
+                </h3>
+                <span className={`text-xs font-semibold px-2 py-1 rounded whitespace-nowrap ${style.badge}`}>
+                  {rec.priority}
+                </span>
+              </div>
+              
+              <div className="space-y-2 text-sm">
+                <p className="text-slate-600">
+                  <strong className="text-slate-700">Situazione:</strong> {rec.situation}
+                </p>
+                {rec.action && (
+                  <p className="text-slate-600">
+                    <strong className="text-slate-700">Azione:</strong> {rec.action}
+                  </p>
+                )}
+                {rec.target && (
+                  <p className="text-slate-600">
+                    <strong className="text-blue-700">Obiettivo:</strong> {rec.target}
+                  </p>
+                )}
+                {rec.impact && (
+                  <p className="text-slate-600">
+                    <strong className="text-green-700">Impatto:</strong> {rec.impact}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
 };
+
+const HowToReadReport = () => (
+  <section className="mt-8 p-6 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200">
+    <div className="flex items-center mb-4">
+      <svg className="w-5 h-5 text-slate-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+      </svg>
+      <h2 className="text-lg font-bold text-slate-800">Come Leggere Questo Report</h2>
+    </div>
+    
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+      {/* COLONNA SINISTRA */}
+      <div className="space-y-4">
+        <div className="bg-white p-3 rounded-lg">
+          <h3 className="font-semibold text-slate-700 mb-2 flex items-center">
+            <span className="text-lg mr-2">🎯</span>
+            Score di Valutazione
+          </h3>
+          <ul className="space-y-1 text-slate-600 text-xs leading-relaxed">
+            <li><strong>Health Score:</strong> 80+ Eccellente | 60-79 Buono | 40-59 Sufficiente | &lt;40 Critico</li>
+            <li><strong>Z-Score:</strong> &gt;2.99 Sicuro | 1.8-2.99 Attenzione | &lt;1.8 Rischio</li>
+            <li><strong>Bancabilità:</strong> &gt;80 Alta | 60-80 Media | &lt;60 Bassa</li>
+          </ul>
+        </div>
+        
+        <div className="bg-white p-3 rounded-lg">
+          <h3 className="font-semibold text-slate-700 mb-2 flex items-center">
+            <span className="text-lg mr-2">📊</span>
+            Indicatori Principali
+          </h3>
+          <ul className="space-y-1 text-slate-600 text-xs leading-relaxed">
+            <li><strong>ROE:</strong> &gt;15% ottimo | <strong>ROI:</strong> &gt;10% efficiente</li>
+            <li><strong>EBITDA Margin:</strong> &gt;20% alta marginalità</li>
+            <li><strong>Current Ratio:</strong> &gt;1.5 liquidità solida</li>
+            <li><strong>Debt/Equity:</strong> &lt;1.5 equilibrato</li>
+          </ul>
+        </div>
+      </div>
+      
+      {/* COLONNA DESTRA */}
+      <div className="space-y-4">
+        <div className="bg-white p-3 rounded-lg">
+          <h3 className="font-semibold text-slate-700 mb-2 flex items-center">
+            <span className="text-lg mr-2">💼</span>
+            Per il Commercialista
+          </h3>
+          <ul className="space-y-1 text-slate-600 text-xs leading-relaxed">
+            <li>• Concentrati sulle raccomandazioni <strong className="text-red-600">URGENTI</strong></li>
+            <li>• Usa gli score per prioritizzare gli interventi</li>
+            <li>• Condividi le sezioni critiche con il cliente</li>
+          </ul>
+        </div>
+        
+        <div className="bg-white p-3 rounded-lg">
+          <h3 className="font-semibold text-slate-700 mb-2 flex items-center">
+            <span className="text-lg mr-2">🏢</span>
+            Per l'Imprenditore
+          </h3>
+          <ul className="space-y-1 text-slate-600 text-xs leading-relaxed">
+            <li>• Focus sui trend (↗️↘️) e sezioni colorate</li>
+            <li>• Le azioni <strong>URGENTI</strong> vanno fatte subito</li>
+            <li>• Confronta i tuoi numeri con i benchmark</li>
+          </ul>
+        </div>
+        
+        <div className="bg-slate-100 p-3 rounded-lg border border-slate-300">
+          <p className="text-xs text-slate-600 italic">
+            <strong>Disclaimer:</strong> Questo report è uno strumento di analisi. Per decisioni strategiche importanti, consulta sempre il tuo commercialista di fiducia.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+);
