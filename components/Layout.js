@@ -29,7 +29,7 @@ const navLinks = [
     { href: '/', text: 'Dashboard', icon: icons.dashboard },
     { href: '/profilo', text: 'Profilo', icon: icons.profile },
     { href: 'https://pmiscoutai.vercel.app/check-ai-xbrl', text: 'Check-AI XBRL', icon: icons.xbrl },
-    { href: '/calcolatori', text: 'Calcolatori', icon: icons.calculator }
+    { href: '/check-banche', text: 'Check Bancabilità', icon: icons.calculator }  // ← MODIFICATO
 ];
 
 export default function Layout({ children, pageTitle }) {
