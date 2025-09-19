@@ -336,11 +336,11 @@ export default function SimulazioneFondoGaranziaPage() {
         <Layout pageTitle="Simulazione Fondo Garanzia">
             <div className="py-6 mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center mb-6">
-                    <Link href="/calcolatori">
-                        <a className="text-slate-500 hover:text-slate-800 transition-colors mr-3 p-2 rounded-full hover:bg-slate-200" title="Torna ai calcolatori">
-                            &larr;
-                        </a>
-                    </Link>
+<Link href="/check-banche">
+    <a className="text-slate-500 hover:text-slate-800 transition-colors mr-3 p-2 rounded-full hover:bg-slate-200" title="Check Bancabilità">
+        &larr;
+    </a>
+</Link>
                 </div>
                 <FondoGaranziaCalculator />
             </div>
