@@ -1,8 +1,8 @@
 // /pages/api/analyze-xbrl.js
-// VERSIONE 13.8 (Ricerca Strict Debiti a Breve)
-// - Mantiene tutte le feature precedenti.
-// - Sostituisce la ricerca generica dei debiti a breve con una funzione specializzata
-//   'findDebitiBreveTermineStrict' che opera solo nella sezione PASSIVO per massima accuratezza.
+// VERSIONE 13.9 (Raccomandazioni Strategiche AI)
+// - Aggiunta generazione raccomandazioni strategiche tramite AI (GPT-4-Turbo).
+// - Implementata funzione di fallback per generare raccomandazioni statiche in caso di errore AI.
+// - Aggiornato il salvataggio dei risultati per includere le nuove raccomandazioni.
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
@@ -515,6 +515,87 @@ const calculateFinancialIndicators = (metrics, sessionId) => {
 };
 
 
+// === FUNZIONE FALLBACK PER RACCOMANDAZIONI ===
+const generateFallbackRecommendations = (metrics, sessionId) => {
+  console.log(`[${sessionId}] 🔄 Generazione raccomandazioni fallback...`);
+  const recommendations = [];
+    
+    // 1. Check Current Ratio
+  const currentRatio = metrics.currentRatio.currentYear;
+  if (currentRatio !== null && currentRatio < 1.5) {
+    recommendations.push({
+      priority: currentRatio < 1.2 ? "URGENTE" : "IMPORTANTE",
+      title: "Ottimizzazione Liquidità",
+      indicator: `Current Ratio ${currentRatio.toFixed(2)}`,
+      situation: `Current Ratio a ${currentRatio.toFixed(2)}, ${currentRatio < 1.2 ? 'critico' : 'sotto soglia'} (obiettivo >1.50)`,
+      action: "Rinegoziare dilazioni fornitori (+15gg) e accelerare incassi con solleciti automatici",
+      target: "Current Ratio >1.50 in 60 giorni",
+      impact: "Riduzione rischio insolvenza"
+    });
+  }
+    
+    // 2. Check EBITDA Margin
+  const ebitdaMargin = metrics.margineEbitda.currentYear;
+  if (ebitdaMargin !== null && ebitdaMargin < 20) {
+    recommendations.push({
+      priority: "IMPORTANTE",
+      title: "Recupero Marginalità",
+      indicator: `EBITDA ${ebitdaMargin.toFixed(1)}%`,
+      situation: `Margine EBITDA al ${ebitdaMargin.toFixed(1)}%, sotto benchmark 20%`,
+      action: "Analisi ABC costi + revisione pricing prodotti low-margin",
+      target: "Incremento +2-3 punti in 6 mesi",
+      impact: "Miglioramento redditività operativa"
+    });
+  }
+    
+    // 3. Check Debt/Equity
+  const debtEquity = metrics.debtEquity.currentYear;
+  if (debtEquity !== null && debtEquity > 1.5) {
+    recommendations.push({
+      priority: debtEquity > 2.0 ? "IMPORTANTE" : "MONITORAGGIO",
+      title: "Gestione Indebitamento",
+      indicator: `D/E ${debtEquity.toFixed(2)}`,
+      situation: `Debt/Equity a ${debtEquity.toFixed(2)}, sopra soglia ottimale (1.50)`,
+      action: "Piano riduzione debito: 30% utili vs distribuzione dividendi",
+      target: "D/E sotto 1.50 in 12 mesi",
+      impact: "Miglioramento solidità patrimoniale"
+    });
+  }
+    
+    // 4. Check ROE alto (opportunità)
+  const roe = metrics.roe.currentYear;
+  const revenueGrowth = metrics.fatturato.currentYear && metrics.fatturato.previousYear
+    ? ((metrics.fatturato.currentYear - metrics.fatturato.previousYear) / Math.abs(metrics.fatturato.previousYear) * 100)
+    : 0;
+    
+  if (roe !== null && roe > 30 && revenueGrowth > 15) {
+    recommendations.push({
+      priority: "OPPORTUNITÀ",
+      title: "Capitalizzazione Crescita",
+      indicator: `ROE ${roe.toFixed(1)}%`,
+      situation: `ROE eccezionale ${roe.toFixed(1)}% con crescita ${revenueGrowth.toFixed(1)}%`,
+      action: "Valutare reinvestimento utili per espansione o M&A",
+      target: "Piano crescita con ROE >25%",
+      impact: "Accelerazione sviluppo business"
+    });
+  }
+    
+    // Se nessuna raccomandazione critica, aggiungi monitoraggio generico
+  if (recommendations.length === 0) {
+    recommendations.push({
+      priority: "MONITORAGGIO",
+      title: "Mantenimento Stabilità",
+      indicator: "Indicatori nella norma",
+      situation: "Situazione finanziaria complessivamente equilibrata",
+      action: "Monitoraggio trimestrale KPI e benchmark settoriali",
+      target: "Mantenere tutti gli indicatori sopra benchmark",
+      impact: "Continuità operativa"
+    });
+  }
+    
+  return recommendations.slice(0, 4); // Max 4 raccomandazioni
+};
+
 // === HANDLER PRINCIPALE ===
 
 export default async function handler(req, res) {
@@ -522,7 +603,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
   
-  console.log(`[${sessionId}] 🚀 Avvio analisi XBRL (versione 13.8 - Ricerca Strict Debiti a Breve).`);
+  console.log(`[${sessionId}] 🚀 Avvio analisi XBRL (versione 13.9 - Raccomandazioni Strategiche AI).`);
 
   try {
     const { data: session, error: sessionError } = await supabase.from('checkup_sessions').select('*, companies(*)').eq('id', sessionId).single();
@@ -626,6 +707,70 @@ export default async function handler(req, res) {
     console.log(`   - Current Ratio: ${metrics.currentRatio.currentYear?.toFixed(2) || 'N/D'}`);
     console.log(`   - Patrimonio Netto: ${metrics.patrimonioNetto.currentYear}`);
 
+    // === GENERAZIONE RACCOMANDAZIONI STRATEGICHE ===
+    console.log(`[${sessionId}] 🎯 Avvio generazione raccomandazioni strategiche...`);
+    let strategicRecommendations = [];
+    try {
+      // Recupera il prompt dedicato per le raccomandazioni
+      const { data: recPromptData, error: recPromptError } = await supabase
+        .from('ai_prompts')
+        .select('prompt_template')
+        .eq('name', 'STRATEGIC_RECOMMENDATIONS_V1')
+        .single();
+      if (recPromptError || !recPromptData) {
+        console.warn(`[${sessionId}] ⚠️ Prompt STRATEGIC_RECOMMENDATIONS_V1 non trovato, uso fallback`);
+      }
+      // Prepara i dati per le raccomandazioni
+      const metricsForRecommendations = {
+        current_ratio: metrics.currentRatio.currentYear?.toFixed(2) || 'N/D',
+        ebitda_margin: metrics.margineEbitda.currentYear?.toFixed(2) || 'N/D',
+        debt_equity: metrics.debtEquity.currentYear?.toFixed(2) || 'N/D',
+        roe: metrics.roe.currentYear?.toFixed(2) || 'N/D',
+        roi: metrics.roi.currentYear?.toFixed(2) || 'N/D',
+        revenue_growth: metrics.fatturato.currentYear && metrics.fatturato.previousYear 
+           ? ((metrics.fatturato.currentYear - metrics.fatturato.previousYear) / Math.abs(metrics.fatturato.previousYear) * 100).toFixed(1)
+          : 'N/D'
+      };
+      const recommendationsDataPrompt = `### METRICHE CALCOLATE ###
+    Current Ratio: ${metricsForRecommendations.current_ratio}
+    EBITDA Margin: ${metricsForRecommendations.ebitda_margin}%
+    Debt/Equity: ${metricsForRecommendations.debt_equity}
+    ROE: ${metricsForRecommendations.roe}%
+    ROI: ${metricsForRecommendations.roi}%
+    Crescita Fatturato: ${metricsForRecommendations.revenue_growth}%
+    ### DATI COMPLETI BILANCIO ###
+    Fatturato Anno Corrente: ${metrics.fatturato.currentYear || 'N/D'}
+    Fatturato Anno Precedente: ${metrics.fatturato.previousYear || 'N/D'}
+    Utile Anno Corrente: ${metrics.utilePerdita.currentYear || 'N/D'}
+    EBITDA: ${metrics.ebitda.currentYear || 'N/D'}
+    Attivo Circolante: ${metrics.attivoCircolante.currentYear || 'N/D'}
+    Passività Correnti: ${metrics.passivitaCorrente.currentYear || 'N/D'}
+    Debiti Totali: ${metrics.debitiTotali.currentYear || 'N/D'}
+    Patrimonio Netto: ${metrics.patrimonioNetto.currentYear || 'N/D'}`;
+      const finalRecPrompt = `${recPromptData?.prompt_template || 'Genera raccomandazioni strategiche basate sui dati.'}${recommendationsDataPrompt}`;
+      console.log(`[${sessionId}] 🤖 Invio richiesta raccomandazioni a OpenAI...`);
+        const recResponse = await openai.chat.completions.create({
+        model: 'gpt-4-turbo',
+        messages: [{ role: 'user', content: finalRecPrompt }],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+        max_tokens: 2000
+      });
+      const recResult = JSON.parse(recResponse.choices[0].message.content);
+      strategicRecommendations = recResult.strategic_recommendations || [];
+        
+      console.log(`[${sessionId}] ✅ Raccomandazioni generate: ${strategicRecommendations.length}`);
+      strategicRecommendations.forEach((rec, idx) => {
+        console.log(`   ${idx + 1}. [${rec.priority}] ${rec.title}`);
+      });
+    } catch (error) {
+      console.error(`[${sessionId}] ❌ Errore generazione raccomandazioni:`, error.message);
+        
+      // FALLBACK: Genera raccomandazioni statiche basate sui dati
+      strategicRecommendations = generateFallbackRecommendations(metrics, sessionId);
+      console.log(`[${sessionId}] 🔄 Usando ${strategicRecommendations.length} raccomandazioni fallback`);
+    }
+
     const sectorialContext = sectorInfo ? `
 - SETTORE SPECIFICO: ${sectorInfo.macro_sector.toUpperCase()}${sectorInfo.macro_sector_2 ? ` (${sectorInfo.macro_sector_2})` : ''}
 - NOTE SETTORIALI: ${sectorInfo.notes}
@@ -689,7 +834,10 @@ ISTRUZIONE IMPORTANTE:
       recommendations: analysisResult.recommendations,
       charts_data: analysisResult.charts_data,
       summary: analysisResult.summary,
-      raw_ai_response: analysisResult,
+      raw_ai_response: {
+        ...analysisResult,
+        strategic_recommendations: strategicRecommendations  // ← AGGIUNTA QUESTA RIGA
+      },
       detailed_swot: analysisResult.detailed_swot,
       risk_analysis: analysisResult.risk_analysis,
       pro_features_teaser: analysisResult.pro_features_teaser,
