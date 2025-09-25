@@ -1,8 +1,7 @@
 // /pages/analisi/[sessionId].js
-// VERSIONE 13.0 (UI Report Avanzata)
-// - NUOVO: Componente `RecommendationsSection` potenziato per visualizzare raccomandazioni strutturate con priorità (Urgente, Importante, etc.) e stili dinamici.
-// - NUOVO: Aggiunto il componente `HowToReadReport` con una guida rapida e benchmark per commercialisti e imprenditori.
-// - AGGIORNAMENTO: Migliorata la retrocompatibilità per gestire sia il vecchio che il nuovo formato delle raccomandazioni.
+// VERSIONE 14.0 (Barra di Progresso Frontend)
+// - NUOVO: Sostituito il componente 'LoadingState' con il nuovo 'AnalysisProgress' per una UX di caricamento migliorata.
+// - AGGIORNAMENTO: La logica di polling ora attiva la visualizzazione della barra di progresso simulata invece di uno spinner generico.
 
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -11,6 +10,7 @@ import Script from 'next/script';
 import { useRouter } from 'next/router';
 import { supabase } from '../../utils/supabaseClient';
 import { ProtectedPage } from '../../utils/ProtectedPage';
+import AnalysisProgress from '../../components/AnalysisProgress'; // Import del nuovo componente
 
 // --- Componente Wrapper (invariato) ---
 export default function AnalisiReportPageWrapper() {
@@ -132,7 +132,7 @@ function AnalisiReportPage({ user }) {
   }, [sessionId, user]);  
 
   const renderContent = () => {
-    if (isLoading) return <LoadingState text="Elaborazione del report in corso..." />;
+    if (isLoading) return <AnalysisProgress />;
     if (error) return <ErrorState message={error} />;
     if (!analysisData) return <ErrorState message="Nessun dato di analisi trovato." />;
     
@@ -186,10 +186,7 @@ function AnalisiReportPage({ user }) {
   );
 }
 
-// --- Componenti di Stato (invariati) ---
-const LoadingState = ({ text }) => (
-    <div className="flex items-center justify-center h-full p-10"><div className="text-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div><h2 className="text-2xl font-bold text-slate-800">{text}</h2></div></div>
-);
+// --- Componenti di Stato (Aggiornati) ---
 const ErrorState = ({ message }) => (
     <div className="flex items-center justify-center h-full p-10"><div className="text-center p-10 bg-white rounded-xl shadow-lg border-l-4 border-red-500"><Icon path={icons.alertTriangle} className="w-12 h-12 text-red-500 mx-auto mb-4" /><h2 className="text-2xl font-bold text-red-700">Si è verificato un errore</h2><p className="text-slate-600 mt-2">{message}</p></div></div>
 );
@@ -640,3 +637,4 @@ const HowToReadReport = () => (
     </div>
   </section>
 );
+
