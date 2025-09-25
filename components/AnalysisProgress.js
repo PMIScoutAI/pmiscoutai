@@ -25,13 +25,12 @@ const AnalysisProgress = () => {
           setProgress(step.progress);
           setMessage(step.message);
           currentStepIndex++;
-          scheduleNextStep(); // Pianifica il prossimo step
+          scheduleNextStep();
         }, step.duration);
         timeouts.push(timeout);
       }
     };
-
-    // Avvio iniziale con un piccolo ritardo per la percezione dell'utente
+    
     const initialTimeout = setTimeout(() => {
         setProgress(5);
         setMessage('Inizializzazione del motore di analisi...');
@@ -39,33 +38,60 @@ const AnalysisProgress = () => {
     }, 500);
     timeouts.push(initialTimeout);
 
-
-    // Funzione di cleanup: se il componente viene "smontato" (perché i dati sono pronti),
-    // tutti i timer futuri vengono cancellati per evitare aggiornamenti di stato non necessari.
     return () => {
       timeouts.forEach(clearTimeout);
     };
-  }, []); // L'array vuoto assicura che l'effetto parta solo una volta
+  }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center h-full p-10 bg-white rounded-xl shadow-lg border border-slate-200">
-      <h2 className="text-2xl font-bold text-slate-800 mb-4">Analisi in Corso</h2>
-      <p className="text-slate-600 mb-8 text-center max-w-md h-10">{message}</p>
-      
-      <div className="w-full max-w-lg bg-slate-200 rounded-full h-4 overflow-hidden">
-        <div 
-          className="bg-blue-600 h-4 rounded-full transition-all duration-500 ease-linear" 
-          style={{ width: `${progress}%` }}
-        ></div>
+    <>
+      {/* Aggiungiamo stili e animazioni direttamente qui per mantenere il componente autonomo */}
+      <style>{`
+        @keyframes pulse-glow {
+          0%, 100% {
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.6);
+            transform: scale(1);
+          }
+          50% {
+            box-shadow: 0 0 25px rgba(139, 92, 246, 1);
+            transform: scale(1.05);
+          }
+        }
+        .animate-pulse-glow {
+          animation: pulse-glow 2.5s infinite ease-in-out;
+        }
+      `}</style>
+      <div className="flex flex-col items-center justify-center h-full p-10 bg-white rounded-xl shadow-lg border border-slate-200">
+        <h2 className="text-2xl font-bold text-slate-800 mb-4">Analisi in Corso</h2>
+        <p className="text-slate-600 mb-8 text-center max-w-md h-10">{message}</p>
+        
+        <div className="w-full max-w-lg relative pt-4 pb-8">
+            {/* Contenitore della barra di progresso */}
+            <div className="relative w-full bg-slate-200 rounded-full h-2.5">
+                <div 
+                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-500 ease-linear" 
+                    style={{ width: `${progress}%` }}
+                ></div>
+            </div>
+
+            {/* Orbita animata */}
+            <div 
+                className="absolute top-1/2 -mt-1 h-5 w-5 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 border-2 border-white animate-pulse-glow"
+                style={{ 
+                    left: `calc(${progress}% - 10px)`, // Centra l'orbita sulla fine della barra
+                    transition: 'left 0.5s ease-out' 
+                }}
+            ></div>
+        </div>
+        
+        <div className="text-xl font-bold text-blue-600">{progress}%</div>
+        
+        <div className="mt-12 text-sm text-slate-500 text-center">
+            <p>Questo processo può richiedere fino a 60 secondi.</p>
+            <p>La pagina si aggiornerà automaticamente al completamento.</p>
+        </div>
       </div>
-      
-      <div className="mt-4 text-xl font-bold text-blue-600">{progress}%</div>
-      
-      <div className="mt-12 text-sm text-slate-500 text-center">
-        <p>Questo processo può richiedere fino a 60 secondi.</p>
-        <p>La pagina si aggiornerà automaticamente al completamento.</p>
-      </div>
-    </div>
+    </>
   );
 };
 
