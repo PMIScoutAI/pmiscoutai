@@ -57,8 +57,20 @@ const AnalysisProgress = () => {
             transform: scale(1.05);
           }
         }
-        .animate-pulse-glow {
-          animation: pulse-glow 2.5s infinite ease-in-out;
+        
+        /* NUOVA ANIMAZIONE per il movimento */
+        @keyframes patrol {
+          0%, 100% {
+            transform: translateX(-8px);
+          }
+          50% {
+            transform: translateX(8px);
+          }
+        }
+
+        .animate-patrol-pulse {
+          /* Combiniamo le due animazioni */
+          animation: pulse-glow 2.5s infinite ease-in-out, patrol 3s infinite ease-in-out;
         }
       `}</style>
       <div className="flex flex-col items-center justify-center h-full p-10 bg-white rounded-xl shadow-lg border border-slate-200">
@@ -76,12 +88,16 @@ const AnalysisProgress = () => {
 
             {/* Orbita animata */}
             <div 
-                className="absolute top-1/2 -mt-1 h-5 w-5 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 border-2 border-white animate-pulse-glow"
+                className="absolute top-1/2 -mt-1" // Rimuoviamo la traslazione verticale da qui
                 style={{ 
                     left: `calc(${progress}% - 10px)`, // Centra l'orbita sulla fine della barra
                     transition: 'left 0.5s ease-out' 
                 }}
-            ></div>
+            >
+                <div 
+                    className="h-5 w-5 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 border-2 border-white animate-patrol-pulse"
+                ></div>
+            </div>
         </div>
         
         <div className="text-xl font-bold text-blue-600">{progress}%</div>
