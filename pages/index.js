@@ -330,7 +330,14 @@ export default function Home() {
       linkText: 'Simula Garanzia',
       href: 'https://pmiscoutai.vercel.app/calcolatori/simulazione-fondo-garanzia',
       icon: icons.bando
-    }
+    } ,
+  {
+    title: 'Valuta-PMI',
+    description: 'Valutazione aziendale professionale con metodo Transaction Multiples e scenari futuri.',
+    linkText: 'Valuta Azienda',
+    href: '/valuta-pmi',
+    icon: icons.garanzia  // Usa l'icona "scudo" già definita
+  }
   ];
 
   return (
