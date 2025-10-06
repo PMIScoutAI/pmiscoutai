@@ -333,7 +333,7 @@ export default function Home() {
     } ,
   {
     title: 'Valuta-PMI',
-    description: 'Valutazione aziendale professionale con metodo Transaction Multiples e scenari futuri.',
+    description: 'Valuta la PMI in pochi minuti: utile per vendita, passaggi generazionali e dialogo con banche.',
     linkText: 'Valuta Azienda',
     href: '/valuta-pmi',
     icon: icons.garanzia  // Usa l'icona "scudo" già definita
