@@ -1,6 +1,6 @@
 // /pages/api/valuta-pmi/upload.js
 // Valuta-PMI: Upload XBRL, Parse dati finanziari e crea sessione valutazione
-// VERSIONE 1.0 - Con estrazione automatica Debiti Finanziari
+// VERSIONE 1.1 - FIX: Corretto lo stato della sessione per rispettare i vincoli del DB.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -108,32 +108,13 @@ const findSimpleValue = (sheetData, searchTexts) => {
 };
 
 // ============================================
-// NUOVA FUNZIONE: Estrazione Debiti Finanziari
+// FUNZIONE: Estrazione Debiti Finanziari
 // ============================================
-
-/**
- * Estrae i debiti finanziari specifici (verso banche/finanziarie)
- * distinguendoli dai debiti commerciali (fornitori)
- */
 const findDebitiFinanziari = (sheetData, yearCols, sessionId) => {
   console.log(`[${sessionId}] 🔍 Ricerca Debiti Finanziari (Banche)...`);
   
   let debitiFinanziariML = { currentYear: null, previousYear: null };
   let debitiFinanziariBreve = { currentYear: null, previousYear: null };
-  
-  // Pattern per debiti verso banche/istituti finanziari
-  const searchPatterns = {
-    ml_termine: [
-      "debiti verso banche",
-      "debiti verso altri finanziatori",
-      "finanziamenti"
-    ],
-    breve_termine: [
-      "debiti verso banche",
-      "scoperti di conto corrente",
-      "quota corrente finanziamenti"
-    ]
-  };
   
   let inPassiveSection = false;
   
@@ -144,7 +125,6 @@ const findDebitiFinanziari = (sheetData, yearCols, sessionId) => {
     }
     desc = desc.replace(/\s+/g, ' ').trim();
     
-    // Identifica sezione PASSIVO
     if (!inPassiveSection && (desc.includes('d) debiti') || desc.includes('passivo'))) {
       inPassiveSection = true;
       console.log(`[${sessionId}] ✅ Sezione PASSIVO trovata`);
@@ -153,7 +133,6 @@ const findDebitiFinanziari = (sheetData, yearCols, sessionId) => {
     
     if (!inPassiveSection) continue;
     
-    // Cerca debiti verso banche
     const hasBanche = desc.includes('debiti verso banche') || desc.includes('verso banche');
     const hasFinanziatori = desc.includes('altri finanziatori') || desc.includes('finanziamenti');
     
@@ -161,12 +140,8 @@ const findDebitiFinanziari = (sheetData, yearCols, sessionId) => {
       const cur = parseValue(row[yearCols.currentYearCol]);
       const prev = parseValue(row[yearCols.previousYearCol]);
       
-      // Determina se è M/L termine o breve
-      const isMLTermine = desc.includes("esigibili oltre l'esercizio") || 
-                          desc.includes("oltre l'esercizio successivo");
-      const isBreve = desc.includes("esigibili entro l'esercizio") || 
-                      desc.includes("entro l'esercizio successivo") ||
-                      desc.includes("quota corrente");
+      const isMLTermine = desc.includes("esigibili oltre l'esercizio") || desc.includes("oltre l'esercizio successivo");
+      const isBreve = desc.includes("esigibili entro l'esercizio") || desc.includes("entro l'esercizio successivo") || desc.includes("quota corrente");
       
       if (isMLTermine) {
         debitiFinanziariML.currentYear = cur;
@@ -177,12 +152,10 @@ const findDebitiFinanziari = (sheetData, yearCols, sessionId) => {
         debitiFinanziariBreve.previousYear = prev;
         console.log(`[${sessionId}] 💰 Debiti Finanziari Breve: N=${cur}, N-1=${prev}`);
       } else {
-        // Se non specificato, assume totale (da splittare poi)
         console.log(`[${sessionId}] ⚠️ Debiti verso banche trovati ma senza scadenza chiara`);
       }
     }
     
-    // Esci dalla sezione debiti quando trovi altro
     if (desc.startsWith('e) ') || desc.includes('totale passivo')) break;
   }
   
@@ -256,7 +229,6 @@ export default async function handler(req, res) {
 
     const outsetaUser = await outsetaResponse.json();
 
-    // Trova o crea utente
     const { data: userRow, error: userErr } = await supabase
       .from('users')
       .upsert(
@@ -317,7 +289,7 @@ export default async function handler(req, res) {
         session_id: sessionId,
         user_id: userId,
         company_name: companyName,
-        status: 'processing'
+        status: 'processing' // Stato iniziale valido
       });
 
     if (sessionError) throw sessionError;
@@ -327,8 +299,7 @@ export default async function handler(req, res) {
     // 5️⃣ PARSE XBRL
     const fileBuffer = fs.readFileSync(fileInput.filepath);
     const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
-
-    // Auto-detection fogli (riusa logica da analyze-xbrl.js)
+    
     const availableSheets = Object.keys(workbook.Sheets);
     console.log(`[${sessionId}] Fogli disponibili:`, availableSheets.slice(0, 10));
 
@@ -346,17 +317,13 @@ export default async function handler(req, res) {
 
     console.log(`[${sessionId}] Dati estratti: SP=${balanceSheetData.length} righe, CE=${incomeStatementData.length} righe`);
 
-    // 6️⃣ TROVA COLONNE ANNI
+    // 6️⃣ ESTRAZIONE DATI
     const yearColsBS = findYearColumns(balanceSheetData);
     const yearColsIS = findYearColumns(incomeStatementData);
 
-    // 7️⃣ ESTRAI CODICE ATECO
     let atecoCode = null;
     if (companyInfoData.length > 0) {
-      const atecoRaw = findSimpleValue(companyInfoData, [
-        'settore di attività prevalente',
-        'codice ateco'
-      ]);
+      const atecoRaw = findSimpleValue(companyInfoData, ['settore di attività prevalente', 'codice ateco']);
       if (atecoRaw) {
         const match = atecoRaw.match(/(\d{2})/);
         atecoCode = match ? match[1] : null;
@@ -364,7 +331,6 @@ export default async function handler(req, res) {
     }
     console.log(`[${sessionId}] ATECO estratto: ${atecoCode || 'N/D'}`);
 
-    // 8️⃣ ESTRAI METRICHE FINANZIARIE
     const metrics = {
       fatturato: findValueInSheet(incomeStatementData, metricsConfigs.fatturato, yearColsIS, 'Fatturato'),
       patrimonioNetto: findValueInSheet(balanceSheetData, metricsConfigs.patrimonioNetto, yearColsBS, 'PN'),
@@ -375,69 +341,47 @@ export default async function handler(req, res) {
       oneriFinanziari: findValueInSheet(incomeStatementData, metricsConfigs.oneriFinanziari, yearColsIS, 'Oneri Finanziari'),
       ammortamenti: findValueInSheet(incomeStatementData, metricsConfigs.ammortamenti, yearColsIS, 'Ammortamenti')
     };
-
-    // 9️⃣ ✨ ESTRAZIONE DEBITI FINANZIARI (NUOVA FUNZIONALITÀ)
+    
     const debitiFinanziari = findDebitiFinanziari(balanceSheetData, yearColsBS, sessionId);
     metrics.debitiFinanziariML = debitiFinanziari.ml_termine;
     metrics.debitiFinanziariBreve = debitiFinanziari.breve_termine;
 
-    // 🔟 CALCOLA EBITDA (per tutte le colonne disponibili)
     const currentYear = {
       utile: metrics.utilePerdita.currentYear || 0,
       imposte: metrics.imposte.currentYear || 0,
       oneriFinanziari: metrics.oneriFinanziari.currentYear || 0,
       ammortamenti: metrics.ammortamenti.currentYear || 0
     };
-
     const previousYear = {
       utile: metrics.utilePerdita.previousYear || 0,
       imposte: metrics.imposte.previousYear || 0,
       oneriFinanziari: metrics.oneriFinanziari.previousYear || 0,
       ammortamenti: metrics.ammortamenti.previousYear || 0
     };
-
     metrics.ebitda = {
       currentYear: currentYear.utile + currentYear.imposte + currentYear.oneriFinanziari + currentYear.ammortamenti,
       previousYear: previousYear.utile + previousYear.imposte + previousYear.oneriFinanziari + previousYear.ammortamenti
     };
-
     console.log(`[${sessionId}] EBITDA calcolato: N=${metrics.ebitda.currentYear}, N-1=${metrics.ebitda.previousYear}`);
 
-    // 1️⃣1️⃣ CALCOLA PFN (se disponibile)
     let pfn = { currentYear: null, previousYear: null };
-    
-    if (metrics.debitiFinanziariML.currentYear !== null && 
-        metrics.debitiFinanziariBreve.currentYear !== null && 
-        metrics.disponibilitaLiquide.currentYear !== null) {
-      
-      pfn.currentYear = 
-        metrics.debitiFinanziariML.currentYear + 
-        metrics.debitiFinanziariBreve.currentYear - 
-        metrics.disponibilitaLiquide.currentYear;
-      
+    if (metrics.debitiFinanziariML.currentYear !== null && metrics.debitiFinanziariBreve.currentYear !== null && metrics.disponibilitaLiquide.currentYear !== null) {
+      pfn.currentYear = metrics.debitiFinanziariML.currentYear + metrics.debitiFinanziariBreve.currentYear - metrics.disponibilitaLiquide.currentYear;
       console.log(`[${sessionId}] 💰 PFN calcolata automaticamente: ${pfn.currentYear}`);
     }
 
-    // 1️⃣2️⃣ SALVA DATI NELLA SESSIONE
+    // 7️⃣ SALVA DATI E AGGIORNA STATO
     const historicalData = {
       '2024': {
         ricavi: metrics.fatturato.currentYear,
         ebitda: metrics.ebitda.currentYear,
         patrimonio_netto: metrics.patrimonioNetto.currentYear,
-        debiti_totali: metrics.debitiTotali.currentYear,
-        disponibilita_liquide: metrics.disponibilitaLiquide.currentYear,
-        debiti_finanziari_ml: metrics.debitiFinanziariML.currentYear,
-        debiti_finanziari_breve: metrics.debitiFinanziariBreve.currentYear,
         pfn: pfn.currentYear
       },
       '2023': {
         ricavi: metrics.fatturato.previousYear,
         ebitda: metrics.ebitda.previousYear,
         patrimonio_netto: metrics.patrimonioNetto.previousYear,
-        debiti_totali: metrics.debitiTotali.previousYear,
-        disponibilita_liquide: metrics.disponibilitaLiquide.previousYear,
-        debiti_finanziari_ml: metrics.debitiFinanziariML.previousYear,
-        debiti_finanziari_breve: metrics.debitiFinanziariBreve.previousYear,
         pfn: pfn.previousYear
       }
     };
@@ -448,7 +392,9 @@ export default async function handler(req, res) {
         years_analyzed: [2023, 2024],
         historical_data: historicalData,
         sector_ateco: atecoCode,
-        status: 'data_entry' // Pronto per Step 2
+        // ✅ FIX: Lo stato rimane 'processing' in attesa del prossimo step
+        // Questo risolve il "check constraint" violation.
+        status: 'processing' 
       })
       .eq('session_id', sessionId);
 
@@ -456,7 +402,7 @@ export default async function handler(req, res) {
 
     console.log(`[${sessionId}] ✅ Upload completato con successo`);
 
-    // 1️⃣3️⃣ RISPOSTA
+    // 8️⃣ RISPOSTA
     return res.status(200).json({
       success: true,
       sessionId: sessionId,
@@ -475,7 +421,8 @@ export default async function handler(req, res) {
           }
         }
       },
-      next_step: 'data_entry'
+      // Cambiamo il next_step per riflettere il nuovo flusso
+      next_step: 'data_review' 
     });
 
   } catch (error) {
