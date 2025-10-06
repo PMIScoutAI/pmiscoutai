@@ -1,6 +1,6 @@
 // /pages/api/valuta-pmi/upload.js
 // Valuta-PMI: Upload XBRL, Parse dati finanziari e crea sessione valutazione
-// VERSIONE 2.1 - Salva i componenti della PFN e rimuove 'management_quality' di default.
+// VERSIONE 2.2 - Corretto errore di sintassi nel messaggio di errore
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -275,7 +275,8 @@ export default async function handler(req, res) {
     if (sessionId) {
       await supabase.from('valuations').update({ status: 'failed', error_message: error.message }).eq('session_id', sessionId);
     }
-    return res.status(500).json({ error: error.message || 'Errore durante l'upload del file' });
+    // ✅ FIX: Changed single quotes to double quotes to avoid syntax error
+    return res.status(500).json({ error: error.message || "Errore durante l'upload del file" });
   }
 }
 
