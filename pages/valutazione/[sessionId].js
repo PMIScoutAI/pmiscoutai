@@ -1,5 +1,6 @@
 // /pages/valutazione/[sessionId].js
 // Pagina dinamica per il wizard di valutazione aziendale.
+// VERSIONE 2.1 - Calcolo PFN automatico e UI parametri qualitativi migliorata.
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -45,7 +46,18 @@ function ValutazioneWizard() {
           if (response.data.success) {
             const data = response.data.data;
             setSessionData(data);
-            setFinancialData(data.historical_data || {});
+            
+            // Inizializza e calcola PFN
+            const initialFinancialData = data.historical_data || {};
+            for (const year in initialFinancialData) {
+                const yearData = initialFinancialData[year];
+                const ml = parseFloat(yearData.debiti_finanziari_ml) || 0;
+                const breve = parseFloat(yearData.debiti_finanziari_breve) || 0;
+                const liquidita = parseFloat(yearData.disponibilita_liquide) || 0;
+                yearData.pfn = ml + breve - liquidita;
+            }
+
+            setFinancialData(initialFinancialData);
             setValuationInputs(data.valuation_inputs || {});
             
             if(data.status === 'completed' && data.results_data) {
@@ -69,13 +81,21 @@ function ValutazioneWizard() {
 
   const handleFinancialChange = (e, year, field) => {
     const { value } = e.target;
-    setFinancialData(prev => ({
-      ...prev,
-      [year]: {
-        ...prev[year],
-        [field]: value === '' ? null : parseFloat(value)
-      }
-    }));
+    
+    // Crea una copia profonda per evitare problemi di mutabilità
+    const newFinancialData = JSON.parse(JSON.stringify(financialData));
+    
+    // Aggiorna il valore modificato dall'utente
+    newFinancialData[year][field] = value === '' ? null : parseFloat(value);
+    
+    // Ricalcola PFN per l'anno modificato
+    const yearData = newFinancialData[year];
+    const ml = yearData.debiti_finanziari_ml || 0;
+    const breve = yearData.debiti_finanziari_breve || 0;
+    const liquidita = yearData.disponibilita_liquide || 0;
+    yearData.pfn = ml + breve - liquidita;
+
+    setFinancialData(newFinancialData);
   };
 
   const handleInputChange = (e) => {
@@ -137,6 +157,31 @@ function ValutazioneWizard() {
   );
 }
 
+// Componenti Helper per i Form
+const InputField = ({ label, value, onChange, readOnly = false }) => (
+  <div>
+    <label className="block text-sm font-medium text-slate-700 capitalize">{label} (€)</label>
+    <input
+      type="number"
+      value={value ?? ''}
+      onChange={onChange}
+      readOnly={readOnly}
+      className={`mt-1 w-full px-3 py-2 border rounded-md ${readOnly ? 'bg-slate-100 text-slate-500' : 'border-slate-300'}`}
+    />
+  </div>
+);
+
+const SelectField = ({ id, label, value, onChange, children, helpText }) => (
+    <div>
+        <label htmlFor={id} className="block text-sm font-medium text-slate-700">{label}</label>
+        <select id={id} value={value} onChange={onChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+            {children}
+        </select>
+        {helpText && <p className="mt-1 text-xs text-slate-500">{helpText}</p>}
+    </div>
+);
+
+
 // Componente per lo Step di Data Entry
 const DataEntryStep = ({ sessionData, financialData, valuationInputs, handleFinancialChange, handleInputChange, onCalculate, isCalculating }) => {
   const years = sessionData.years_analyzed.sort((a, b) => b - a);
@@ -155,17 +200,13 @@ const DataEntryStep = ({ sessionData, financialData, valuationInputs, handleFina
           {years.map(year => (
             <div key={year} className="space-y-4 p-4 border rounded-lg">
               <h3 className="font-bold text-lg">{year}</h3>
-              {['ricavi', 'ebitda', 'patrimonio_netto', 'pfn'].map(field => (
-                <div key={field}>
-                  <label className="block text-sm font-medium text-slate-700 capitalize">{field.replace('_', ' ')} (€)</label>
-                  <input
-                    type="number"
-                    value={financialData[year]?.[field] ?? ''}
-                    onChange={(e) => handleFinancialChange(e, year, field)}
-                    className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md"
-                  />
-                </div>
-              ))}
+              <InputField label="Ricavi" value={financialData[year]?.ricavi} onChange={(e) => handleFinancialChange(e, year, 'ricavi')} />
+              <InputField label="EBITDA" value={financialData[year]?.ebitda} onChange={(e) => handleFinancialChange(e, year, 'ebitda')} />
+              <InputField label="Patrimonio Netto" value={financialData[year]?.patrimonio_netto} onChange={(e) => handleFinancialChange(e, year, 'patrimonio_netto')} />
+              <InputField label="Debiti Finanziari M/L" value={financialData[year]?.debiti_finanziari_ml} onChange={(e) => handleFinancialChange(e, year, 'debiti_finanziari_ml')} />
+              <InputField label="Debiti Finanziari a Breve" value={financialData[year]?.debiti_finanziari_breve} onChange={(e) => handleFinancialChange(e, year, 'debiti_finanziari_breve')} />
+              <InputField label="Disponibilità Liquide" value={financialData[year]?.disponibilita_liquide} onChange={(e) => handleFinancialChange(e, year, 'disponibilita_liquide')} />
+              <InputField label="PFN (Calcolata)" value={financialData[year]?.pfn} readOnly={true} />
             </div>
           ))}
         </div>
@@ -175,40 +216,22 @@ const DataEntryStep = ({ sessionData, financialData, valuationInputs, handleFina
       <div className="bg-white p-6 rounded-lg shadow-md">
           <h2 className="text-xl font-semibold mb-4">Parametri Qualitativi</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                  <label htmlFor="market_position" className="block text-sm font-medium text-slate-700">Posizione di Mercato</label>
-                  <select id="market_position" value={valuationInputs.market_position || 'follower'} onChange={handleInputChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                      <option value="leader">Leader</option>
-                      <option value="challenger">Challenger</option>
-                      <option value="follower">Follower</option>
-                      <option value="niche">Nicchia</option>
-                  </select>
-              </div>
-              <div>
-                  <label htmlFor="management_quality" className="block text-sm font-medium text-slate-700">Qualità del Management</label>
-                  <select id="management_quality" value={valuationInputs.management_quality || 'average'} onChange={handleInputChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                      <option value="excellent">Eccellente</option>
-                      <option value="good">Buona</option>
-                      <option value="average">Media</option>
-                      <option value="poor">Scarsa</option>
-                  </select>
-              </div>
-              <div>
-                  <label htmlFor="customer_concentration" className="block text-sm font-medium text-slate-700">Concentrazione Clienti</label>
-                  <select id="customer_concentration" value={valuationInputs.customer_concentration || 'medium'} onChange={handleInputChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                      <option value="low">Bassa (&lt;10% dal cliente principale)</option>
-                      <option value="medium">Media (10-30%)</option>
-                      <option value="high">Alta (&gt;30%)</option>
-                  </select>
-              </div>
-              <div>
-                  <label htmlFor="technology_risk" className="block text-sm font-medium text-slate-700">Rischio Tecnologico/Obsolescenza</label>
-                  <select id="technology_risk" value={valuationInputs.technology_risk || 'medium'} onChange={handleInputChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                      <option value="low">Basso</option>
-                      <option value="medium">Medio</option>
-                      <option value="high">Alto</option>
-                  </select>
-              </div>
+              <SelectField id="market_position" label="Posizione di Mercato" value={valuationInputs.market_position || 'follower'} onChange={handleInputChange} helpText="La posizione competitiva dell'azienda nel suo settore di riferimento.">
+                  <option value="leader">Leader</option>
+                  <option value="challenger">Challenger</option>
+                  <option value="follower">Follower</option>
+                  <option value="niche">Nicchia</option>
+              </SelectField>
+              <SelectField id="customer_concentration" label="Concentrazione Clienti" value={valuationInputs.customer_concentration || 'medium'} onChange={handleInputChange} helpText="Indica la dipendenza dal fatturato generato dai clienti principali.">
+                  <option value="low">Bassa (&lt;10% dal cliente principale)</option>
+                  <option value="medium">Media (10-30%)</option>
+                  <option value="high">Alta (&gt;30%)</option>
+              </SelectField>
+              <SelectField id="technology_risk" label="Rischio Tecnologico/Obsolescenza" value={valuationInputs.technology_risk || 'medium'} onChange={handleInputChange} helpText="Valuta l'impatto dell'innovazione tecnologica sul modello di business.">
+                  <option value="low">Basso</option>
+                  <option value="medium">Medio</option>
+                  <option value="high">Alto</option>
+              </SelectField>
           </div>
       </div>
 
@@ -266,3 +289,4 @@ const ResultsStep = ({ results, onRecalculate }) => {
         </div>
     );
 };
+
