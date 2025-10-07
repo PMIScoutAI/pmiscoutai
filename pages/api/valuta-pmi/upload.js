@@ -288,7 +288,7 @@ const extractCompanyName = (companyInfoData) => {
 };
 
 // ============================================
-// FIX 3: PARSING DEBITI CIVILISTICO
+// FIX 3: PARSING DEBITI CIVILISTICO - VERSIONE MIGLIORATA
 // ============================================
 
 const findDebitiFinanziariCivilistico = (sheetData, yearCols, sessionId) => {
@@ -296,23 +296,26 @@ const findDebitiFinanziariCivilistico = (sheetData, yearCols, sessionId) => {
   
   let debitiML = { currentYear: 0, previousYear: 0 };
   let debitiBreve = { currentYear: 0, previousYear: 0 };
+  let debitiTotali = { currentYear: 0, previousYear: 0 }; // Per fallback
   
   let inSezioneDebiti = false;
-  let foundAny = false;
+  let foundMLorBreve = false;
+  let foundGeneric = false;
   
   for (const row of sheetData) {
-    // Concatena le prime colonne per formare la descrizione
     let desc = '';
     for (let i = 0; i < Math.min(row.length, 6); i++) {
       desc += String(row[i] || '').toLowerCase().trim() + ' ';
     }
     desc = desc.replace(/\s+/g, ' ').trim();
     
-    // STEP 1: Trova la sezione D) DEBITI
+    // STEP 1: Trova la sezione D) DEBITI (più flessibile)
     if (!inSezioneDebiti && (
         desc.includes('d) debiti') || 
         desc.includes('d. debiti') ||
-        desc.includes('d)debiti')
+        desc.includes('d)debiti') ||
+        desc.includes('d debiti') ||
+        (desc.startsWith('d)') && desc.includes('debiti'))
     )) {
       inSezioneDebiti = true;
       console.log(`[${sessionId}]   ✅ Sezione D) DEBITI trovata`);
@@ -321,9 +324,10 @@ const findDebitiFinanziariCivilistico = (sheetData, yearCols, sessionId) => {
     
     // STEP 2: Esci se arrivi alla sezione successiva
     if (inSezioneDebiti && (
-        desc.match(/^e\)/) || 
+        desc.match(/^e[\)\.]/) || 
         desc.includes('totale passivo') ||
-        desc.includes('totale passività')
+        desc.includes('totale passività') ||
+        desc.includes('totale delle passività')
     )) {
       console.log(`[${sessionId}]   ℹ️ Fine sezione debiti`);
       break;
@@ -331,65 +335,99 @@ const findDebitiFinanziariCivilistico = (sheetData, yearCols, sessionId) => {
     
     if (!inSezioneDebiti) continue;
     
-    // STEP 3: Identifica le voci rilevanti
-    const isD1 = desc.includes('d.1') || desc.includes('d1') || desc.includes('obbligazioni');
-    const isD3 = desc.includes('d.3') || desc.includes('d3') || desc.includes('debiti verso banche');
-    const isD4 = desc.includes('d.4') || desc.includes('d4') || desc.includes('altri finanziatori');
+    // STEP 3: Identifica le voci rilevanti (più flessibile)
+    const isD1 = desc.match(/d[\.\)]?\s?1/) || desc.includes('obbligazioni');
+    const isD3 = desc.match(/d[\.\)]?\s?3/) || desc.includes('debiti verso banche') || desc.includes('verso banche');
+    const isD4 = desc.match(/d[\.\)]?\s?4/) || desc.includes('altri finanziatori') || desc.includes('verso altri finanziatori');
     
     // STEP 4: Identifica se è oltre o entro l'esercizio
     const isOltre = desc.includes('oltre') || 
                     desc.includes("oltre l'esercizio") ||
                     desc.includes('oltre esercizio') ||
                     desc.includes('medio/lungo termine') ||
+                    desc.includes('medio lungo termine') ||
                     desc.includes('m/l termine') ||
-                    desc.includes('consolidati');
+                    desc.includes('m.l. termine') ||
+                    desc.includes('ml termine') ||
+                    desc.includes('consolidati') ||
+                    desc.includes('non correnti');
                     
     const isEntro = desc.includes('entro') || 
                     desc.includes("entro l'esercizio") ||
                     desc.includes('entro esercizio') ||
                     desc.includes('breve termine') ||
                     desc.includes('quota corrente') ||
-                    desc.includes('correnti');
+                    desc.includes('correnti') ||
+                    desc.includes('a breve');
     
-    // STEP 5: Se è una voce di debito finanziario, estrai i valori
-    if ((isD1 || isD3 || isD4) && (isOltre || isEntro)) {
+    // STEP 5: Estrai i valori
+    if (isD1 || isD3 || isD4) {
       const cur = parseValue(row[yearCols.currentYearCol]);
       const prev = parseValue(row[yearCols.previousYearCol]);
       
       if (cur !== null || prev !== null) {
-        foundAny = true;
         
-        if (isOltre) {
-          debitiML.currentYear += (cur || 0);
-          debitiML.previousYear += (prev || 0);
-          console.log(`[${sessionId}]   └─ M/L: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
-        } else if (isEntro) {
-          debitiBreve.currentYear += (cur || 0);
-          debitiBreve.previousYear += (prev || 0);
-          console.log(`[${sessionId}]   └─ Breve: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
+        // Caso 1: Ha specificato "oltre" o "entro"
+        if (isOltre || isEntro) {
+          foundMLorBreve = true;
+          
+          if (isOltre) {
+            debitiML.currentYear += (cur || 0);
+            debitiML.previousYear += (prev || 0);
+            console.log(`[${sessionId}]   └─ M/L: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
+          } else if (isEntro) {
+            debitiBreve.currentYear += (cur || 0);
+            debitiBreve.previousYear += (prev || 0);
+            console.log(`[${sessionId}]   └─ Breve: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
+          }
+        } 
+        // Caso 2: NON ha specificato "oltre/entro" - salva come generico
+        else {
+          foundGeneric = true;
+          debitiTotali.currentYear += (cur || 0);
+          debitiTotali.previousYear += (prev || 0);
+          console.log(`[${sessionId}]   └─ Generico: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
         }
       }
     }
   }
   
-  // Se non trova nessun debito, ritorna NULL (NO STIME!)
-  if (!foundAny || (debitiML.currentYear === 0 && debitiBreve.currentYear === 0)) {
-    console.log(`[${sessionId}]   ⚠️ Debiti finanziari NON trovati nel bilancio`);
+  // STEP 6: LOGICA DI FALLBACK INTELLIGENTE
+  
+  // Caso A: Ha trovato sia M/L che Breve - PERFETTO!
+  if (foundMLorBreve && (debitiML.currentYear > 0 || debitiBreve.currentYear > 0)) {
+    console.log(`[${sessionId}]   ✅ Debiti M/L: N=${debitiML.currentYear}, N-1=${debitiML.previousYear}`);
+    console.log(`[${sessionId}]   ✅ Debiti Breve: N=${debitiBreve.currentYear}, N-1=${debitiBreve.previousYear}`);
     return { 
-      ml_termine: { currentYear: null, previousYear: null },
-      breve_termine: { currentYear: null, previousYear: null }
+      ml_termine: debitiML, 
+      breve_termine: debitiBreve 
     };
   }
   
-  console.log(`[${sessionId}]   ✅ Totale Debiti M/L: N=${debitiML.currentYear}, N-1=${debitiML.previousYear}`);
-  console.log(`[${sessionId}]   ✅ Totale Debiti Breve: N=${debitiBreve.currentYear}, N-1=${debitiBreve.previousYear}`);
+  // Caso B: Ha trovato debiti generici (senza distinzione oltre/entro)
+  if (foundGeneric && debitiTotali.currentYear > 0) {
+    console.log(`[${sessionId}]   ⚠️ Debiti trovati ma SENZA distinzione oltre/entro`);
+    console.log(`[${sessionId}]   💡 Applico split conservativo: 40% M/L, 60% Breve`);
+    
+    return {
+      ml_termine: {
+        currentYear: Math.round(debitiTotali.currentYear * 0.4),
+        previousYear: Math.round(debitiTotali.previousYear * 0.4)
+      },
+      breve_termine: {
+        currentYear: Math.round(debitiTotali.currentYear * 0.6),
+        previousYear: Math.round(debitiTotali.previousYear * 0.6)
+      }
+    };
+  }
   
+  // Caso C: Non ha trovato NESSUN debito finanziario
+  console.log(`[${sessionId}]   ❌ Debiti finanziari NON trovati`);
   return { 
-    ml_termine: debitiML, 
-    breve_termine: debitiBreve 
+    ml_termine: { currentYear: null, previousYear: null },
+    breve_termine: { currentYear: null, previousYear: null }
   };
 };
-
 // ============================================
 // FUNZIONI DI RICERCA ALTRE METRICHE
 // ============================================
