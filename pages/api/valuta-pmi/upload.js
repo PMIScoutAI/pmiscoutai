@@ -132,7 +132,61 @@ const findYearColumns = (sheetData) => {
     years: uniqueYears.slice(0, 2).reverse() // [vecchio, nuovo]
   };
 };
+// ============================================
+// TROVA COLONNE QUANDO CONOSCI GIÀ GLI ANNI
+// ============================================
 
+const findYearColumnsWithKnownYears = (sheetData, knownYears, sessionId) => {
+  console.log(`[${sessionId}] 🔍 Cerco colonne per anni:`, knownYears);
+  
+  const yearOld = knownYears[0]; // Anno più vecchio
+  const yearNew = knownYears[1]; // Anno più recente
+  
+  let colOld = null;
+  let colNew = null;
+  
+  // Cerca nelle prime 30 righe
+  for (let i = 0; i < Math.min(sheetData.length, 30); i++) {
+    const row = sheetData[i];
+    
+    for (let j = 2; j < row.length; j++) {
+      const cell = String(row[j] ?? '').trim();
+      
+      // Cerca l'anno vecchio
+      if (cell.includes(String(yearOld)) && colOld === null) {
+        colOld = j;
+        console.log(`[${sessionId}]   ✅ Anno ${yearOld} trovato in colonna ${j}`);
+      }
+      
+      // Cerca l'anno nuovo
+      if (cell.includes(String(yearNew)) && colNew === null) {
+        colNew = j;
+        console.log(`[${sessionId}]   ✅ Anno ${yearNew} trovato in colonna ${j}`);
+      }
+      
+      // Se ha trovato entrambi, esci
+      if (colOld !== null && colNew !== null) break;
+    }
+    
+    if (colOld !== null && colNew !== null) break;
+  }
+  
+  // Fallback: usa posizioni di default se non trova
+  if (colOld === null || colNew === null) {
+    console.log(`[${sessionId}]   ⚠️ Colonne non trovate, uso default (3 e 4)`);
+    colOld = 4;
+    colNew = 3;
+  }
+  
+  return {
+    currentYearCol: colNew,     // Anno più recente
+    previousYearCol: colOld,    // Anno più vecchio
+    years: [
+      { year: yearOld, col: colOld, endDate: `${yearOld}-12-31` },
+      { year: yearNew, col: colNew, endDate: `${yearNew}-12-31` }
+    ]
+  };
+};
 // ============================================
 // ESTRAZIONE DATE ESERCIZI DA SEZIONE DEDICATA - VERSIONE MIGLIORATA
 // ============================================
@@ -646,17 +700,25 @@ export default async function handler(req, res) {
 // 7. TROVA ANNI E DATE ESERCIZI (FIX 1 - PRIORITÀ A T0000!)
 console.log(`[${sessionId}] 🔍 STEP 1: Estraggo date da T0000...`);
 let fiscalYears = extractFiscalYearDates(companyInfoData);
-
 let yearsExtracted = [];
+let yearColsBS = null;
+let yearColsIS = null;
 
 // Se ha trovato le date in T0000, usa QUELLE come anni corretti
 if (fiscalYears.length >= 2) {
   yearsExtracted = fiscalYears.map(y => y.year);
   console.log(`[${sessionId}] ✅ Anni estratti da T0000:`, yearsExtracted);
+  
+  // Ora cerca le COLONNE nel bilancio che corrispondono a questi anni
+  yearColsBS = findYearColumnsWithKnownYears(balanceSheetData, yearsExtracted, sessionId);
+  yearColsIS = findYearColumnsWithKnownYears(incomeStatementData, yearsExtracted, sessionId);
+  
 } else {
-  // Fallback: usa le colonne del bilancio
+  // Fallback: usa le colonne del bilancio per determinare gli anni
   console.log(`[${sessionId}] ⚠️ T0000 non ha date, uso colonne bilancio...`);
-  const yearColsBS = findYearColumns(balanceSheetData);
+  
+  yearColsBS = findYearColumns(balanceSheetData);
+  yearColsIS = findYearColumns(incomeStatementData);
   
   yearsExtracted = yearColsBS.years.map(y => parseInt(y.year, 10));
   fiscalYears = yearColsBS.years.map(y => ({
@@ -668,12 +730,9 @@ if (fiscalYears.length >= 2) {
   console.log(`[${sessionId}] ⚠️ Anni da colonne bilancio:`, yearsExtracted);
 }
 
-// Trova le colonne per estrarre i dati finanziari
-const yearColsBS = findYearColumns(balanceSheetData);
-const yearColsIS = findYearColumns(incomeStatementData);
-
 console.log(`[${sessionId}] 📅 Anni finali:`, yearsExtracted);
 console.log(`[${sessionId}] 📅 Date esercizi:`, fiscalYears);
+console.log(`[${sessionId}] 📊 Colonne bilancio: N=${yearColsBS.currentYearCol}, N-1=${yearColsBS.previousYearCol}`);
 
     // 8. ESTRAI ATECO
     const atecoRaw = companyInfoData.length > 0 
