@@ -643,31 +643,37 @@ export default async function handler(req, res) {
     
     console.log(`[${sessionId}] 🚀 Sessione valutazione creata per "${companyName}"`);
 
-    // 7. TROVA ANNI E DATE ESERCIZI (FIX 1)
-    const yearColsBS = findYearColumns(balanceSheetData);
-    const yearColsIS = findYearColumns(incomeStatementData);
-    
-    // Estrai gli anni dalle colonne
-    const yearsExtracted = yearColsBS.years.map(y => parseInt(y.year, 10));
-    
-    // Estrai le date ESATTE dal foglio T0000
-    let fiscalYears = extractFiscalYearDates(companyInfoData);
-    
-    // Fallback: se non trova le date, usa quelle dalle colonne
-    if (fiscalYears.length === 0) {
-      console.log('⚠️ Date esercizi non trovate in T0000, uso date dalle colonne');
-      fiscalYears = yearColsBS.years.map(y => ({
-        year: parseInt(y.year, 10),
-        endDate: y.endDate,
-        startDate: `${y.year}-01-01`
-      }));
-    }
-    
-    // Assicurati che l'ordine sia: [anno vecchio, anno nuovo]
-    fiscalYears.sort((a, b) => a.year - b.year);
-    
-    console.log(`[${sessionId}] 📅 Anni estratti:`, yearsExtracted);
-    console.log(`[${sessionId}] 📅 Date esercizi:`, fiscalYears);
+// 7. TROVA ANNI E DATE ESERCIZI (FIX 1 - PRIORITÀ A T0000!)
+console.log(`[${sessionId}] 🔍 STEP 1: Estraggo date da T0000...`);
+let fiscalYears = extractFiscalYearDates(companyInfoData);
+
+let yearsExtracted = [];
+
+// Se ha trovato le date in T0000, usa QUELLE come anni corretti
+if (fiscalYears.length >= 2) {
+  yearsExtracted = fiscalYears.map(y => y.year);
+  console.log(`[${sessionId}] ✅ Anni estratti da T0000:`, yearsExtracted);
+} else {
+  // Fallback: usa le colonne del bilancio
+  console.log(`[${sessionId}] ⚠️ T0000 non ha date, uso colonne bilancio...`);
+  const yearColsBS = findYearColumns(balanceSheetData);
+  
+  yearsExtracted = yearColsBS.years.map(y => parseInt(y.year, 10));
+  fiscalYears = yearColsBS.years.map(y => ({
+    year: parseInt(y.year, 10),
+    endDate: y.endDate,
+    startDate: `${y.year}-01-01`
+  }));
+  
+  console.log(`[${sessionId}] ⚠️ Anni da colonne bilancio:`, yearsExtracted);
+}
+
+// Trova le colonne per estrarre i dati finanziari
+const yearColsBS = findYearColumns(balanceSheetData);
+const yearColsIS = findYearColumns(incomeStatementData);
+
+console.log(`[${sessionId}] 📅 Anni finali:`, yearsExtracted);
+console.log(`[${sessionId}] 📅 Date esercizi:`, fiscalYears);
 
     // 8. ESTRAI ATECO
     const atecoRaw = companyInfoData.length > 0 
