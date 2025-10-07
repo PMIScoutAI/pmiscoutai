@@ -134,111 +134,154 @@ const findYearColumns = (sheetData) => {
 };
 
 // ============================================
-// ESTRAZIONE DATE ESERCIZI DA SEZIONE DEDICATA
+// ESTRAZIONE DATE ESERCIZI DA SEZIONE DEDICATA - VERSIONE MIGLIORATA
 // ============================================
 
 const extractFiscalYearDates = (companyInfoData) => {
-  console.log('📅 Ricerca date esercizi...');
+  console.log('📅 Ricerca date esercizi in T0000...');
   
   const fiscalYears = [];
-  let currentExercise = null;
-  let previousExercise = null;
+  const exerciseData = {
+    current: { startDate: null, endDate: null },
+    previous: { startDate: null, endDate: null }
+  };
+  
+  // Pattern per cercare le date in vari formati
+  const datePattern = /(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/;
   
   for (let i = 0; i < companyInfoData.length; i++) {
     const row = companyInfoData[i];
     
-    for (let j = 0; j < row.length; j++) {
-      const cell = String(row[j] || '').toLowerCase().trim();
+    // Crea una stringa dell'intera riga per facilitare la ricerca
+    const rowText = row.map(cell => String(cell || '').toLowerCase().trim()).join(' ');
+    
+    console.log(`  📄 Riga ${i}: "${rowText.substring(0, 80)}..."`);
+    
+    // ===== CERCA "ESERCIZIO DI RIFERIMENTO" / "ESERCIZIO CORRENTE" =====
+    const isCurrentExercise = 
+      rowText.includes('esercizio di riferimento') ||
+      rowText.includes('esercizio corrente') ||
+      rowText.includes('esercizio chiuso') ||
+      (rowText.includes('esercizio') && !rowText.includes('precedente'));
+    
+    if (isCurrentExercise && rowText.includes('esercizio')) {
+      console.log(`    ✅ Trovato riferimento a esercizio corrente`);
       
-      // Cerca "Esercizio di riferimento" o "Esercizio precedente"
-      if (cell.includes('esercizio di riferimento') || cell.includes('esercizio corrente')) {
-        currentExercise = { type: 'current', startDate: null, endDate: null };
-        console.log('  ✅ Trovato "Esercizio di riferimento"');
+      // Cerca nelle prossime 15 righe
+      for (let k = i; k < Math.min(i + 15, companyInfoData.length); k++) {
+        const nextRow = companyInfoData[k];
+        const nextRowText = nextRow.map(c => String(c || '').toLowerCase()).join(' ');
         
-        // Cerca le date nelle righe successive
-        for (let k = i; k < Math.min(i + 10, companyInfoData.length); k++) {
-          const nextRow = companyInfoData[k];
-          const rowText = nextRow.join(' ').toLowerCase();
+        // Cerca "inizio" o "data inizio" o "dal"
+        if ((nextRowText.includes('inizio') || nextRowText.includes('dal')) && 
+            !exerciseData.current.startDate) {
           
-          if (rowText.includes('inizio')) {
-            // Cerca la data nella stessa riga o colonna successiva
-            for (let m = 0; m < nextRow.length; m++) {
-              const dateMatch = String(nextRow[m] || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
-              if (dateMatch) {
-                currentExercise.startDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
-                console.log(`    └─ Inizio: ${currentExercise.startDate}`);
-                break;
-              }
-            }
-          }
-          
-          if (rowText.includes('fine') || rowText.includes('chiusura')) {
-            for (let m = 0; m < nextRow.length; m++) {
-              const dateMatch = String(nextRow[m] || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
-              if (dateMatch) {
-                currentExercise.endDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
-                console.log(`    └─ Fine: ${currentExercise.endDate}`);
-                break;
-              }
+          for (const cell of nextRow) {
+            const cellStr = String(cell || '');
+            const match = cellStr.match(datePattern);
+            if (match) {
+              exerciseData.current.startDate = `${match[3]}-${match[2]}-${match[1]}`;
+              console.log(`      └─ Inizio corrente: ${exerciseData.current.startDate}`);
+              break;
             }
           }
         }
+        
+        // Cerca "fine" o "chiusura" o "al"
+        if ((nextRowText.includes('fine') || nextRowText.includes('chiusura') || nextRowText.includes(' al ')) && 
+            !exerciseData.current.endDate) {
+          
+          for (const cell of nextRow) {
+            const cellStr = String(cell || '');
+            const match = cellStr.match(datePattern);
+            if (match) {
+              exerciseData.current.endDate = `${match[3]}-${match[2]}-${match[1]}`;
+              console.log(`      └─ Fine corrente: ${exerciseData.current.endDate}`);
+              break;
+            }
+          }
+        }
+        
+        // Se ha trovato entrambe le date, esci
+        if (exerciseData.current.startDate && exerciseData.current.endDate) break;
       }
+    }
+    
+    // ===== CERCA "ESERCIZIO PRECEDENTE" =====
+    if (rowText.includes('esercizio precedente') || rowText.includes('precedente esercizio')) {
+      console.log(`    ✅ Trovato riferimento a esercizio precedente`);
       
-      if (cell.includes('esercizio precedente')) {
-        previousExercise = { type: 'previous', startDate: null, endDate: null };
-        console.log('  ✅ Trovato "Esercizio precedente"');
+      // Cerca nelle prossime 15 righe
+      for (let k = i; k < Math.min(i + 15, companyInfoData.length); k++) {
+        const nextRow = companyInfoData[k];
+        const nextRowText = nextRow.map(c => String(c || '').toLowerCase()).join(' ');
         
-        for (let k = i; k < Math.min(i + 10, companyInfoData.length); k++) {
-          const nextRow = companyInfoData[k];
-          const rowText = nextRow.join(' ').toLowerCase();
+        if ((nextRowText.includes('inizio') || nextRowText.includes('dal')) && 
+            !exerciseData.previous.startDate) {
           
-          if (rowText.includes('inizio')) {
-            for (let m = 0; m < nextRow.length; m++) {
-              const dateMatch = String(nextRow[m] || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
-              if (dateMatch) {
-                previousExercise.startDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
-                console.log(`    └─ Inizio: ${previousExercise.startDate}`);
-                break;
-              }
-            }
-          }
-          
-          if (rowText.includes('fine') || rowText.includes('chiusura')) {
-            for (let m = 0; m < nextRow.length; m++) {
-              const dateMatch = String(nextRow[m] || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
-              if (dateMatch) {
-                previousExercise.endDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
-                console.log(`    └─ Fine: ${previousExercise.endDate}`);
-                break;
-              }
+          for (const cell of nextRow) {
+            const cellStr = String(cell || '');
+            const match = cellStr.match(datePattern);
+            if (match) {
+              exerciseData.previous.startDate = `${match[3]}-${match[2]}-${match[1]}`;
+              console.log(`      └─ Inizio precedente: ${exerciseData.previous.startDate}`);
+              break;
             }
           }
         }
+        
+        if ((nextRowText.includes('fine') || nextRowText.includes('chiusura') || nextRowText.includes(' al ')) && 
+            !exerciseData.previous.endDate) {
+          
+          for (const cell of nextRow) {
+            const cellStr = String(cell || '');
+            const match = cellStr.match(datePattern);
+            if (match) {
+              exerciseData.previous.endDate = `${match[3]}-${match[2]}-${match[1]}`;
+              console.log(`      └─ Fine precedente: ${exerciseData.previous.endDate}`);
+              break;
+            }
+          }
+        }
+        
+        if (exerciseData.previous.startDate && exerciseData.previous.endDate) break;
       }
     }
   }
   
-  // Componi l'array finale
-  if (previousExercise?.endDate) {
-    const year = parseInt(previousExercise.endDate.split('-')[0], 10);
+  // ===== COMPONI L'ARRAY FINALE =====
+  
+  // Esercizio precedente
+  if (exerciseData.previous.endDate) {
+    const year = parseInt(exerciseData.previous.endDate.split('-')[0], 10);
     fiscalYears.push({
       year,
-      startDate: previousExercise.startDate || `${year}-01-01`,
-      endDate: previousExercise.endDate
+      startDate: exerciseData.previous.startDate || `${year}-01-01`,
+      endDate: exerciseData.previous.endDate
     });
+    console.log(`  ✅ Esercizio precedente: ${year} (${exerciseData.previous.startDate} → ${exerciseData.previous.endDate})`);
   }
   
-  if (currentExercise?.endDate) {
-    const year = parseInt(currentExercise.endDate.split('-')[0], 10);
+  // Esercizio corrente
+  if (exerciseData.current.endDate) {
+    const year = parseInt(exerciseData.current.endDate.split('-')[0], 10);
     fiscalYears.push({
       year,
-      startDate: currentExercise.startDate || `${year}-01-01`,
-      endDate: currentExercise.endDate
+      startDate: exerciseData.current.startDate || `${year}-01-01`,
+      endDate: exerciseData.current.endDate
     });
+    console.log(`  ✅ Esercizio corrente: ${year} (${exerciseData.current.startDate} → ${exerciseData.current.endDate})`);
   }
   
-  console.log('📅 Date esercizi estratte:', fiscalYears);
+  // Ordina per anno crescente
+  fiscalYears.sort((a, b) => a.year - b.year);
+  
+  if (fiscalYears.length === 0) {
+    console.log('  ⚠️ Nessuna data esercizio trovata in T0000');
+  } else {
+    console.log(`  📅 Totale esercizi trovati: ${fiscalYears.length}`);
+  }
+  
   return fiscalYears;
 };
 
