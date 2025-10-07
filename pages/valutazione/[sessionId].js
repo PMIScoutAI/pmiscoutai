@@ -1,6 +1,6 @@
 // /pages/valutazione/[sessionId].js
 // Pagina dinamica per il wizard di valutazione aziendale.
-// VERSIONE 2.2 - FIX: Null-safe checks e gestione errori migliorata
+// VERSIONE 3.0 - FIX: Nome azienda, date esercizi, warning debiti mancanti
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -44,9 +44,8 @@ function ValutazioneWizard() {
   const [sessionData, setSessionData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [currentStep, setCurrentStep] = useState('loading'); // loading, entry, results
+  const [currentStep, setCurrentStep] = useState('loading');
 
-  // State per i form
   const [financialData, setFinancialData] = useState({});
   const [valuationInputs, setValuationInputs] = useState({
     market_position: 'follower',
@@ -56,7 +55,6 @@ function ValutazioneWizard() {
   const [results, setResults] = useState(null);
   const [isCalculating, setIsCalculating] = useState(false);
 
-  // Carica i dati della sessione all'avvio
   useEffect(() => {
     if (sessionId) {
       const fetchSession = async () => {
@@ -72,7 +70,6 @@ function ValutazioneWizard() {
             
             setSessionData(data);
             
-            // Inizializza e calcola PFN
             const initialFinancialData = data.historical_data || {};
             for (const year in initialFinancialData) {
               const yearData = initialFinancialData[year];
@@ -112,13 +109,9 @@ function ValutazioneWizard() {
   const handleFinancialChange = (e, year, field) => {
     const { value } = e.target;
     
-    // Crea una copia profonda per evitare problemi di mutabilità
     const newFinancialData = JSON.parse(JSON.stringify(financialData));
-    
-    // Aggiorna il valore modificato dall'utente
     newFinancialData[year][field] = value === '' ? null : parseFloat(value);
     
-    // Ricalcola PFN per l'anno modificato
     const yearData = newFinancialData[year];
     const ml = yearData.debiti_finanziari_ml || 0;
     const breve = yearData.debiti_finanziari_breve || 0;
@@ -202,7 +195,7 @@ function ValutazioneWizard() {
           />
         );
       case 'results':
-        return <ResultsStep results={results} onRecalculate={() => setCurrentStep('entry')} />;
+        return <ResultsStep results={results} sessionData={sessionData} onRecalculate={() => setCurrentStep('entry')} />;
       default:
         return <div className="text-center p-12">Stato non valido</div>;
     }
@@ -219,7 +212,7 @@ function ValutazioneWizard() {
 // COMPONENTI HELPER
 // ============================================
 
-const InputField = ({ label, value, onChange, readOnly = false }) => (
+const InputField = ({ label, value, onChange, readOnly = false, helpText, hasWarning = false }) => (
   <div>
     <label className="block text-sm font-medium text-slate-700 mb-1 capitalize">
       {label} (€)
@@ -230,9 +223,15 @@ const InputField = ({ label, value, onChange, readOnly = false }) => (
       onChange={onChange}
       readOnly={readOnly}
       className={`mt-1 w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 ${
-        readOnly ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'border-slate-300'
+        readOnly ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 
+        hasWarning ? 'border-orange-400 bg-orange-50' : 'border-slate-300'
       }`}
     />
+    {helpText && (
+      <p className={`mt-1 text-xs ${hasWarning ? 'text-orange-700 font-medium' : 'text-slate-500'}`}>
+        {helpText}
+      </p>
+    )}
   </div>
 );
 
@@ -253,6 +252,21 @@ const SelectField = ({ id, label, value, onChange, children, helpText }) => (
   </div>
 );
 
+// Helper per formattare date
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('it-IT', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    });
+  } catch {
+    return dateString;
+  }
+};
+
 // ============================================
 // STEP 1: DATA ENTRY
 // ============================================
@@ -266,7 +280,6 @@ const DataEntryStep = ({
   onCalculate, 
   isCalculating 
 }) => {
-  // ✅ FIX: Controllo null-safe per years_analyzed
   if (!sessionData || !sessionData.years_analyzed) {
     return (
       <div className="text-center p-12">
@@ -276,10 +289,8 @@ const DataEntryStep = ({
     );
   }
 
-  // ✅ FIX: Safe sort con fallback
   const years = (sessionData.years_analyzed || []).sort((a, b) => b - a);
   
-  // ✅ FIX: Controllo array vuoto
   if (years.length === 0) {
     return (
       <div className="p-6 bg-yellow-100 border border-yellow-300 rounded-lg text-center">
@@ -298,8 +309,14 @@ const DataEntryStep = ({
 
   return (
     <div className="space-y-8">
+      {/* FIX: Header con nome azienda */}
       <div className="text-center">
         <h1 className="text-3xl font-bold text-slate-900">Verifica e Completa i Dati</h1>
+        {sessionData.company_name && (
+          <p className="mt-3 text-2xl font-semibold text-blue-600">
+            🏢 {sessionData.company_name}
+          </p>
+        )}
         <p className="mt-2 text-slate-600">
           Controlla i dati estratti dall'XBRL e inserisci i parametri qualitativi per una valutazione accurata.
         </p>
@@ -309,46 +326,98 @@ const DataEntryStep = ({
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h2 className="text-xl font-semibold mb-4">Dati Finanziari</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {years.map(year => (
-            <div key={year} className="space-y-4 p-4 border border-slate-200 rounded-lg">
-              <h3 className="font-bold text-lg text-blue-600">Anno {year}</h3>
-              <InputField 
-                label="Ricavi" 
-                value={financialData[year]?.ricavi} 
-                onChange={(e) => handleFinancialChange(e, year, 'ricavi')} 
-              />
-              <InputField 
-                label="EBITDA" 
-                value={financialData[year]?.ebitda} 
-                onChange={(e) => handleFinancialChange(e, year, 'ebitda')} 
-              />
-              <InputField 
-                label="Patrimonio Netto" 
-                value={financialData[year]?.patrimonio_netto} 
-                onChange={(e) => handleFinancialChange(e, year, 'patrimonio_netto')} 
-              />
-              <InputField 
-                label="Debiti Finanziari M/L" 
-                value={financialData[year]?.debiti_finanziari_ml} 
-                onChange={(e) => handleFinancialChange(e, year, 'debiti_finanziari_ml')} 
-              />
-              <InputField 
-                label="Debiti Finanziari a Breve" 
-                value={financialData[year]?.debiti_finanziari_breve} 
-                onChange={(e) => handleFinancialChange(e, year, 'debiti_finanziari_breve')} 
-              />
-              <InputField 
-                label="Disponibilità Liquide" 
-                value={financialData[year]?.disponibilita_liquide} 
-                onChange={(e) => handleFinancialChange(e, year, 'disponibilita_liquide')} 
-              />
-              <InputField 
-                label="PFN (Calcolata automaticamente)" 
-                value={financialData[year]?.pfn} 
-                readOnly={true} 
-              />
-            </div>
-          ))}
+          {years.map(year => {
+            const yearData = financialData[year] || {};
+            const fiscalYearInfo = sessionData.fiscal_years?.find(y => y.year === year);
+            
+            // Check se i debiti sono mancanti (null)
+            const debitiMLMissing = yearData.debiti_finanziari_ml === null || yearData.debiti_finanziari_ml === undefined;
+            const debitiBreveMissing = yearData.debiti_finanziari_breve === null || yearData.debiti_finanziari_breve === undefined;
+            
+            return (
+              <div key={year} className="space-y-4 p-4 border border-slate-200 rounded-lg">
+                {/* FIX: Header anno con date */}
+                <div className="border-b border-slate-200 pb-2 mb-3">
+                  <h3 className="font-bold text-lg text-blue-600">Anno {year}</h3>
+                  {fiscalYearInfo && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      📅 Esercizio: {formatDate(fiscalYearInfo.startDate)} - {formatDate(fiscalYearInfo.endDate)}
+                    </p>
+                  )}
+                </div>
+                
+                <InputField 
+                  label="Ricavi" 
+                  value={yearData.ricavi} 
+                  onChange={(e) => handleFinancialChange(e, year, 'ricavi')} 
+                />
+                <InputField 
+                  label="EBITDA" 
+                  value={yearData.ebitda} 
+                  onChange={(e) => handleFinancialChange(e, year, 'ebitda')} 
+                />
+                <InputField 
+                  label="Patrimonio Netto" 
+                  value={yearData.patrimonio_netto} 
+                  onChange={(e) => handleFinancialChange(e, year, 'patrimonio_netto')} 
+                />
+                
+                {/* FIX: Warning per debiti M/L mancanti */}
+                {debitiMLMissing && (
+                  <div className="p-3 bg-orange-50 border border-orange-300 rounded-md">
+                    <p className="text-xs text-orange-800 font-semibold flex items-start gap-2">
+                      <span className="text-base">⚠️</span>
+                      <span>
+                        <strong>Debiti M/L non trovati nel file XBRL.</strong><br />
+                        Inserisci manualmente il valore consultando il bilancio (voce D.3/D.4 "oltre l'esercizio").
+                      </span>
+                    </p>
+                  </div>
+                )}
+                
+                <InputField 
+                  label="Debiti Finanziari M/L" 
+                  value={yearData.debiti_finanziari_ml} 
+                  onChange={(e) => handleFinancialChange(e, year, 'debiti_finanziari_ml')}
+                  hasWarning={debitiMLMissing}
+                  helpText={debitiMLMissing ? '⚠️ Valore da inserire manualmente' : 'Estratto dal bilancio (D.3/D.4 oltre esercizio)'}
+                />
+                
+                {/* FIX: Warning per debiti breve mancanti */}
+                {debitiBreveMissing && (
+                  <div className="p-3 bg-orange-50 border border-orange-300 rounded-md">
+                    <p className="text-xs text-orange-800 font-semibold flex items-start gap-2">
+                      <span className="text-base">⚠️</span>
+                      <span>
+                        <strong>Debiti a breve non trovati nel file XBRL.</strong><br />
+                        Inserisci manualmente il valore consultando il bilancio (voce D.3/D.4 "entro l'esercizio").
+                      </span>
+                    </p>
+                  </div>
+                )}
+                
+                <InputField 
+                  label="Debiti Finanziari a Breve" 
+                  value={yearData.debiti_finanziari_breve} 
+                  onChange={(e) => handleFinancialChange(e, year, 'debiti_finanziari_breve')}
+                  hasWarning={debitiBreveMissing}
+                  helpText={debitiBreveMissing ? '⚠️ Valore da inserire manualmente' : 'Estratto dal bilancio (D.3/D.4 entro esercizio)'}
+                />
+                
+                <InputField 
+                  label="Disponibilità Liquide" 
+                  value={yearData.disponibilita_liquide} 
+                  onChange={(e) => handleFinancialChange(e, year, 'disponibilita_liquide')} 
+                />
+                <InputField 
+                  label="PFN (Calcolata automaticamente)" 
+                  value={yearData.pfn} 
+                  readOnly={true}
+                  helpText="PFN = Debiti Finanziari Totali - Disponibilità Liquide"
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
       
@@ -420,7 +489,7 @@ const DataEntryStep = ({
 // STEP 2: RESULTS
 // ============================================
 
-const ResultsStep = ({ results, onRecalculate }) => {
+const ResultsStep = ({ results, sessionData, onRecalculate }) => {
   if (!results) {
     return (
       <div className="text-center p-12">
@@ -439,8 +508,14 @@ const ResultsStep = ({ results, onRecalculate }) => {
 
   return (
     <div className="space-y-8">
+      {/* FIX: Header risultati con nome azienda */}
       <div className="text-center">
         <h1 className="text-3xl font-bold text-slate-900">Risultato della Valutazione</h1>
+        {sessionData?.company_name && (
+          <p className="mt-2 text-xl font-semibold text-blue-600">
+            🏢 {sessionData.company_name}
+          </p>
+        )}
         <p className="mt-2 text-slate-600">
           Basato sui dati forniti e sui multipli di mercato del settore di riferimento.
         </p>
