@@ -1,6 +1,6 @@
 // /pages/api/valuta-pmi/upload.js
 // Valuta-PMI: Upload XBRL, Parse dati finanziari e crea sessione valutazione
-// VERSIONE 3.0 - Fix anni corretti + parsing debiti civilistico + estrazione nome azienda
+// VERSIONE 3.0 - Fix anni corretti + parsing debiti civilistico + estrazione nome azienda + date esercizi
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -131,6 +131,115 @@ const findYearColumns = (sheetData) => {
     previousYearCol: uniqueYears[1]?.col || uniqueYears[0].col + 1,
     years: uniqueYears.slice(0, 2).reverse() // [vecchio, nuovo]
   };
+};
+
+// ============================================
+// ESTRAZIONE DATE ESERCIZI DA SEZIONE DEDICATA
+// ============================================
+
+const extractFiscalYearDates = (companyInfoData) => {
+  console.log('📅 Ricerca date esercizi...');
+  
+  const fiscalYears = [];
+  let currentExercise = null;
+  let previousExercise = null;
+  
+  for (let i = 0; i < companyInfoData.length; i++) {
+    const row = companyInfoData[i];
+    
+    for (let j = 0; j < row.length; j++) {
+      const cell = String(row[j] || '').toLowerCase().trim();
+      
+      // Cerca "Esercizio di riferimento" o "Esercizio precedente"
+      if (cell.includes('esercizio di riferimento') || cell.includes('esercizio corrente')) {
+        currentExercise = { type: 'current', startDate: null, endDate: null };
+        console.log('  ✅ Trovato "Esercizio di riferimento"');
+        
+        // Cerca le date nelle righe successive
+        for (let k = i; k < Math.min(i + 10, companyInfoData.length); k++) {
+          const nextRow = companyInfoData[k];
+          const rowText = nextRow.join(' ').toLowerCase();
+          
+          if (rowText.includes('inizio')) {
+            // Cerca la data nella stessa riga o colonna successiva
+            for (let m = 0; m < nextRow.length; m++) {
+              const dateMatch = String(nextRow[m] || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
+              if (dateMatch) {
+                currentExercise.startDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+                console.log(`    └─ Inizio: ${currentExercise.startDate}`);
+                break;
+              }
+            }
+          }
+          
+          if (rowText.includes('fine') || rowText.includes('chiusura')) {
+            for (let m = 0; m < nextRow.length; m++) {
+              const dateMatch = String(nextRow[m] || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
+              if (dateMatch) {
+                currentExercise.endDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+                console.log(`    └─ Fine: ${currentExercise.endDate}`);
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      if (cell.includes('esercizio precedente')) {
+        previousExercise = { type: 'previous', startDate: null, endDate: null };
+        console.log('  ✅ Trovato "Esercizio precedente"');
+        
+        for (let k = i; k < Math.min(i + 10, companyInfoData.length); k++) {
+          const nextRow = companyInfoData[k];
+          const rowText = nextRow.join(' ').toLowerCase();
+          
+          if (rowText.includes('inizio')) {
+            for (let m = 0; m < nextRow.length; m++) {
+              const dateMatch = String(nextRow[m] || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
+              if (dateMatch) {
+                previousExercise.startDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+                console.log(`    └─ Inizio: ${previousExercise.startDate}`);
+                break;
+              }
+            }
+          }
+          
+          if (rowText.includes('fine') || rowText.includes('chiusura')) {
+            for (let m = 0; m < nextRow.length; m++) {
+              const dateMatch = String(nextRow[m] || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
+              if (dateMatch) {
+                previousExercise.endDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+                console.log(`    └─ Fine: ${previousExercise.endDate}`);
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // Componi l'array finale
+  if (previousExercise?.endDate) {
+    const year = parseInt(previousExercise.endDate.split('-')[0], 10);
+    fiscalYears.push({
+      year,
+      startDate: previousExercise.startDate || `${year}-01-01`,
+      endDate: previousExercise.endDate
+    });
+  }
+  
+  if (currentExercise?.endDate) {
+    const year = parseInt(currentExercise.endDate.split('-')[0], 10);
+    fiscalYears.push({
+      year,
+      startDate: currentExercise.startDate || `${year}-01-01`,
+      endDate: currentExercise.endDate
+    });
+  }
+  
+  console.log('📅 Date esercizi estratte:', fiscalYears);
+  return fiscalYears;
 };
 
 // ============================================
@@ -282,7 +391,7 @@ const findDebitiFinanziariCivilistico = (sheetData, yearCols, sessionId) => {
 };
 
 // ============================================
-// FUNZIONI DI RICERCA ALTRE METRICHE (invariate)
+// FUNZIONI DI RICERCA ALTRE METRICHE
 // ============================================
 
 const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
@@ -453,16 +562,28 @@ export default async function handler(req, res) {
     
     console.log(`[${sessionId}] 🚀 Sessione valutazione creata per "${companyName}"`);
 
-    // 7. TROVA ANNI (FIX 1)
+    // 7. TROVA ANNI E DATE ESERCIZI (FIX 1)
     const yearColsBS = findYearColumns(balanceSheetData);
     const yearColsIS = findYearColumns(incomeStatementData);
     
+    // Estrai gli anni dalle colonne
     const yearsExtracted = yearColsBS.years.map(y => parseInt(y.year, 10));
-    const fiscalYears = yearColsBS.years.map(y => ({
-      year: parseInt(y.year, 10),
-      endDate: y.endDate,
-      startDate: `${y.year}-01-01` // Assume inizio anno (puoi migliorare)
-    }));
+    
+    // Estrai le date ESATTE dal foglio T0000
+    let fiscalYears = extractFiscalYearDates(companyInfoData);
+    
+    // Fallback: se non trova le date, usa quelle dalle colonne
+    if (fiscalYears.length === 0) {
+      console.log('⚠️ Date esercizi non trovate in T0000, uso date dalle colonne');
+      fiscalYears = yearColsBS.years.map(y => ({
+        year: parseInt(y.year, 10),
+        endDate: y.endDate,
+        startDate: `${y.year}-01-01`
+      }));
+    }
+    
+    // Assicurati che l'ordine sia: [anno vecchio, anno nuovo]
+    fiscalYears.sort((a, b) => a.year - b.year);
     
     console.log(`[${sessionId}] 📅 Anni estratti:`, yearsExtracted);
     console.log(`[${sessionId}] 📅 Date esercizi:`, fiscalYears);
@@ -544,7 +665,7 @@ export default async function handler(req, res) {
       .from('valuations')
       .update({
         years_analyzed: yearsExtracted,
-        fiscal_years: fiscalYears, // NUOVO CAMPO!
+        fiscal_years: fiscalYears, // NUOVO CAMPO CON DATE!
         historical_data: historicalData,
         valuation_inputs: valuationInputs,
         sector_ateco: atecoCode,
