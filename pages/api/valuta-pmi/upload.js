@@ -1,6 +1,6 @@
 // /pages/api/valuta-pmi/upload.js
 // Valuta-PMI: Upload XBRL, Parse dati finanziari e crea sessione valutazione
-// VERSIONE 2.3 - Fix completo per estrazione anni e salvataggio dati
+// VERSIONE 2.4 - Fix anni corretti e debiti finanziari con fallback
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -38,31 +38,47 @@ const parseValue = (val) => {
   return null;
 };
 
+// ✅ FIX: Funzione migliorata per trovare gli anni nelle PRIME RIGHE
 const findYearColumns = (sheetData) => {
-  const yearRegex = /(19|20)\d{2}/;
+  const yearRegex = /(20\d{2})/; // Solo anni 20xx per evitare falsi positivi
   let years = [];
-  for (let i = 0; i < Math.min(sheetData.length, 40); i++) {
+  
+  // Cerca SOLO nelle prime 20 righe (header)
+  for (let i = 0; i < Math.min(sheetData.length, 20); i++) {
     const row = sheetData[i];
-    for (let j = 0; j < row.length; j++) {
+    for (let j = 2; j < row.length; j++) { // Inizia dalla colonna 2 (le prime sono labels)
       const cell = String(row[j] ?? '').trim();
       const match = cell.match(yearRegex);
-      if (match) years.push({ year: parseInt(match[0], 10), col: j });
+      if (match) {
+        const year = parseInt(match[1], 10);
+        // Verifica che l'anno sia sensato (tra 2015 e anno corrente)
+        const currentYear = new Date().getFullYear();
+        if (year >= 2015 && year <= currentYear) {
+          years.push({ year, col: j });
+        }
+      }
     }
     if (years.length >= 2) break;
   }
+  
   if (years.length < 2) {
-    console.warn("Colonne anni non trovate, uso fallback 3 e 4.");
+    console.warn("⚠️ Colonne anni non trovate nelle prime 20 righe, uso anni default");
+    const currentYear = new Date().getFullYear();
     return { 
       currentYearCol: 3, 
       previousYearCol: 4, 
-      years: [new Date().getFullYear() - 1, new Date().getFullYear()]
+      years: [currentYear - 1, currentYear]
     };
   }
-  years.sort((a, b) => b.year - a.year);
+  
+  // Rimuovi duplicati e ordina
+  const uniqueYears = [...new Map(years.map(item => [item.year, item])).values()];
+  uniqueYears.sort((a, b) => b.year - a.year); // Ordina decrescente
+  
   return { 
-    currentYearCol: years[0].col, 
-    previousYearCol: years[1].col, 
-    years: [years[1].year, years[0].year]
+    currentYearCol: uniqueYears[0].col, 
+    previousYearCol: uniqueYears[1].col, 
+    years: [uniqueYears[1].year, uniqueYears[0].year] // [vecchio, nuovo]
   };
 };
 
@@ -116,11 +132,12 @@ const findSimpleValue = (sheetData, searchTexts) => {
 };
 
 const findDebitiFinanziari = (sheetData, yearCols, sessionId) => {
-  console.log(`[${sessionId}] Ricerca Debiti Finanziari (Banche)...`);
+  console.log(`[${sessionId}] 🔍 Ricerca Debiti Finanziari (Banche)...`);
   
-  let debitiFinanziariML = { currentYear: null, previousYear: null };
-  let debitiFinanziariBreve = { currentYear: null, previousYear: null };
+  let debitiFinanziariML = { currentYear: 0, previousYear: 0 };
+  let debitiFinanziariBreve = { currentYear: 0, previousYear: 0 };
   let inPassiveSection = false;
+  let found = false;
   
   for (const row of sheetData) {
     let desc = '';
@@ -131,7 +148,7 @@ const findDebitiFinanziari = (sheetData, yearCols, sessionId) => {
     
     if (!inPassiveSection && (desc.includes('d) debiti') || desc.includes('passivo'))) {
       inPassiveSection = true;
-      console.log(`[${sessionId}] Sezione PASSIVO trovata`);
+      console.log(`[${sessionId}] ✅ Sezione PASSIVO trovata`);
       continue;
     }
     if (!inPassiveSection) continue;
@@ -143,27 +160,35 @@ const findDebitiFinanziari = (sheetData, yearCols, sessionId) => {
       const cur = parseValue(row[yearCols.currentYearCol]);
       const prev = parseValue(row[yearCols.previousYearCol]);
       
-      const isMLTermine = desc.includes("esigibili oltre l'esercizio") || desc.includes("oltre l'esercizio successivo");
-      const isBreve = desc.includes("esigibili entro l'esercizio") || desc.includes("entro l'esercizio successivo") || desc.includes("quota corrente");
-      
-      if (isMLTermine) {
-        debitiFinanziariML.currentYear = (debitiFinanziariML.currentYear || 0) + (cur || 0);
-        debitiFinanziariML.previousYear = (debitiFinanziariML.previousYear || 0) + (prev || 0);
-      } else if (isBreve) {
-        debitiFinanziariBreve.currentYear = (debitiFinanziariBreve.currentYear || 0) + (cur || 0);
-        debitiFinanziariBreve.previousYear = (debitiFinanziariBreve.previousYear || 0) + (prev || 0);
-      } else {
-        console.log(`[${sessionId}] Debiti verso banche trovati ma senza scadenza chiara`);
-        debitiFinanziariBreve.currentYear = (debitiFinanziariBreve.currentYear || 0) + (cur || 0);
-        debitiFinanziariBreve.previousYear = (debitiFinanziariBreve.previousYear || 0) + (prev || 0);
+      if (cur !== null || prev !== null) {
+        found = true;
+        const isMLTermine = desc.includes("esigibili oltre l'esercizio") || desc.includes("oltre l'esercizio successivo");
+        const isBreve = desc.includes("esigibili entro l'esercizio") || desc.includes("entro l'esercizio successivo") || desc.includes("quota corrente");
+        
+        if (isMLTermine) {
+          debitiFinanziariML.currentYear += (cur || 0);
+          debitiFinanziariML.previousYear += (prev || 0);
+        } else if (isBreve) {
+          debitiFinanziariBreve.currentYear += (cur || 0);
+          debitiFinanziariBreve.previousYear += (prev || 0);
+        } else {
+          debitiFinanziariBreve.currentYear += (cur || 0);
+          debitiFinanziariBreve.previousYear += (prev || 0);
+        }
       }
     }
     
     if (desc.startsWith('e) ') || desc.includes('totale passivo')) break;
   }
 
-  console.log(`[${sessionId}] Debiti Finanziari M/L: N=${debitiFinanziariML.currentYear}, N-1=${debitiFinanziariML.previousYear}`);
-  console.log(`[${sessionId}] Debiti Finanziari Breve: N=${debitiFinanziariBreve.currentYear}, N-1=${debitiFinanziariBreve.previousYear}`);
+  // Converti 0 in null se non trovato nulla
+  if (!found || (debitiFinanziariML.currentYear === 0 && debitiFinanziariBreve.currentYear === 0)) {
+    debitiFinanziariML = { currentYear: null, previousYear: null };
+    debitiFinanziariBreve = { currentYear: null, previousYear: null };
+  }
+
+  console.log(`[${sessionId}] 💰 Debiti Finanziari M/L: N=${debitiFinanziariML.currentYear}, N-1=${debitiFinanziariML.previousYear}`);
+  console.log(`[${sessionId}] 💰 Debiti Finanziari Breve: N=${debitiFinanziariBreve.currentYear}, N-1=${debitiFinanziariBreve.previousYear}`);
   
   return { ml_termine: debitiFinanziariML, breve_termine: debitiFinanziariBreve };
 };
@@ -179,6 +204,10 @@ const metricsConfigs = {
   ],
   disponibilitaLiquide: [
     { primary: ["disponibilità liquide"] }
+  ],
+  debitiTotali: [
+    { primary: ["totale debiti"] },
+    { primary: ["d) debiti"] }
   ],
   utilePerdita: [
     { primary: ["utile (perdita) dell'esercizio"] }, 
@@ -280,33 +309,50 @@ export default async function handler(req, res) {
     const incomeStatementData = xlsx.utils.sheet_to_json(incomeStatement, { header: 1 });
     const companyInfoData = companyInfo ? xlsx.utils.sheet_to_json(companyInfo, { header: 1 }) : [];
     
-    // 6. TROVA ANNI - FIX PRINCIPALE
+    // 6. TROVA ANNI - VERSIONE MIGLIORATA
     const yearColsBS = findYearColumns(balanceSheetData);
     const yearColsIS = findYearColumns(incomeStatementData);
-    const yearsExtracted = yearColsBS.years || [new Date().getFullYear() - 1, new Date().getFullYear()];
     
-    console.log(`[${sessionId}] Anni estratti:`, yearsExtracted);
+    // ✅ FIX: Assicura che gli anni siano numeri interi
+    const yearsExtracted = yearColsBS.years.map(y => parseInt(y, 10));
+    
+    console.log(`[${sessionId}] 📅 Anni estratti:`, yearsExtracted, `(types: ${typeof yearsExtracted[0]}, ${typeof yearsExtracted[1]})`);
 
     // 7. ESTRAI ATECO
     const atecoRaw = companyInfoData.length > 0 
       ? findSimpleValue(companyInfoData, ['settore di attività prevalente', 'codice ateco']) 
       : null;
     const atecoCode = atecoRaw?.match(/(\d{2})/)?.[1] || null;
-    console.log(`[${sessionId}] ATECO estratto: ${atecoCode}`);
+    console.log(`[${sessionId}] 🏢 ATECO estratto: ${atecoCode}`);
 
-    // 8. ESTRAI METRICHE
+    // 8. ESTRAI METRICHE (inclusi debiti totali)
     const metrics = {};
     for (const key in metricsConfigs) {
       metrics[key] = findValueInSheet(
-        ['patrimonioNetto', 'disponibilitaLiquide'].includes(key) ? balanceSheetData : incomeStatementData,
+        ['patrimonioNetto', 'disponibilitaLiquide', 'debitiTotali'].includes(key) ? balanceSheetData : incomeStatementData,
         metricsConfigs[key],
-        ['patrimonioNetto', 'disponibilitaLiquide'].includes(key) ? yearColsBS : yearColsIS,
+        ['patrimonioNetto', 'disponibilitaLiquide', 'debitiTotali'].includes(key) ? yearColsBS : yearColsIS,
         key
       );
     }
     
-    // 9. ESTRAI DEBITI FINANZIARI
-    const debitiFinanziari = findDebitiFinanziari(balanceSheetData, yearColsBS, sessionId);
+    // 9. ESTRAI DEBITI FINANZIARI CON FALLBACK
+    let debitiFinanziari = findDebitiFinanziari(balanceSheetData, yearColsBS, sessionId);
+    
+    // ✅ FALLBACK: Se non trova debiti finanziari specifici, stima da debiti totali
+    if (debitiFinanziari.ml_termine.currentYear === null && debitiFinanziari.breve_termine.currentYear === null) {
+      console.log(`[${sessionId}] ⚠️ Debiti finanziari non trovati, applico fallback`);
+      
+      if (metrics.debitiTotali.currentYear !== null) {
+        // Stima: 60% breve, 40% M/L (proporzione conservativa)
+        debitiFinanziari.breve_termine.currentYear = Math.round(metrics.debitiTotali.currentYear * 0.6);
+        debitiFinanziari.ml_termine.currentYear = Math.round(metrics.debitiTotali.currentYear * 0.4);
+        debitiFinanziari.breve_termine.previousYear = Math.round((metrics.debitiTotali.previousYear || 0) * 0.6);
+        debitiFinanziari.ml_termine.previousYear = Math.round((metrics.debitiTotali.previousYear || 0) * 0.4);
+        
+        console.log(`[${sessionId}] ✅ Fallback applicato: Breve=${debitiFinanziari.breve_termine.currentYear}, M/L=${debitiFinanziari.ml_termine.currentYear}`);
+      }
+    }
     
     // 10. CALCOLA EBITDA
     const ebitda = {
@@ -314,7 +360,7 @@ export default async function handler(req, res) {
       previousYear: (metrics.utilePerdita.previousYear || 0) + (metrics.imposte.previousYear || 0) + (metrics.oneriFinanziari.previousYear || 0) + (metrics.ammortamenti.previousYear || 0)
     };
     
-    console.log(`[${sessionId}] EBITDA calcolato: N=${ebitda.currentYear}, N-1=${ebitda.previousYear}`);
+    console.log(`[${sessionId}] 💰 EBITDA calcolato: N=${ebitda.currentYear}, N-1=${ebitda.previousYear}`);
     
     // 11. CALCOLA PFN
     const pfn = {
@@ -322,11 +368,13 @@ export default async function handler(req, res) {
       previousYear: (debitiFinanziari.ml_termine.previousYear || 0) + (debitiFinanziari.breve_termine.previousYear || 0) - (metrics.disponibilitaLiquide.previousYear || 0)
     };
     
-    console.log(`[${sessionId}] PFN calcolata: N=${pfn.currentYear}, N-1=${pfn.previousYear}`);
+    console.log(`[${sessionId}] 📊 PFN calcolata: N=${pfn.currentYear}, N-1=${pfn.previousYear}`);
 
     // 12. PREPARA DATI STORICI
-    const [yearN_1, yearN] = yearsExtracted;
-    console.log(`[${sessionId}] Mapping anni: N-1=${yearN_1}, N=${yearN}`);
+    const yearN_1 = yearsExtracted[0]; // Anno più vecchio
+    const yearN = yearsExtracted[1];   // Anno più recente
+    
+    console.log(`[${sessionId}] 📅 Mapping: Anno N-1=${yearN_1}, Anno N=${yearN}`);
 
     const historicalData = {
       [yearN]: {
@@ -355,7 +403,15 @@ export default async function handler(req, res) {
       technology_risk: 'medium'
     };
     
-    // 13. SALVA DATI
+    // 13. LOG FINALE PRIMA DEL SALVATAGGIO
+    console.log(`[${sessionId}] 🔍 VERIFICA FINALE:`, {
+      years: yearsExtracted,
+      types: yearsExtracted.map(y => typeof y),
+      debiti_ml: debitiFinanziari.ml_termine.currentYear,
+      debiti_breve: debitiFinanziari.breve_termine.currentYear
+    });
+    
+    // 14. SALVA DATI
     const { error: updateError } = await supabase
       .from('valuations')
       .update({
@@ -368,11 +424,11 @@ export default async function handler(req, res) {
       .eq('session_id', sessionId);
     
     if (updateError) {
-      console.error(`[${sessionId}] Errore update:`, updateError);
+      console.error(`[${sessionId}] ❌ Errore update:`, updateError);
       throw updateError;
     }
     
-    console.log(`[${sessionId}] Dati salvati correttamente su Supabase`);
+    console.log(`[${sessionId}] ✅ Dati salvati correttamente su Supabase`);
     
     return res.status(200).json({ 
       success: true, 
@@ -380,7 +436,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error(`[${sessionId || 'NO_SESSION'}] Errore upload XBRL:`, error);
+    console.error(`[${sessionId || 'NO_SESSION'}] ❌ Errore upload XBRL:`, error);
     if (sessionId) {
       await supabase
         .from('valuations')
