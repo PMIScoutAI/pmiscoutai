@@ -1,6 +1,6 @@
 // /pages/api/valuta-pmi/upload.js
 // Valuta-PMI: Upload XBRL, Parse dati finanziari e crea sessione valutazione
-// VERSIONE 2.4 - Fix anni corretti e debiti finanziari con fallback
+// VERSIONE 3.0 - Fix anni corretti + parsing debiti civilistico + estrazione nome azienda
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -38,49 +38,252 @@ const parseValue = (val) => {
   return null;
 };
 
-// ✅ FIX: Funzione migliorata per trovare gli anni nelle PRIME RIGHE
+// ============================================
+// FIX 1: ESTRAZIONE ANNI CORRETTA
+// ============================================
+
 const findYearColumns = (sheetData) => {
-  const yearRegex = /(20\d{2})/; // Solo anni 20xx per evitare falsi positivi
+  console.log('🔍 Ricerca colonne degli anni...');
+  
+  const yearRegex = /(20\d{2})/;
+  const dateRegex = /(\d{1,2})[\/\-](\d{1,2})[\/\-](20\d{2})/; // es. 31/12/2023
   let years = [];
   
-  // Cerca SOLO nelle prime 20 righe (header)
-  for (let i = 0; i < Math.min(sheetData.length, 20); i++) {
+  // Cerca nelle prime 30 righe (header + intestazioni)
+  for (let i = 0; i < Math.min(sheetData.length, 30); i++) {
     const row = sheetData[i];
-    for (let j = 2; j < row.length; j++) { // Inizia dalla colonna 2 (le prime sono labels)
+    
+    for (let j = 2; j < row.length; j++) {
       const cell = String(row[j] ?? '').trim();
-      const match = cell.match(yearRegex);
-      if (match) {
-        const year = parseInt(match[1], 10);
-        // Verifica che l'anno sia sensato (tra 2015 e anno corrente)
+      
+      // Cerca pattern data completa (es. "31/12/2023" o "Esercizio al 31/12/2023")
+      const dateMatch = cell.match(dateRegex);
+      if (dateMatch) {
+        const year = parseInt(dateMatch[3], 10);
+        const fullDate = `${dateMatch[3]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}`;
+        
         const currentYear = new Date().getFullYear();
-        if (year >= 2015 && year <= currentYear) {
-          years.push({ year, col: j });
+        if (year >= 2015 && year <= currentYear + 1) {
+          if (!years.find(y => y.year === year)) {
+            years.push({ 
+              year, 
+              col: j, 
+              endDate: fullDate,
+              source: 'date_pattern'
+            });
+            console.log(`  ✅ Anno ${year} trovato in colonna ${j} (data: ${fullDate})`);
+          }
+        }
+        continue;
+      }
+      
+      // Se non trova la data completa, cerca solo l'anno
+      const yearMatch = cell.match(yearRegex);
+      if (yearMatch) {
+        const year = parseInt(yearMatch[1], 10);
+        const currentYear = new Date().getFullYear();
+        
+        // Filtri più stringenti per evitare falsi positivi
+        const isHeader = i < 15; // Deve essere nelle prime 15 righe
+        const cellLength = cell.length;
+        const isLikelyYear = cellLength <= 20; // Celle brevi (non descrizioni lunghe)
+        
+        if (year >= 2015 && year <= currentYear + 1 && isHeader && isLikelyYear) {
+          if (!years.find(y => y.year === year)) {
+            years.push({ 
+              year, 
+              col: j,
+              endDate: `${year}-12-31`, // Assume fine anno
+              source: 'year_only'
+            });
+            console.log(`  ✅ Anno ${year} trovato in colonna ${j} (solo anno)`);
+          }
         }
       }
     }
+    
+    // Se ha trovato almeno 2 anni, fermati
     if (years.length >= 2) break;
   }
   
+  // Fallback: usa colonne di default solo se non trova NULLA
   if (years.length < 2) {
-    console.warn("⚠️ Colonne anni non trovate nelle prime 20 righe, uso anni default");
+    console.warn('⚠️ Anni non trovati, uso colonne di default');
     const currentYear = new Date().getFullYear();
     return { 
       currentYearCol: 3, 
       previousYearCol: 4, 
-      years: [currentYear - 1, currentYear]
+      years: [
+        { year: currentYear - 1, col: 4, endDate: `${currentYear - 1}-12-31` },
+        { year: currentYear, col: 3, endDate: `${currentYear}-12-31` }
+      ]
     };
   }
   
-  // Rimuovi duplicati e ordina
+  // Rimuovi duplicati e ordina per anno decrescente
   const uniqueYears = [...new Map(years.map(item => [item.year, item])).values()];
-  uniqueYears.sort((a, b) => b.year - a.year); // Ordina decrescente
+  uniqueYears.sort((a, b) => b.year - a.year);
+  
+  console.log(`✅ Anni finali estratti:`, uniqueYears.map(y => `${y.year} (col ${y.col})`));
   
   return { 
     currentYearCol: uniqueYears[0].col, 
-    previousYearCol: uniqueYears[1].col, 
-    years: [uniqueYears[1].year, uniqueYears[0].year] // [vecchio, nuovo]
+    previousYearCol: uniqueYears[1]?.col || uniqueYears[0].col + 1,
+    years: uniqueYears.slice(0, 2).reverse() // [vecchio, nuovo]
   };
 };
+
+// ============================================
+// FIX 2: ESTRAZIONE NOME AZIENDA DA XBRL
+// ============================================
+
+const extractCompanyName = (companyInfoData) => {
+  console.log('🏢 Ricerca nome azienda...');
+  
+  const searchTerms = [
+    'denominazione',
+    'ragione sociale',
+    'nome della ditta',
+    'nome impresa',
+    'ditta',
+    'società'
+  ];
+  
+  for (const row of companyInfoData) {
+    for (let i = 0; i < row.length; i++) {
+      const cell = String(row[i] || '').toLowerCase().trim();
+      
+      // Controlla se la cella contiene uno dei termini di ricerca
+      if (searchTerms.some(term => cell.includes(term))) {
+        // Il nome dovrebbe essere nella cella successiva
+        for (let j = i + 1; j < row.length; j++) {
+          const valueCell = String(row[j] || '').trim();
+          
+          // Esclude celle vuote, numeri puri, date, codici fiscali
+          if (valueCell && 
+              valueCell.length > 3 && 
+              valueCell.length < 100 &&
+              !/^\d+$/.test(valueCell) && // Non solo numeri
+              !/^\d{2}\/\d{2}\/\d{4}$/.test(valueCell)) { // Non date
+            
+            console.log(`  ✅ Nome azienda trovato: "${valueCell}"`);
+            return valueCell;
+          }
+        }
+      }
+    }
+  }
+  
+  console.log('  ⚠️ Nome azienda non trovato nel file XBRL');
+  return null;
+};
+
+// ============================================
+// FIX 3: PARSING DEBITI CIVILISTICO
+// ============================================
+
+const findDebitiFinanziariCivilistico = (sheetData, yearCols, sessionId) => {
+  console.log(`[${sessionId}] 🔍 Ricerca Debiti secondo schema civilistico italiano...`);
+  
+  let debitiML = { currentYear: 0, previousYear: 0 };
+  let debitiBreve = { currentYear: 0, previousYear: 0 };
+  
+  let inSezioneDebiti = false;
+  let foundAny = false;
+  
+  for (const row of sheetData) {
+    // Concatena le prime colonne per formare la descrizione
+    let desc = '';
+    for (let i = 0; i < Math.min(row.length, 6); i++) {
+      desc += String(row[i] || '').toLowerCase().trim() + ' ';
+    }
+    desc = desc.replace(/\s+/g, ' ').trim();
+    
+    // STEP 1: Trova la sezione D) DEBITI
+    if (!inSezioneDebiti && (
+        desc.includes('d) debiti') || 
+        desc.includes('d. debiti') ||
+        desc.includes('d)debiti')
+    )) {
+      inSezioneDebiti = true;
+      console.log(`[${sessionId}]   ✅ Sezione D) DEBITI trovata`);
+      continue;
+    }
+    
+    // STEP 2: Esci se arrivi alla sezione successiva
+    if (inSezioneDebiti && (
+        desc.match(/^e\)/) || 
+        desc.includes('totale passivo') ||
+        desc.includes('totale passività')
+    )) {
+      console.log(`[${sessionId}]   ℹ️ Fine sezione debiti`);
+      break;
+    }
+    
+    if (!inSezioneDebiti) continue;
+    
+    // STEP 3: Identifica le voci rilevanti
+    const isD1 = desc.includes('d.1') || desc.includes('d1') || desc.includes('obbligazioni');
+    const isD3 = desc.includes('d.3') || desc.includes('d3') || desc.includes('debiti verso banche');
+    const isD4 = desc.includes('d.4') || desc.includes('d4') || desc.includes('altri finanziatori');
+    
+    // STEP 4: Identifica se è oltre o entro l'esercizio
+    const isOltre = desc.includes('oltre') || 
+                    desc.includes("oltre l'esercizio") ||
+                    desc.includes('oltre esercizio') ||
+                    desc.includes('medio/lungo termine') ||
+                    desc.includes('m/l termine') ||
+                    desc.includes('consolidati');
+                    
+    const isEntro = desc.includes('entro') || 
+                    desc.includes("entro l'esercizio") ||
+                    desc.includes('entro esercizio') ||
+                    desc.includes('breve termine') ||
+                    desc.includes('quota corrente') ||
+                    desc.includes('correnti');
+    
+    // STEP 5: Se è una voce di debito finanziario, estrai i valori
+    if ((isD1 || isD3 || isD4) && (isOltre || isEntro)) {
+      const cur = parseValue(row[yearCols.currentYearCol]);
+      const prev = parseValue(row[yearCols.previousYearCol]);
+      
+      if (cur !== null || prev !== null) {
+        foundAny = true;
+        
+        if (isOltre) {
+          debitiML.currentYear += (cur || 0);
+          debitiML.previousYear += (prev || 0);
+          console.log(`[${sessionId}]   └─ M/L: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
+        } else if (isEntro) {
+          debitiBreve.currentYear += (cur || 0);
+          debitiBreve.previousYear += (prev || 0);
+          console.log(`[${sessionId}]   └─ Breve: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
+        }
+      }
+    }
+  }
+  
+  // Se non trova nessun debito, ritorna NULL (NO STIME!)
+  if (!foundAny || (debitiML.currentYear === 0 && debitiBreve.currentYear === 0)) {
+    console.log(`[${sessionId}]   ⚠️ Debiti finanziari NON trovati nel bilancio`);
+    return { 
+      ml_termine: { currentYear: null, previousYear: null },
+      breve_termine: { currentYear: null, previousYear: null }
+    };
+  }
+  
+  console.log(`[${sessionId}]   ✅ Totale Debiti M/L: N=${debitiML.currentYear}, N-1=${debitiML.previousYear}`);
+  console.log(`[${sessionId}]   ✅ Totale Debiti Breve: N=${debitiBreve.currentYear}, N-1=${debitiBreve.previousYear}`);
+  
+  return { 
+    ml_termine: debitiML, 
+    breve_termine: debitiBreve 
+  };
+};
+
+// ============================================
+// FUNZIONI DI RICERCA ALTRE METRICHE (invariate)
+// ============================================
 
 const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
   for (const config of searchConfigs) {
@@ -113,6 +316,34 @@ const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
   return { currentYear: null, previousYear: null };
 };
 
+const metricsConfigs = {
+  fatturato: [
+    { primary: ["a) ricavi delle vendite e delle prestazioni"] }, 
+    { primary: ["ricavi delle vendite"] }
+  ],
+  patrimonioNetto: [
+    { primary: ["totale patrimonio netto"] }, 
+    { primary: ["a) patrimonio netto"] }
+  ],
+  disponibilitaLiquide: [
+    { primary: ["disponibilità liquide"] }
+  ],
+  utilePerdita: [
+    { primary: ["utile (perdita) dell'esercizio"] }, 
+    { primary: ["risultato dell'esercizio"] }
+  ],
+  imposte: [
+    { primary: ["imposte sul reddito dell'esercizio"] }, 
+    { primary: ["imposte sul reddito"] }
+  ],
+  oneriFinanziari: [
+    { primary: ["interessi e altri oneri finanziari"] }
+  ],
+  ammortamenti: [
+    { primary: ["ammortamenti e svalutazioni"] }
+  ]
+};
+
 const findSimpleValue = (sheetData, searchTexts) => {
   const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
   for (const row of sheetData) {
@@ -129,100 +360,6 @@ const findSimpleValue = (sheetData, searchTexts) => {
     }
   }
   return null;
-};
-
-const findDebitiFinanziari = (sheetData, yearCols, sessionId) => {
-  console.log(`[${sessionId}] 🔍 Ricerca Debiti Finanziari (Banche)...`);
-  
-  let debitiFinanziariML = { currentYear: 0, previousYear: 0 };
-  let debitiFinanziariBreve = { currentYear: 0, previousYear: 0 };
-  let inPassiveSection = false;
-  let found = false;
-  
-  for (const row of sheetData) {
-    let desc = '';
-    for (let i = 0; i < Math.min(row.length, 6); i++) {
-      desc += String(row[i] || '').toLowerCase().trim() + ' ';
-    }
-    desc = desc.replace(/\s+/g, ' ').trim();
-    
-    if (!inPassiveSection && (desc.includes('d) debiti') || desc.includes('passivo'))) {
-      inPassiveSection = true;
-      console.log(`[${sessionId}] ✅ Sezione PASSIVO trovata`);
-      continue;
-    }
-    if (!inPassiveSection) continue;
-    
-    const hasBanche = desc.includes('debiti verso banche') || desc.includes('verso banche');
-    const hasFinanziatori = desc.includes('altri finanziatori') || desc.includes('finanziamenti');
-    
-    if (hasBanche || hasFinanziatori) {
-      const cur = parseValue(row[yearCols.currentYearCol]);
-      const prev = parseValue(row[yearCols.previousYearCol]);
-      
-      if (cur !== null || prev !== null) {
-        found = true;
-        const isMLTermine = desc.includes("esigibili oltre l'esercizio") || desc.includes("oltre l'esercizio successivo");
-        const isBreve = desc.includes("esigibili entro l'esercizio") || desc.includes("entro l'esercizio successivo") || desc.includes("quota corrente");
-        
-        if (isMLTermine) {
-          debitiFinanziariML.currentYear += (cur || 0);
-          debitiFinanziariML.previousYear += (prev || 0);
-        } else if (isBreve) {
-          debitiFinanziariBreve.currentYear += (cur || 0);
-          debitiFinanziariBreve.previousYear += (prev || 0);
-        } else {
-          debitiFinanziariBreve.currentYear += (cur || 0);
-          debitiFinanziariBreve.previousYear += (prev || 0);
-        }
-      }
-    }
-    
-    if (desc.startsWith('e) ') || desc.includes('totale passivo')) break;
-  }
-
-  // Converti 0 in null se non trovato nulla
-  if (!found || (debitiFinanziariML.currentYear === 0 && debitiFinanziariBreve.currentYear === 0)) {
-    debitiFinanziariML = { currentYear: null, previousYear: null };
-    debitiFinanziariBreve = { currentYear: null, previousYear: null };
-  }
-
-  console.log(`[${sessionId}] 💰 Debiti Finanziari M/L: N=${debitiFinanziariML.currentYear}, N-1=${debitiFinanziariML.previousYear}`);
-  console.log(`[${sessionId}] 💰 Debiti Finanziari Breve: N=${debitiFinanziariBreve.currentYear}, N-1=${debitiFinanziariBreve.previousYear}`);
-  
-  return { ml_termine: debitiFinanziariML, breve_termine: debitiFinanziariBreve };
-};
-
-const metricsConfigs = {
-  fatturato: [
-    { primary: ["a) ricavi delle vendite e delle prestazioni"] }, 
-    { primary: ["ricavi delle vendite"] }
-  ],
-  patrimonioNetto: [
-    { primary: ["totale patrimonio netto"] }, 
-    { primary: ["a) patrimonio netto"] }
-  ],
-  disponibilitaLiquide: [
-    { primary: ["disponibilità liquide"] }
-  ],
-  debitiTotali: [
-    { primary: ["totale debiti"] },
-    { primary: ["d) debiti"] }
-  ],
-  utilePerdita: [
-    { primary: ["utile (perdita) dell'esercizio"] }, 
-    { primary: ["risultato dell'esercizio"] }
-  ],
-  imposte: [
-    { primary: ["imposte sul reddito dell'esercizio"] }, 
-    { primary: ["imposte sul reddito"] }
-  ],
-  oneriFinanziari: [
-    { primary: ["interessi e altri oneri finanziari"] }
-  ],
-  ammortamenti: [
-    { primary: ["ammortamenti e svalutazioni"] }
-  ]
 };
 
 // ============================================
@@ -267,34 +404,7 @@ export default async function handler(req, res) {
     const fileInput = files.file?.[0];
     if (!fileInput) return res.status(400).json({ error: 'Nessun file XBRL caricato' });
     
-    const companyName = String(fields.companyName?.[0] || '').trim() || 'Azienda non specificata';
-    
-    // 3. CREA AZIENDA
-    const { data: companyRow } = await supabase
-      .from('companies')
-      .upsert(
-        { user_id: userRow.id, company_name: companyName }, 
-        { onConflict: 'user_id,company_name' }
-      )
-      .select('id')
-      .single();
-    
-    if (!companyRow) throw new Error('Impossibile creare azienda');
-    
-    // 4. CREA SESSIONE
-    sessionId = `val_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    await supabase
-      .from('valuations')
-      .insert({ 
-        session_id: sessionId, 
-        user_id: userRow.id, 
-        company_name: companyName, 
-        status: 'processing' 
-      });
-    
-    console.log(`[${sessionId}] Sessione valutazione creata`);
-
-    // 5. PARSE XBRL
+    // 3. LEGGI FILE XBRL
     const fileBuffer = fs.readFileSync(fileInput.filepath);
     const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
     const balanceSheet = workbook.Sheets['T0002'] || workbook.Sheets['T0001'];
@@ -309,52 +419,76 @@ export default async function handler(req, res) {
     const incomeStatementData = xlsx.utils.sheet_to_json(incomeStatement, { header: 1 });
     const companyInfoData = companyInfo ? xlsx.utils.sheet_to_json(companyInfo, { header: 1 }) : [];
     
-    // 6. TROVA ANNI - VERSIONE MIGLIORATA
+    // 4. ESTRAI NOME AZIENDA (FIX 2)
+    let companyName = extractCompanyName(companyInfoData);
+    
+    // Fallback: usa il nome inserito manualmente dall'utente
+    if (!companyName) {
+      companyName = String(fields.companyName?.[0] || '').trim() || 'Azienda non specificata';
+      console.log(`⚠️ Nome azienda da input manuale: "${companyName}"`);
+    }
+    
+    // 5. CREA AZIENDA
+    const { data: companyRow } = await supabase
+      .from('companies')
+      .upsert(
+        { user_id: userRow.id, company_name: companyName }, 
+        { onConflict: 'user_id,company_name' }
+      )
+      .select('id')
+      .single();
+    
+    if (!companyRow) throw new Error('Impossibile creare azienda');
+    
+    // 6. CREA SESSIONE
+    sessionId = `val_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    await supabase
+      .from('valuations')
+      .insert({ 
+        session_id: sessionId, 
+        user_id: userRow.id, 
+        company_name: companyName, 
+        status: 'processing' 
+      });
+    
+    console.log(`[${sessionId}] 🚀 Sessione valutazione creata per "${companyName}"`);
+
+    // 7. TROVA ANNI (FIX 1)
     const yearColsBS = findYearColumns(balanceSheetData);
     const yearColsIS = findYearColumns(incomeStatementData);
     
-    // ✅ FIX: Assicura che gli anni siano numeri interi
-    const yearsExtracted = yearColsBS.years.map(y => parseInt(y, 10));
+    const yearsExtracted = yearColsBS.years.map(y => parseInt(y.year, 10));
+    const fiscalYears = yearColsBS.years.map(y => ({
+      year: parseInt(y.year, 10),
+      endDate: y.endDate,
+      startDate: `${y.year}-01-01` // Assume inizio anno (puoi migliorare)
+    }));
     
-    console.log(`[${sessionId}] 📅 Anni estratti:`, yearsExtracted, `(types: ${typeof yearsExtracted[0]}, ${typeof yearsExtracted[1]})`);
+    console.log(`[${sessionId}] 📅 Anni estratti:`, yearsExtracted);
+    console.log(`[${sessionId}] 📅 Date esercizi:`, fiscalYears);
 
-    // 7. ESTRAI ATECO
+    // 8. ESTRAI ATECO
     const atecoRaw = companyInfoData.length > 0 
       ? findSimpleValue(companyInfoData, ['settore di attività prevalente', 'codice ateco']) 
       : null;
     const atecoCode = atecoRaw?.match(/(\d{2})/)?.[1] || null;
     console.log(`[${sessionId}] 🏢 ATECO estratto: ${atecoCode}`);
 
-    // 8. ESTRAI METRICHE (inclusi debiti totali)
+    // 9. ESTRAI METRICHE
     const metrics = {};
     for (const key in metricsConfigs) {
       metrics[key] = findValueInSheet(
-        ['patrimonioNetto', 'disponibilitaLiquide', 'debitiTotali'].includes(key) ? balanceSheetData : incomeStatementData,
+        ['patrimonioNetto', 'disponibilitaLiquide'].includes(key) ? balanceSheetData : incomeStatementData,
         metricsConfigs[key],
-        ['patrimonioNetto', 'disponibilitaLiquide', 'debitiTotali'].includes(key) ? yearColsBS : yearColsIS,
+        ['patrimonioNetto', 'disponibilitaLiquide'].includes(key) ? yearColsBS : yearColsIS,
         key
       );
     }
     
-    // 9. ESTRAI DEBITI FINANZIARI CON FALLBACK
-    let debitiFinanziari = findDebitiFinanziari(balanceSheetData, yearColsBS, sessionId);
+    // 10. ESTRAI DEBITI FINANZIARI (FIX 3 - NIENTE FALLBACK!)
+    const debitiFinanziari = findDebitiFinanziariCivilistico(balanceSheetData, yearColsBS, sessionId);
     
-    // ✅ FALLBACK: Se non trova debiti finanziari specifici, stima da debiti totali
-    if (debitiFinanziari.ml_termine.currentYear === null && debitiFinanziari.breve_termine.currentYear === null) {
-      console.log(`[${sessionId}] ⚠️ Debiti finanziari non trovati, applico fallback`);
-      
-      if (metrics.debitiTotali.currentYear !== null) {
-        // Stima: 60% breve, 40% M/L (proporzione conservativa)
-        debitiFinanziari.breve_termine.currentYear = Math.round(metrics.debitiTotali.currentYear * 0.6);
-        debitiFinanziari.ml_termine.currentYear = Math.round(metrics.debitiTotali.currentYear * 0.4);
-        debitiFinanziari.breve_termine.previousYear = Math.round((metrics.debitiTotali.previousYear || 0) * 0.6);
-        debitiFinanziari.ml_termine.previousYear = Math.round((metrics.debitiTotali.previousYear || 0) * 0.4);
-        
-        console.log(`[${sessionId}] ✅ Fallback applicato: Breve=${debitiFinanziari.breve_termine.currentYear}, M/L=${debitiFinanziari.ml_termine.currentYear}`);
-      }
-    }
-    
-    // 10. CALCOLA EBITDA
+    // 11. CALCOLA EBITDA
     const ebitda = {
       currentYear: (metrics.utilePerdita.currentYear || 0) + (metrics.imposte.currentYear || 0) + (metrics.oneriFinanziari.currentYear || 0) + (metrics.ammortamenti.currentYear || 0),
       previousYear: (metrics.utilePerdita.previousYear || 0) + (metrics.imposte.previousYear || 0) + (metrics.oneriFinanziari.previousYear || 0) + (metrics.ammortamenti.previousYear || 0)
@@ -362,20 +496,22 @@ export default async function handler(req, res) {
     
     console.log(`[${sessionId}] 💰 EBITDA calcolato: N=${ebitda.currentYear}, N-1=${ebitda.previousYear}`);
     
-    // 11. CALCOLA PFN
+    // 12. CALCOLA PFN (usa null se debiti non trovati)
     const pfn = {
-      currentYear: (debitiFinanziari.ml_termine.currentYear || 0) + (debitiFinanziari.breve_termine.currentYear || 0) - (metrics.disponibilitaLiquide.currentYear || 0),
-      previousYear: (debitiFinanziari.ml_termine.previousYear || 0) + (debitiFinanziari.breve_termine.previousYear || 0) - (metrics.disponibilitaLiquide.previousYear || 0)
+      currentYear: debitiFinanziari.ml_termine.currentYear !== null && debitiFinanziari.breve_termine.currentYear !== null
+        ? (debitiFinanziari.ml_termine.currentYear || 0) + (debitiFinanziari.breve_termine.currentYear || 0) - (metrics.disponibilitaLiquide.currentYear || 0)
+        : null,
+      previousYear: debitiFinanziari.ml_termine.previousYear !== null && debitiFinanziari.breve_termine.previousYear !== null
+        ? (debitiFinanziari.ml_termine.previousYear || 0) + (debitiFinanziari.breve_termine.previousYear || 0) - (metrics.disponibilitaLiquide.previousYear || 0)
+        : null
     };
     
     console.log(`[${sessionId}] 📊 PFN calcolata: N=${pfn.currentYear}, N-1=${pfn.previousYear}`);
 
-    // 12. PREPARA DATI STORICI
-    const yearN_1 = yearsExtracted[0]; // Anno più vecchio
-    const yearN = yearsExtracted[1];   // Anno più recente
+    // 13. PREPARA DATI STORICI
+    const yearN_1 = yearsExtracted[0];
+    const yearN = yearsExtracted[1];
     
-    console.log(`[${sessionId}] 📅 Mapping: Anno N-1=${yearN_1}, Anno N=${yearN}`);
-
     const historicalData = {
       [yearN]: {
         ricavi: metrics.fatturato.currentYear,
@@ -403,19 +539,12 @@ export default async function handler(req, res) {
       technology_risk: 'medium'
     };
     
-    // 13. LOG FINALE PRIMA DEL SALVATAGGIO
-    console.log(`[${sessionId}] 🔍 VERIFICA FINALE:`, {
-      years: yearsExtracted,
-      types: yearsExtracted.map(y => typeof y),
-      debiti_ml: debitiFinanziari.ml_termine.currentYear,
-      debiti_breve: debitiFinanziari.breve_termine.currentYear
-    });
-    
-    // 14. SALVA DATI
+    // 14. SALVA DATI (+ fiscal_years)
     const { error: updateError } = await supabase
       .from('valuations')
       .update({
         years_analyzed: yearsExtracted,
+        fiscal_years: fiscalYears, // NUOVO CAMPO!
         historical_data: historicalData,
         valuation_inputs: valuationInputs,
         sector_ateco: atecoCode,
@@ -432,7 +561,9 @@ export default async function handler(req, res) {
     
     return res.status(200).json({ 
       success: true, 
-      sessionId: sessionId
+      sessionId: sessionId,
+      companyName: companyName,
+      years: yearsExtracted
     });
 
   } catch (error) {
