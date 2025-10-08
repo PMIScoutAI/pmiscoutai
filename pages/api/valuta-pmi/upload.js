@@ -1,6 +1,6 @@
 // /pages/api/valuta-pmi/upload.js
 // Valuta-PMI: Upload XBRL, Parse dati finanziari e crea sessione valutazione
-// VERSIONE 8.1 - Reintroduzione calcolo EBITDA manuale
+// VERSIONE 8.2 - Calcolo EBITDA robusto
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -474,6 +474,10 @@ export default async function handler(req, res) {
     const atecoCode = atecoRaw?.match(/(\d{2})/)?.[1] || null;
     console.log(`[${sessionId}] 🏢 ATECO estratto: ${atecoCode}`);
 
+    // ============================================
+    // CALCOLO EBITDA ROBUSTO - Versione 8.2
+    // ============================================
+
     // STEP 8: Estrai metriche
     const metrics = {};
     for (const key in metricsConfigs) {
@@ -481,21 +485,56 @@ export default async function handler(req, res) {
       const sheet = isBalanceSheetMetric ? balanceSheetData : incomeStatementData;
       metrics[key] = findValueInSheet(sheet, metricsConfigs[key], yearCols, key);
     }
-    
-    // Calcolo EBITDA manuale come fallback
-    const calculatedEbitda = {
-      currentYear: (metrics.utilePerdita.currentYear || 0) + 
-                   (metrics.imposte.currentYear || 0) + 
-                   (metrics.oneriFinanziari.currentYear || 0) + 
-                   (metrics.ammortamenti.currentYear || 0),
-      previousYear: (metrics.utilePerdita.previousYear || 0) + 
-                    (metrics.imposte.previousYear || 0) + 
-                    (metrics.oneriFinanziari.previousYear || 0) + 
-                    (metrics.ammortamenti.previousYear || 0)
+
+    console.log(`[${sessionId}] 💰 Componenti EBITDA estratte:`);
+    console.log(`[${sessionId}]   Utile/Perdita: N=${metrics.utilePerdita?.currentYear}, N-1=${metrics.utilePerdita?.previousYear}`);
+    console.log(`[${sessionId}]   Imposte: N=${metrics.imposte?.currentYear}, N-1=${metrics.imposte?.previousYear}`);
+    console.log(`[${sessionId}]   Oneri Finanziari: N=${metrics.oneriFinanziari?.currentYear}, N-1=${metrics.oneriFinanziari?.previousYear}`);
+    console.log(`[${sessionId}]   Ammortamenti: N=${metrics.ammortamenti?.currentYear}, N-1=${metrics.ammortamenti?.previousYear}`);
+
+    const calculateEbitdaSafely = (utile, imposte, oneri, ammortamenti, year) => {
+      if (utile === null) {
+        console.log(`[${sessionId}]   ⚠️ EBITDA ${year}: null (Utile/Perdita non trovato)`);
+        return null;
+      }
+      
+      const ebitda = utile + (imposte || 0) + (oneri || 0) + (ammortamenti || 0);
+      
+      const missingComponents = [];
+      if (imposte === null) missingComponents.push('Imposte');
+      if (oneri === null) missingComponents.push('Oneri Finanziari');
+      if (ammortamenti === null) missingComponents.push('Ammortamenti');
+      
+      if (missingComponents.length > 0) {
+        console.log(`[${sessionId}]   ℹ️ EBITDA ${year}: calcolato con componenti mancanti (${missingComponents.join(', ')}) trattate come 0`);
+      } else {
+        console.log(`[${sessionId}]   ✅ EBITDA ${year}: calcolato con tutte le componenti`);
+      }
+      
+      return ebitda;
     };
-    
+
+    const calculatedEbitda = {
+      currentYear: calculateEbitdaSafely(
+        metrics.utilePerdita.currentYear,
+        metrics.imposte.currentYear,
+        metrics.oneriFinanziari.currentYear,
+        metrics.ammortamenti.currentYear,
+        'N'
+      ),
+      previousYear: calculateEbitdaSafely(
+        metrics.utilePerdita.previousYear,
+        metrics.imposte.previousYear,
+        metrics.oneriFinanziari.previousYear,
+        metrics.ammortamenti.previousYear,
+        'N-1'
+      )
+    };
+
+    console.log(`[${sessionId}] 💰 EBITDA calcolato: N=${calculatedEbitda.currentYear}, N-1=${calculatedEbitda.previousYear}`);
+
     const debitiFinanziari = findDebitiFinanziariCivilistico(balanceSheetData, yearCols, sessionId);
-    
+
     const historicalData = {};
     const yearN1 = yearsExtracted[0];
     const yearN = yearsExtracted[1];
@@ -508,6 +547,7 @@ export default async function handler(req, res) {
         debiti_finanziari_breve: debitiFinanziari.breve_termine.previousYear,
         disponibilita_liquide: metrics.disponibilitaLiquide.previousYear,
     };
+
     historicalData[yearN] = {
         ricavi: metrics.fatturato.currentYear,
         ebitda: metrics.ebitda.currentYear ?? calculatedEbitda.currentYear,
@@ -516,17 +556,61 @@ export default async function handler(req, res) {
         debiti_finanziari_breve: debitiFinanziari.breve_termine.currentYear,
         disponibilita_liquide: metrics.disponibilitaLiquide.currentYear,
     };
+    
+    console.log(`[${sessionId}] 📊 Historical Data:`, JSON.stringify(historicalData, null, 2));
 
-    // STEP 9: VALIDAZIONE INCROCIATA
-    const valueWarnings = yearConfig.validateExtractedValues(metrics);
+    const validateEbitda = () => {
+      const warnings = [];
+      
+      if (historicalData[yearN].ebitda === null && historicalData[yearN1].ebitda === null) {
+        warnings.push({
+          severity: 'high',
+          code: 'EBITDA_NOT_CALCULABLE',
+          message: 'EBITDA non calcolabile: Utile/Perdita non trovato in entrambi gli anni.'
+        });
+      }
+      
+      if (historicalData[yearN].ebitda !== null && historicalData[yearN].ebitda < 0) {
+        warnings.push({
+          severity: 'info',
+          code: 'NEGATIVE_EBITDA',
+          message: `EBITDA negativo nell'anno ${yearN}: ${historicalData[yearN].ebitda}. Possibile marginalità operativa negativa.`
+        });
+      }
+      
+      const ricaviN = historicalData[yearN].ricavi;
+      const ebitdaN = historicalData[yearN].ebitda;
+      
+      if (ricaviN && ebitdaN !== null) {
+        const ebitdaMargin = (ebitdaN / ricaviN) * 100;
+        
+        if (ebitdaMargin < -10 || ebitdaMargin > 50) {
+          warnings.push({
+            severity: 'medium',
+            code: 'ANOMALOUS_EBITDA_MARGIN',
+            message: `EBITDA Margin anomalo: ${ebitdaMargin.toFixed(1)}%. Verifica i dati estratti.`,
+            data: { ricavi: ricaviN, ebitda: ebitdaN, margin: ebitdaMargin }
+          });
+        }
+      }
+      
+      return warnings;
+    };
 
-    if (valueWarnings.length > 0) {
-      console.warn(`[${sessionId}] ⚠️ Warning validazione valori:`);
-      valueWarnings.forEach(w => {
+    const ebitdaWarnings = validateEbitda();
+
+    if (ebitdaWarnings.length > 0) {
+      console.warn(`[${sessionId}] ⚠️ Warning EBITDA:`);
+      ebitdaWarnings.forEach(w => {
         console.warn(`[${sessionId}]   [${w.severity.toUpperCase()}] ${w.code}: ${w.message}`);
         if (w.data) console.warn(`[${sessionId}]     Dati:`, w.data);
       });
     }
+
+    // STEP 9: VALIDAZIONE INCROCIATA
+    const valueWarnings = yearConfig.validateExtractedValues(metrics);
+    const allWarnings = [...yearConfig.warnings, ...valueWarnings, ...ebitdaWarnings];
+    const hasCriticalWarnings = allWarnings.some(w => w.severity === 'critical');
 
     const valuationInputs = {
       market_position: 'follower',
@@ -534,9 +618,6 @@ export default async function handler(req, res) {
       technology_risk: 'medium'
     };
     
-    const allWarnings = [...yearConfig.warnings, ...valueWarnings];
-    const hasCriticalWarnings = allWarnings.some(w => w.severity === 'critical');
-
     if (hasCriticalWarnings) {
       console.error(`[${sessionId}] ❌ Rilevati warning critici - Richiesta conferma utente`);
       
