@@ -1,7 +1,6 @@
 // /pages/valutazione/[sessionId].js
 // Pagina dinamica per il wizard di valutazione aziendale.
-// VERSIONE 3.0 - FIX: Nome azienda, date esercizi, warning debiti mancanti
-
+// VERSIONE 4.0 - SEMPLIFICATA: Solo anni (no date esercizi)
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Script from 'next/script';
@@ -26,7 +25,6 @@ export default function ValutazionePageWrapper() {
         src="https://cdn.outseta.com/outseta.min.js"
         strategy="beforeInteractive"
       />
-
       <ProtectedPage>
         <Layout pageTitle="Valutazione Aziendale">
           <ValutazioneWizard />
@@ -40,12 +38,10 @@ export default function ValutazionePageWrapper() {
 function ValutazioneWizard() {
   const router = useRouter();
   const { sessionId } = router.query;
-  
   const [sessionData, setSessionData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentStep, setCurrentStep] = useState('loading');
-
   const [financialData, setFinancialData] = useState({});
   const [valuationInputs, setValuationInputs] = useState({
     market_position: 'follower',
@@ -138,7 +134,6 @@ function ValutazioneWizard() {
       };
       
       console.log('[ValutaPMI] Invio calcolo valutazione:', payload);
-      
       const response = await api.post('/valuta-pmi/calculate', payload);
       
       if (response.data.success) {
@@ -252,21 +247,6 @@ const SelectField = ({ id, label, value, onChange, children, helpText }) => (
   </div>
 );
 
-// Helper per formattare date
-const formatDate = (dateString) => {
-  if (!dateString) return '';
-  try {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('it-IT', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric' 
-    });
-  } catch {
-    return dateString;
-  }
-};
-
 // ============================================
 // STEP 1: DATA ENTRY
 // ============================================
@@ -309,15 +289,20 @@ const DataEntryStep = ({
 
   return (
     <div className="space-y-8">
-      {/* FIX: Header con nome azienda */}
+      {/* Header con nome azienda e anni */}
       <div className="text-center">
         <h1 className="text-3xl font-bold text-slate-900">Verifica e Completa i Dati</h1>
         {sessionData.company_name && (
-          <p className="mt-3 text-2xl font-semibold text-blue-600">
-            🏢 {sessionData.company_name}
-          </p>
+          <div className="mt-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg inline-block">
+            <p className="text-2xl font-bold text-blue-700">
+              🏢 {sessionData.company_name}
+            </p>
+            <p className="text-sm text-blue-600 mt-1">
+              Anno {years[1]} | Anno {years[0]}
+            </p>
+          </div>
         )}
-        <p className="mt-2 text-slate-600">
+        <p className="mt-4 text-slate-600">
           Controlla i dati estratti dall'XBRL e inserisci i parametri qualitativi per una valutazione accurata.
         </p>
       </div>
@@ -328,7 +313,6 @@ const DataEntryStep = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {years.map(year => {
             const yearData = financialData[year] || {};
-            const fiscalYearInfo = sessionData.fiscal_years?.find(y => y.year === year);
             
             // Check se i debiti sono mancanti (null)
             const debitiMLMissing = yearData.debiti_finanziari_ml === null || yearData.debiti_finanziari_ml === undefined;
@@ -336,14 +320,9 @@ const DataEntryStep = ({
             
             return (
               <div key={year} className="space-y-4 p-4 border border-slate-200 rounded-lg">
-                {/* FIX: Header anno con date */}
+                {/* Header anno */}
                 <div className="border-b border-slate-200 pb-2 mb-3">
                   <h3 className="font-bold text-lg text-blue-600">Anno {year}</h3>
-                  {fiscalYearInfo && (
-                    <p className="text-xs text-slate-500 mt-1">
-                      📅 Esercizio: {formatDate(fiscalYearInfo.startDate)} - {formatDate(fiscalYearInfo.endDate)}
-                    </p>
-                  )}
                 </div>
                 
                 <InputField 
@@ -362,7 +341,7 @@ const DataEntryStep = ({
                   onChange={(e) => handleFinancialChange(e, year, 'patrimonio_netto')} 
                 />
                 
-                {/* FIX: Warning per debiti M/L mancanti */}
+                {/* Warning per debiti M/L mancanti */}
                 {debitiMLMissing && (
                   <div className="p-3 bg-orange-50 border border-orange-300 rounded-md">
                     <p className="text-xs text-orange-800 font-semibold flex items-start gap-2">
@@ -383,7 +362,7 @@ const DataEntryStep = ({
                   helpText={debitiMLMissing ? '⚠️ Valore da inserire manualmente' : 'Estratto dal bilancio (D.3/D.4 oltre esercizio)'}
                 />
                 
-                {/* FIX: Warning per debiti breve mancanti */}
+                {/* Warning per debiti breve mancanti */}
                 {debitiBreveMissing && (
                   <div className="p-3 bg-orange-50 border border-orange-300 rounded-md">
                     <p className="text-xs text-orange-800 font-semibold flex items-start gap-2">
@@ -508,15 +487,17 @@ const ResultsStep = ({ results, sessionData, onRecalculate }) => {
 
   return (
     <div className="space-y-8">
-      {/* FIX: Header risultati con nome azienda */}
+      {/* Header risultati con nome azienda */}
       <div className="text-center">
         <h1 className="text-3xl font-bold text-slate-900">Risultato della Valutazione</h1>
         {sessionData?.company_name && (
-          <p className="mt-2 text-xl font-semibold text-blue-600">
-            🏢 {sessionData.company_name}
-          </p>
+          <div className="mt-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg inline-block">
+            <p className="text-2xl font-bold text-blue-700">
+              🏢 {sessionData.company_name}
+            </p>
+          </div>
         )}
-        <p className="mt-2 text-slate-600">
+        <p className="mt-4 text-slate-600">
           Basato sui dati forniti e sui multipli di mercato del settore di riferimento.
         </p>
       </div>
