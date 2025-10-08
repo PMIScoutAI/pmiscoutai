@@ -1,6 +1,6 @@
 // /pages/api/valuta-pmi/upload.js
 // Valuta-PMI: Upload XBRL, Parse dati finanziari e crea sessione valutazione
-// VERSIONE 3.0 - Fix anni corretti + parsing debiti civilistico + estrazione nome azienda + date esercizi
+// VERSIONE SEMPLIFICATA E CORRETTA
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -39,308 +39,60 @@ const parseValue = (val) => {
 };
 
 // ============================================
-// FIX 1: ESTRAZIONE ANNI CORRETTA
+// ESTRAZIONE ANNI SEMPLIFICATA
 // ============================================
-
 const findYearColumns = (sheetData) => {
-  console.log('🔍 Ricerca colonne degli anni...');
-  
-  const yearRegex = /(20\d{2})/;
-  const dateRegex = /(\d{1,2})[\/\-](\d{1,2})[\/\-](20\d{2})/; // es. 31/12/2023
-  let years = [];
-  
-  // Cerca nelle prime 30 righe (header + intestazioni)
-  for (let i = 0; i < Math.min(sheetData.length, 30); i++) {
+  console.log('🔍 Ricerca colonne degli anni (solo pattern anno civile)...');
+  const yearPattern = /\b20\d{2}\b/; // Solo anni tipo 2023, 2024
+  let foundYears = [];
+  // Cerca SOLO nelle prime 15 righe (header)
+  for (let i = 0; i < Math.min(sheetData.length, 15); i++) {
     const row = sheetData[i];
-    
     for (let j = 2; j < row.length; j++) {
       const cell = String(row[j] ?? '').trim();
-      
-      // Cerca pattern data completa (es. "31/12/2023" o "Esercizio al 31/12/2023")
-      const dateMatch = cell.match(dateRegex);
-      if (dateMatch) {
-        const year = parseInt(dateMatch[3], 10);
-        const fullDate = `${dateMatch[3]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}`;
-        
+      const match = cell.match(yearPattern);
+      if (match) {
+        const year = parseInt(match[0], 10);
         const currentYear = new Date().getFullYear();
+        // Verifica che l'anno sia sensato (tra 2015 e anno corrente + 1)
         if (year >= 2015 && year <= currentYear + 1) {
-          if (!years.find(y => y.year === year)) {
-            years.push({ 
-              year, 
-              col: j, 
-              endDate: fullDate,
-              source: 'date_pattern'
-            });
-            console.log(`  ✅ Anno ${year} trovato in colonna ${j} (data: ${fullDate})`);
-          }
-        }
-        continue;
-      }
-      
-      // Se non trova la data completa, cerca solo l'anno
-      const yearMatch = cell.match(yearRegex);
-      if (yearMatch) {
-        const year = parseInt(yearMatch[1], 10);
-        const currentYear = new Date().getFullYear();
-        
-        // Filtri più stringenti per evitare falsi positivi
-        const isHeader = i < 15; // Deve essere nelle prime 15 righe
-        const cellLength = cell.length;
-        const isLikelyYear = cellLength <= 20; // Celle brevi (non descrizioni lunghe)
-        
-        if (year >= 2015 && year <= currentYear + 1 && isHeader && isLikelyYear) {
-          if (!years.find(y => y.year === year)) {
-            years.push({ 
-              year, 
-              col: j,
-              endDate: `${year}-12-31`, // Assume fine anno
-              source: 'year_only'
-            });
-            console.log(`  ✅ Anno ${year} trovato in colonna ${j} (solo anno)`);
+          // Evita duplicati
+          if (!foundYears.find(y => y.year === year)) {
+            foundYears.push({ year, col: j });
+            console.log(`  ✅ Anno ${year} trovato in colonna ${j}`);
           }
         }
       }
     }
-    
-    // Se ha trovato almeno 2 anni, fermati
-    if (years.length >= 2) break;
   }
-  
-  // Fallback: usa colonne di default solo se non trova NULLA
-  if (years.length < 2) {
+  // Fallback se non trova almeno 2 anni
+  if (foundYears.length < 2) {
     console.warn('⚠️ Anni non trovati, uso colonne di default');
     const currentYear = new Date().getFullYear();
-    return { 
-      currentYearCol: 3, 
-      previousYearCol: 4, 
+    return {
+      currentYearCol: 3,
+      previousYearCol: 4,
       years: [
-        { year: currentYear - 1, col: 4, endDate: `${currentYear - 1}-12-31` },
-        { year: currentYear, col: 3, endDate: `${currentYear}-12-31` }
+        { year: currentYear - 1, col: 4 },
+        { year: currentYear, col: 3 }
       ]
     };
   }
-  
-  // Rimuovi duplicati e ordina per anno decrescente
-  const uniqueYears = [...new Map(years.map(item => [item.year, item])).values()];
-  uniqueYears.sort((a, b) => b.year - a.year);
-  
-  console.log(`✅ Anni finali estratti:`, uniqueYears.map(y => `${y.year} (col ${y.col})`));
-  
-  return { 
-    currentYearCol: uniqueYears[0].col, 
-    previousYearCol: uniqueYears[1]?.col || uniqueYears[0].col + 1,
-    years: uniqueYears.slice(0, 2).reverse() // [vecchio, nuovo]
-  };
-};
-// ============================================
-// TROVA COLONNE QUANDO CONOSCI GIÀ GLI ANNI
-// ============================================
-
-const findYearColumnsWithKnownYears = (sheetData, knownYears, sessionId) => {
-  console.log(`[${sessionId}] 🔍 Cerco colonne per anni:`, knownYears);
-  
-  const yearOld = knownYears[0]; // Anno più vecchio
-  const yearNew = knownYears[1]; // Anno più recente
-  
-  let colOld = null;
-  let colNew = null;
-  
-  // Cerca nelle prime 30 righe
-  for (let i = 0; i < Math.min(sheetData.length, 30); i++) {
-    const row = sheetData[i];
-    
-    for (let j = 2; j < row.length; j++) {
-      const cell = String(row[j] ?? '').trim();
-      
-      // Cerca l'anno vecchio
-      if (cell.includes(String(yearOld)) && colOld === null) {
-        colOld = j;
-        console.log(`[${sessionId}]   ✅ Anno ${yearOld} trovato in colonna ${j}`);
-      }
-      
-      // Cerca l'anno nuovo
-      if (cell.includes(String(yearNew)) && colNew === null) {
-        colNew = j;
-        console.log(`[${sessionId}]   ✅ Anno ${yearNew} trovato in colonna ${j}`);
-      }
-      
-      // Se ha trovato entrambi, esci
-      if (colOld !== null && colNew !== null) break;
-    }
-    
-    if (colOld !== null && colNew !== null) break;
-  }
-  
-  // Fallback: usa posizioni di default se non trova
-  if (colOld === null || colNew === null) {
-    console.log(`[${sessionId}]   ⚠️ Colonne non trovate, uso default (3 e 4)`);
-    colOld = 4;
-    colNew = 3;
-  }
-  
+  // Ordina per anno DECRESCENTE e prendi i 2 più recenti
+  foundYears.sort((a, b) => b.year - a.year);
+  const twoMostRecent = foundYears.slice(0, 2);
+  // Riordina in modo che [0] sia il vecchio, [1] sia il nuovo
+  twoMostRecent.sort((a, b) => a.year - b.year);
+  console.log(`✅ Anni selezionati: ${twoMostRecent[0].year} (col ${twoMostRecent[0].col}), ${twoMostRecent[1].year} (col ${twoMostRecent[1].col})`);
   return {
-    currentYearCol: colNew,     // Anno più recente
-    previousYearCol: colOld,    // Anno più vecchio
-    years: [
-      { year: yearOld, col: colOld, endDate: `${yearOld}-12-31` },
-      { year: yearNew, col: colNew, endDate: `${yearNew}-12-31` }
-    ]
+    currentYearCol: twoMostRecent[1].col,    // Anno più recente
+    previousYearCol: twoMostRecent[0].col,   // Anno precedente
+    years: twoMostRecent
   };
-};
-// ============================================
-// ESTRAZIONE DATE ESERCIZI DA SEZIONE DEDICATA - VERSIONE MIGLIORATA
-// ============================================
-
-const extractFiscalYearDates = (companyInfoData) => {
-  console.log('📅 Ricerca date esercizi in T0000...');
-  
-  const fiscalYears = [];
-  const exerciseData = {
-    current: { startDate: null, endDate: null },
-    previous: { startDate: null, endDate: null }
-  };
-  
-  // Pattern per cercare le date in vari formati
-  const datePattern = /(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/;
-  
-  for (let i = 0; i < companyInfoData.length; i++) {
-    const row = companyInfoData[i];
-    
-    // Crea una stringa dell'intera riga per facilitare la ricerca
-    const rowText = row.map(cell => String(cell || '').toLowerCase().trim()).join(' ');
-    
-    console.log(`  📄 Riga ${i}: "${rowText.substring(0, 80)}..."`);
-    
-    // ===== CERCA "ESERCIZIO DI RIFERIMENTO" / "ESERCIZIO CORRENTE" =====
-    const isCurrentExercise = 
-      rowText.includes('esercizio di riferimento') ||
-      rowText.includes('esercizio corrente') ||
-      rowText.includes('esercizio chiuso') ||
-      (rowText.includes('esercizio') && !rowText.includes('precedente'));
-    
-    if (isCurrentExercise && rowText.includes('esercizio')) {
-      console.log(`    ✅ Trovato riferimento a esercizio corrente`);
-      
-      // Cerca nelle prossime 15 righe
-      for (let k = i; k < Math.min(i + 15, companyInfoData.length); k++) {
-        const nextRow = companyInfoData[k];
-        const nextRowText = nextRow.map(c => String(c || '').toLowerCase()).join(' ');
-        
-        // Cerca "inizio" o "data inizio" o "dal"
-        if ((nextRowText.includes('inizio') || nextRowText.includes('dal')) && 
-            !exerciseData.current.startDate) {
-          
-          for (const cell of nextRow) {
-            const cellStr = String(cell || '');
-            const match = cellStr.match(datePattern);
-            if (match) {
-              exerciseData.current.startDate = `${match[3]}-${match[2]}-${match[1]}`;
-              console.log(`      └─ Inizio corrente: ${exerciseData.current.startDate}`);
-              break;
-            }
-          }
-        }
-        
-        // Cerca "fine" o "chiusura" o "al"
-        if ((nextRowText.includes('fine') || nextRowText.includes('chiusura') || nextRowText.includes(' al ')) && 
-            !exerciseData.current.endDate) {
-          
-          for (const cell of nextRow) {
-            const cellStr = String(cell || '');
-            const match = cellStr.match(datePattern);
-            if (match) {
-              exerciseData.current.endDate = `${match[3]}-${match[2]}-${match[1]}`;
-              console.log(`      └─ Fine corrente: ${exerciseData.current.endDate}`);
-              break;
-            }
-          }
-        }
-        
-        // Se ha trovato entrambe le date, esci
-        if (exerciseData.current.startDate && exerciseData.current.endDate) break;
-      }
-    }
-    
-    // ===== CERCA "ESERCIZIO PRECEDENTE" =====
-    if (rowText.includes('esercizio precedente') || rowText.includes('precedente esercizio')) {
-      console.log(`    ✅ Trovato riferimento a esercizio precedente`);
-      
-      // Cerca nelle prossime 15 righe
-      for (let k = i; k < Math.min(i + 15, companyInfoData.length); k++) {
-        const nextRow = companyInfoData[k];
-        const nextRowText = nextRow.map(c => String(c || '').toLowerCase()).join(' ');
-        
-        if ((nextRowText.includes('inizio') || nextRowText.includes('dal')) && 
-            !exerciseData.previous.startDate) {
-          
-          for (const cell of nextRow) {
-            const cellStr = String(cell || '');
-            const match = cellStr.match(datePattern);
-            if (match) {
-              exerciseData.previous.startDate = `${match[3]}-${match[2]}-${match[1]}`;
-              console.log(`      └─ Inizio precedente: ${exerciseData.previous.startDate}`);
-              break;
-            }
-          }
-        }
-        
-        if ((nextRowText.includes('fine') || nextRowText.includes('chiusura') || nextRowText.includes(' al ')) && 
-            !exerciseData.previous.endDate) {
-          
-          for (const cell of nextRow) {
-            const cellStr = String(cell || '');
-            const match = cellStr.match(datePattern);
-            if (match) {
-              exerciseData.previous.endDate = `${match[3]}-${match[2]}-${match[1]}`;
-              console.log(`      └─ Fine precedente: ${exerciseData.previous.endDate}`);
-              break;
-            }
-          }
-        }
-        
-        if (exerciseData.previous.startDate && exerciseData.previous.endDate) break;
-      }
-    }
-  }
-  
-  // ===== COMPONI L'ARRAY FINALE =====
-  
-  // Esercizio precedente
-  if (exerciseData.previous.endDate) {
-    const year = parseInt(exerciseData.previous.endDate.split('-')[0], 10);
-    fiscalYears.push({
-      year,
-      startDate: exerciseData.previous.startDate || `${year}-01-01`,
-      endDate: exerciseData.previous.endDate
-    });
-    console.log(`  ✅ Esercizio precedente: ${year} (${exerciseData.previous.startDate} → ${exerciseData.previous.endDate})`);
-  }
-  
-  // Esercizio corrente
-  if (exerciseData.current.endDate) {
-    const year = parseInt(exerciseData.current.endDate.split('-')[0], 10);
-    fiscalYears.push({
-      year,
-      startDate: exerciseData.current.startDate || `${year}-01-01`,
-      endDate: exerciseData.current.endDate
-    });
-    console.log(`  ✅ Esercizio corrente: ${year} (${exerciseData.current.startDate} → ${exerciseData.current.endDate})`);
-  }
-  
-  // Ordina per anno crescente
-  fiscalYears.sort((a, b) => a.year - b.year);
-  
-  if (fiscalYears.length === 0) {
-    console.log('  ⚠️ Nessuna data esercizio trovata in T0000');
-  } else {
-    console.log(`  📅 Totale esercizi trovati: ${fiscalYears.length}`);
-  }
-  
-  return fiscalYears;
 };
 
 // ============================================
-// FIX 2: ESTRAZIONE NOME AZIENDA DA XBRL
+// ESTRAZIONE NOME AZIENDA DA XBRL
 // ============================================
 
 const extractCompanyName = (companyInfoData) => {
@@ -385,146 +137,82 @@ const extractCompanyName = (companyInfoData) => {
 };
 
 // ============================================
-// FIX 3: PARSING DEBITI CIVILISTICO - VERSIONE MIGLIORATA
+// PARSING DEBITI CIVILISTICO - VERSIONE CONFORME
 // ============================================
-
 const findDebitiFinanziariCivilistico = (sheetData, yearCols, sessionId) => {
   console.log(`[${sessionId}] 🔍 Ricerca Debiti secondo schema civilistico italiano...`);
-  
   let debitiML = { currentYear: 0, previousYear: 0 };
   let debitiBreve = { currentYear: 0, previousYear: 0 };
-  let debitiTotali = { currentYear: 0, previousYear: 0 }; // Per fallback
-  
   let inSezioneDebiti = false;
-  let foundMLorBreve = false;
-  let foundGeneric = false;
-  
+  let foundAny = false;
   for (const row of sheetData) {
+    // Concatena le prime colonne per formare la descrizione
     let desc = '';
     for (let i = 0; i < Math.min(row.length, 6); i++) {
       desc += String(row[i] || '').toLowerCase().trim() + ' ';
     }
     desc = desc.replace(/\s+/g, ' ').trim();
-    
-    // STEP 1: Trova la sezione D) DEBITI (più flessibile)
+    // STEP 1: Trova la sezione D) DEBITI
     if (!inSezioneDebiti && (
-        desc.includes('d) debiti') || 
+        desc.includes('d) debiti') ||
         desc.includes('d. debiti') ||
         desc.includes('d)debiti') ||
-        desc.includes('d debiti') ||
-        (desc.startsWith('d)') && desc.includes('debiti'))
+        desc.includes('d debiti')
     )) {
       inSezioneDebiti = true;
       console.log(`[${sessionId}]   ✅ Sezione D) DEBITI trovata`);
       continue;
     }
-    
     // STEP 2: Esci se arrivi alla sezione successiva
     if (inSezioneDebiti && (
-        desc.match(/^e[\)\.]/) || 
+        desc.match(/^e[\)\.]/) ||
         desc.includes('totale passivo') ||
-        desc.includes('totale passività') ||
-        desc.includes('totale delle passività')
+        desc.includes('totale passività')
     )) {
       console.log(`[${sessionId}]   ℹ️ Fine sezione debiti`);
       break;
     }
-    
     if (!inSezioneDebiti) continue;
-    
-    // STEP 3: Identifica le voci rilevanti (più flessibile)
-    const isD1 = desc.match(/d[\.\)]?\s?1/) || desc.includes('obbligazioni');
-    const isD3 = desc.match(/d[\.\)]?\s?3/) || desc.includes('debiti verso banche') || desc.includes('verso banche');
-    const isD4 = desc.match(/d[\.\)]?\s?4/) || desc.includes('altri finanziatori') || desc.includes('verso altri finanziatori');
-    
-    // STEP 4: Identifica se è oltre o entro l'esercizio
-    const isOltre = desc.includes('oltre') || 
-                    desc.includes("oltre l'esercizio") ||
-                    desc.includes('oltre esercizio') ||
-                    desc.includes('medio/lungo termine') ||
-                    desc.includes('medio lungo termine') ||
-                    desc.includes('m/l termine') ||
-                    desc.includes('m.l. termine') ||
-                    desc.includes('ml termine') ||
-                    desc.includes('consolidati') ||
-                    desc.includes('non correnti');
-                    
-    const isEntro = desc.includes('entro') || 
-                    desc.includes("entro l'esercizio") ||
-                    desc.includes('entro esercizio') ||
-                    desc.includes('breve termine') ||
-                    desc.includes('quota corrente') ||
-                    desc.includes('correnti') ||
-                    desc.includes('a breve');
-    
-    // STEP 5: Estrai i valori
-    if (isD1 || isD3 || isD4) {
+    // STEP 3: Usa REGEX UFFICIALI per "entro" e "oltre"
+    const isEntro = /esigibili\s+entro\s+l['']esercizio\s+successivo/i.test(desc);
+    const isOltre = /esigibili\s+oltre\s+l['']esercizio\s+successivo/i.test(desc);
+    // STEP 4: Se la riga contiene "entro" o "oltre", estrai i valori
+    if (isEntro || isOltre) {
       const cur = parseValue(row[yearCols.currentYearCol]);
       const prev = parseValue(row[yearCols.previousYearCol]);
-      
       if (cur !== null || prev !== null) {
-        
-        // Caso 1: Ha specificato "oltre" o "entro"
-        if (isOltre || isEntro) {
-          foundMLorBreve = true;
-          
-          if (isOltre) {
-            debitiML.currentYear += (cur || 0);
-            debitiML.previousYear += (prev || 0);
-            console.log(`[${sessionId}]   └─ M/L: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
-          } else if (isEntro) {
-            debitiBreve.currentYear += (cur || 0);
-            debitiBreve.previousYear += (prev || 0);
-            console.log(`[${sessionId}]   └─ Breve: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
-          }
-        } 
-        // Caso 2: NON ha specificato "oltre/entro" - salva come generico
-        else {
-          foundGeneric = true;
-          debitiTotali.currentYear += (cur || 0);
-          debitiTotali.previousYear += (prev || 0);
-          console.log(`[${sessionId}]   └─ Generico: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
+        foundAny = true;
+        if (isOltre) {
+          debitiML.currentYear += (cur || 0);
+          debitiML.previousYear += (prev || 0);
+          console.log(`[${sessionId}]   └─ M/L: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
+        }
+        if (isEntro) {
+          debitiBreve.currentYear += (cur || 0);
+          debitiBreve.previousYear += (prev || 0);
+          console.log(`[${sessionId}]   └─ Breve: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
         }
       }
     }
   }
-  
-  // STEP 6: LOGICA DI FALLBACK INTELLIGENTE
-  
-  // Caso A: Ha trovato sia M/L che Breve - PERFETTO!
-  if (foundMLorBreve && (debitiML.currentYear > 0 || debitiBreve.currentYear > 0)) {
-    console.log(`[${sessionId}]   ✅ Debiti M/L: N=${debitiML.currentYear}, N-1=${debitiML.previousYear}`);
-    console.log(`[${sessionId}]   ✅ Debiti Breve: N=${debitiBreve.currentYear}, N-1=${debitiBreve.previousYear}`);
-    return { 
-      ml_termine: debitiML, 
-      breve_termine: debitiBreve 
-    };
-  }
-  
-  // Caso B: Ha trovato debiti generici (senza distinzione oltre/entro)
-  if (foundGeneric && debitiTotali.currentYear > 0) {
-    console.log(`[${sessionId}]   ⚠️ Debiti trovati ma SENZA distinzione oltre/entro`);
-    console.log(`[${sessionId}]   💡 Applico split conservativo: 40% M/L, 60% Breve`);
-    
+  // STEP 5: Se non trova NESSUN debito, ritorna null + flag
+  if (!foundAny || (debitiML.currentYear === 0 && debitiBreve.currentYear === 0)) {
+    console.log(`[${sessionId}]   ⚠️ Debiti non trovati → richiede input manuale`);
     return {
-      ml_termine: {
-        currentYear: Math.round(debitiTotali.currentYear * 0.4),
-        previousYear: Math.round(debitiTotali.previousYear * 0.4)
-      },
-      breve_termine: {
-        currentYear: Math.round(debitiTotali.currentYear * 0.6),
-        previousYear: Math.round(debitiTotali.previousYear * 0.6)
-      }
+      breve_termine: { currentYear: null, previousYear: null },
+      ml_termine: { currentYear: null, previousYear: null },
+      requiresManualEntry: true
     };
   }
-  
-  // Caso C: Non ha trovato NESSUN debito finanziario
-  console.log(`[${sessionId}]   ❌ Debiti finanziari NON trovati`);
-  return { 
-    ml_termine: { currentYear: null, previousYear: null },
-    breve_termine: { currentYear: null, previousYear: null }
+  console.log(`[${sessionId}]   ✅ Debiti M/L: N=${debitiML.currentYear}, N-1=${debitiML.previousYear}`);
+  console.log(`[${sessionId}]   ✅ Debiti Breve: N=${debitiBreve.currentYear}, N-1=${debitiBreve.previousYear}`);
+  return {
+    breve_termine: debitiBreve,
+    ml_termine: debitiML,
+    requiresManualEntry: false
   };
 };
+
 // ============================================
 // FUNZIONI DI RICERCA ALTRE METRICHE
 // ============================================
@@ -663,7 +351,7 @@ export default async function handler(req, res) {
     const incomeStatementData = xlsx.utils.sheet_to_json(incomeStatement, { header: 1 });
     const companyInfoData = companyInfo ? xlsx.utils.sheet_to_json(companyInfo, { header: 1 }) : [];
     
-    // 4. ESTRAI NOME AZIENDA (FIX 2)
+    // 4. ESTRAI NOME AZIENDA
     let companyName = extractCompanyName(companyInfoData);
     
     // Fallback: usa il nome inserito manualmente dall'utente
@@ -697,42 +385,12 @@ export default async function handler(req, res) {
     
     console.log(`[${sessionId}] 🚀 Sessione valutazione creata per "${companyName}"`);
 
-// 7. TROVA ANNI E DATE ESERCIZI (FIX 1 - PRIORITÀ A T0000!)
-console.log(`[${sessionId}] 🔍 STEP 1: Estraggo date da T0000...`);
-let fiscalYears = extractFiscalYearDates(companyInfoData);
-let yearsExtracted = [];
-let yearColsBS = null;
-let yearColsIS = null;
-
-// Se ha trovato le date in T0000, usa QUELLE come anni corretti
-if (fiscalYears.length >= 2) {
-  yearsExtracted = fiscalYears.map(y => y.year);
-  console.log(`[${sessionId}] ✅ Anni estratti da T0000:`, yearsExtracted);
-  
-  // Ora cerca le COLONNE nel bilancio che corrispondono a questi anni
-  yearColsBS = findYearColumnsWithKnownYears(balanceSheetData, yearsExtracted, sessionId);
-  yearColsIS = findYearColumnsWithKnownYears(incomeStatementData, yearsExtracted, sessionId);
-  
-} else {
-  // Fallback: usa le colonne del bilancio per determinare gli anni
-  console.log(`[${sessionId}] ⚠️ T0000 non ha date, uso colonne bilancio...`);
-  
-  yearColsBS = findYearColumns(balanceSheetData);
-  yearColsIS = findYearColumns(incomeStatementData);
-  
-  yearsExtracted = yearColsBS.years.map(y => parseInt(y.year, 10));
-  fiscalYears = yearColsBS.years.map(y => ({
-    year: parseInt(y.year, 10),
-    endDate: y.endDate,
-    startDate: `${y.year}-01-01`
-  }));
-  
-  console.log(`[${sessionId}] ⚠️ Anni da colonne bilancio:`, yearsExtracted);
-}
-
-console.log(`[${sessionId}] 📅 Anni finali:`, yearsExtracted);
-console.log(`[${sessionId}] 📅 Date esercizi:`, fiscalYears);
-console.log(`[${sessionId}] 📊 Colonne bilancio: N=${yearColsBS.currentYearCol}, N-1=${yearColsBS.previousYearCol}`);
+    // 7. TROVA ANNI (VERSIONE SEMPLIFICATA)
+    const yearColsBS = findYearColumns(balanceSheetData);
+    const yearColsIS = findYearColumns(incomeStatementData);
+    const yearsExtracted = yearColsBS.years.map(y => y.year);
+    console.log(`[${sessionId}] 📅 Anni estratti:`, yearsExtracted);
+    console.log(`[${sessionId}] 📊 Colonne: N=${yearColsBS.currentYearCol}, N-1=${yearColsBS.previousYearCol}`);
 
     // 8. ESTRAI ATECO
     const atecoRaw = companyInfoData.length > 0 
@@ -752,7 +410,7 @@ console.log(`[${sessionId}] 📊 Colonne bilancio: N=${yearColsBS.currentYearCol
       );
     }
     
-    // 10. ESTRAI DEBITI FINANZIARI (FIX 3 - NIENTE FALLBACK!)
+    // 10. ESTRAI DEBITI FINANZIARI
     const debitiFinanziari = findDebitiFinanziariCivilistico(balanceSheetData, yearColsBS, sessionId);
     
     // 11. CALCOLA EBITDA
@@ -806,19 +464,18 @@ console.log(`[${sessionId}] 📊 Colonne bilancio: N=${yearColsBS.currentYearCol
       technology_risk: 'medium'
     };
     
-    // 14. SALVA DATI (+ fiscal_years)
+    // 14. SALVA DATI (con status condizionale)
     const { error: updateError } = await supabase
       .from('valuations')
       .update({
         years_analyzed: yearsExtracted,
-        fiscal_years: fiscalYears, // NUOVO CAMPO CON DATE!
         historical_data: historicalData,
         valuation_inputs: valuationInputs,
         sector_ateco: atecoCode,
-        status: 'data_entry'
+        status: debitiFinanziari.requiresManualEntry ? 'data_entry' : 'complete'  // ✅ MODIFICA QUESTA RIGA
       })
       .eq('session_id', sessionId);
-    
+
     if (updateError) {
       console.error(`[${sessionId}] ❌ Errore update:`, updateError);
       throw updateError;
