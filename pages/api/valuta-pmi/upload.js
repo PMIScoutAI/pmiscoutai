@@ -1,6 +1,6 @@
 // /pages/api/valuta-pmi/upload.js
 // Valuta-PMI: Upload XBRL, Parse dati finanziari e crea sessione valutazione
-// VERSIONE 5.0 - Estrazione anni semplificata e diretta
+// VERSIONE 7.0 - LOGICA ANNI SEMPLIFICATA E STATICA (come da richiesta utente)
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -39,74 +39,9 @@ const parseValue = (val) => {
 };
 
 // ============================================
-// ESTRAZIONE ANNI - VERSIONE SEMPLIFICATA DEFINITIVA
+// ESTRAZIONE ANNI - FUNZIONE RIMOSSA
+// Non cerchiamo più gli anni, li assumiamo staticamente.
 // ============================================
-const findYearColumns = (sheetData, sessionId = 'unknown') => {
-  console.log(`[${sessionId}] 🔍 Inizio ricerca anni (versione semplificata definitiva)...`);
-  
-  const candidates = {}; // Usiamo un oggetto per mappare anno -> colonna
-
-  // Scansiona le prime 20 righe
-  const rowsToScan = Math.min(20, sheetData.length);
-  for (let rowIdx = 0; rowIdx < rowsToScan; rowIdx++) {
-    const row = sheetData[rowIdx];
-    if (!row) continue;
-
-    // Scansiona le prime 15 colonne
-    for (let colIdx = 0; colIdx < Math.min(row.length, 15); colIdx++) {
-      const cellStr = String(row[colIdx] || '').trim();
-      const match = cellStr.match(/\b(20\d{2})\b/);
-      
-      if (match) {
-        const year = parseInt(match[1], 10);
-        // Salva solo la prima occorrenza di un anno per evitare sovrascritture
-        if (!candidates[year]) {
-            candidates[year] = colIdx;
-            console.log(`[${sessionId}]   • Trovato anno ${year} in colonna ${colIdx}`);
-        }
-      }
-    }
-  }
-
-  // Estrai tutti gli anni unici trovati e ordinali
-  const foundYears = Object.keys(candidates).map(Number).sort((a, b) => b - a);
-
-  // Se non abbiamo almeno 2 anni, usiamo il fallback
-  if (foundYears.length < 2) {
-    console.warn(`[${sessionId}]   ⚠️ Trovati meno di 2 anni. Uso fallback.`);
-    const currentYear = new Date().getFullYear();
-    const yearN = currentYear -1;
-    const yearN1 = currentYear - 2;
-    return {
-      currentYearCol: 3,
-      previousYearCol: 4,
-      years: [
-        { year: yearN1, col: 4, isFallback: true },
-        { year: yearN, col: 3, isFallback: true }
-      ],
-      warning: `Usando colonne di default per gli anni ${yearN} e ${yearN1}`
-    };
-  }
-
-  // Prendi i due anni più recenti
-  const yearN = foundYears[0];
-  const yearN1 = foundYears[1];
-
-  const colN = candidates[yearN];
-  const colN1 = candidates[yearN1];
-
-  console.log(`[${sessionId}]   ✅ Anni selezionati: N=${yearN} (col ${colN}), N-1=${yearN1} (col ${colN1})`);
-  
-  return {
-    currentYearCol: colN,
-    previousYearCol: colN1,
-    years: [
-      { year: yearN1, col: colN1 },
-      { year: yearN, col: colN }
-    ]
-  };
-};
-
 
 // ============================================
 // PARSING DEBITI CIVILISTICO
@@ -333,12 +268,24 @@ export default async function handler(req, res) {
     
     console.log(`[${sessionId}] 🚀 Sessione valutazione creata per "${companyName}"`);
 
-    // 7. TROVA ANNI (versione semplificata)
-    const yearColsBS = findYearColumns(balanceSheetData, sessionId);
-    const yearColsIS = findYearColumns(incomeStatementData, sessionId);
+    // =================================================================
+    // NUOVA LOGICA SEMPLIFICATA PER ANNI E COLONNE
+    // =================================================================
+    const systemCurrentYear = new Date().getFullYear();
+    const yearN = systemCurrentYear - 1; // Anno più recente del bilancio (es. 2024)
+    const yearN1 = yearN - 1; // Anno precedente del bilancio (es. 2023)
 
-    const yearsExtracted = yearColsBS.years.map(y => y.year);
-    console.log(`[${sessionId}] 📅 Anni validati:`, yearsExtracted);
+    // Assumiamo posizioni fisse: Dati più recenti in colonna 3, precedenti in colonna 4
+    const yearCols = {
+      currentYearCol: 3,
+      previousYearCol: 4,
+    };
+
+    const yearsExtracted = [yearN1, yearN];
+    
+    console.log(`[${sessionId}] 📅 Anni assunti (logica semplificata): N=${yearN}, N-1=${yearN1}`);
+    console.log(`[${sessionId}] 📊 Colonne assunte: N=${yearCols.currentYearCol}, N-1=${yearCols.previousYearCol}`);
+    // =================================================================
 
     const atecoRaw = companyInfoData.length > 0 ? findSimpleValue(companyInfoData, ['settore di attività prevalente', 'codice ateco']) : null;
     const atecoCode = atecoRaw?.match(/(\d{2})/)?.[1] || null;
@@ -350,17 +297,16 @@ export default async function handler(req, res) {
       metrics[key] = findValueInSheet(
         isBalanceSheetMetric ? balanceSheetData : incomeStatementData,
         metricsConfigs[key],
-        isBalanceSheetMetric ? yearColsBS : yearColsIS,
+        yearCols,
         key
       );
     }
     
-    const debitiFinanziari = findDebitiFinanziariCivilistico(balanceSheetData, yearColsBS, sessionId);
+    const debitiFinanziari = findDebitiFinanziariCivilistico(balanceSheetData, yearCols, sessionId);
     
     const historicalData = {};
-    const sortedYears = [...yearsExtracted].sort((a,b) => b-a); // [nuovo, vecchio]
     
-    historicalData[sortedYears[1]] = { // Anno vecchio
+    historicalData[yearN1] = { // Anno vecchio
         ricavi: metrics.fatturato.previousYear,
         ebitda: metrics.ebitda.previousYear,
         patrimonio_netto: metrics.patrimonioNetto.previousYear,
@@ -368,7 +314,7 @@ export default async function handler(req, res) {
         debiti_finanziari_breve: debitiFinanziari.breve_termine.previousYear,
         disponibilita_liquide: metrics.disponibilitaLiquide.previousYear,
     };
-    historicalData[sortedYears[0]] = { // Anno nuovo
+    historicalData[yearN] = { // Anno nuovo
         ricavi: metrics.fatturato.currentYear,
         ebitda: metrics.ebitda.currentYear,
         patrimonio_netto: metrics.patrimonioNetto.currentYear,
@@ -386,7 +332,7 @@ export default async function handler(req, res) {
     const { error: updateError } = await supabase
       .from('valuations')
       .update({
-        years_analyzed: yearsExtracted.sort((a,b) => a-b), // Salva come [vecchio, nuovo]
+        years_analyzed: yearsExtracted, // Salva come [vecchio, nuovo]
         historical_data: historicalData,
         valuation_inputs: valuationInputs,
         sector_ateco: atecoCode,
@@ -405,7 +351,7 @@ export default async function handler(req, res) {
       success: true, 
       sessionId: sessionId,
       companyName: companyName,
-      years: yearsExtracted.sort((a,b) => a-b)
+      years: yearsExtracted
     });
 
   } catch (error) {
