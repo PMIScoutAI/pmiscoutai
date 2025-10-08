@@ -1,6 +1,6 @@
 // /pages/api/valuta-pmi/upload.js
 // Valuta-PMI: Upload XBRL, Parse dati finanziari e crea sessione valutazione
-// VERSIONE 4.3 - Funzione di estrazione anni ultra-robusta
+// VERSIONE 5.0 - Estrazione anni semplificata e diretta
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -39,215 +39,72 @@ const parseValue = (val) => {
 };
 
 // ============================================
-// ESTRAZIONE ANNI - VERSIONE ULTRA-ROBUSTA
-// Fix per problema anni vecchi (es. 2017-2018 invece di 2023-2024)
+// ESTRAZIONE ANNI - VERSIONE SEMPLIFICATA DEFINITIVA
 // ============================================
-
 const findYearColumns = (sheetData, sessionId = 'unknown') => {
-  console.log(`[${sessionId}] 🔍 Inizio ricerca colonne degli anni...`);
+  console.log(`[${sessionId}] 🔍 Inizio ricerca anni (versione semplificata definitiva)...`);
   
-  const currentYear = new Date().getFullYear();
-  const minValidYear = currentYear - 5; // Solo ultimi 5 anni
-  const maxValidYear = currentYear + 1;
-  
-  console.log(`[${sessionId}]   📅 Range anni validi: ${minValidYear}-${maxValidYear}`);
-  console.log(`[${sessionId}]   📅 Anno corrente: ${currentYear}`);
-  
-  // ============================================
-  // STRATEGIA 1: Cerca SOLO nelle prime 3 righe (header principale)
-  // ============================================
-  
-  const headerRowsToScan = Math.min(3, sheetData.length);
-  let candidateYears = [];
-  
-  console.log(`[${sessionId}]   🎯 Strategia 1: Scansione righe header (0-${headerRowsToScan-1})`);
-  
-  for (let rowIdx = 0; rowIdx < headerRowsToScan; rowIdx++) {
+  const candidates = {}; // Usiamo un oggetto per mappare anno -> colonna
+
+  // Scansiona le prime 20 righe
+  const rowsToScan = Math.min(20, sheetData.length);
+  for (let rowIdx = 0; rowIdx < rowsToScan; rowIdx++) {
     const row = sheetData[rowIdx];
-    if (!row || row.length === 0) continue;
-    
-    // Analizza TUTTE le colonne (non solo da 2 in poi)
-    for (let colIdx = 0; colIdx < Math.min(row.length, 20); colIdx++) {
-      const cellValue = row[colIdx];
-      if (cellValue === null || cellValue === undefined) continue;
+    if (!row) continue;
+
+    // Scansiona le prime 15 colonne
+    for (let colIdx = 0; colIdx < Math.min(row.length, 15); colIdx++) {
+      const cellStr = String(row[colIdx] || '').trim();
+      const match = cellStr.match(/\b(20\d{2})\b/);
       
-      const cellStr = String(cellValue).trim();
-      if (cellStr === '') continue;
-      
-      // Cerca anno con formato semplice: deve contenere 4 cifre 20XX
-      const yearMatch = cellStr.match(/20(\d{2})/);
-      
-      if (yearMatch) {
-        const year = parseInt('20' + yearMatch[1], 10);
-        
-        // Log di debug per ogni anno trovato
-        console.log(`[${sessionId}]     • R${rowIdx}C${colIdx}: "${cellStr}" → Anno ${year}`);
-        
-        // Verifica se è nell'intervallo valido
-        if (year >= minValidYear && year <= maxValidYear) {
-        
-          // Controlla se è una cella HEADER (non un valore di dato)
-          // Gli header sono tipicamente:
-          // - Nelle prime 3 righe
-          // - Contengono solo l'anno o "31/12/2024" o "Esercizio 2024"
-          // - NON contengono molti altri numeri
-          
-          const hasOnlyYearInfo = cellStr.length < 50 && // Cella corta
-                                  (cellStr.match(/\d+/g) || []).length <= 3; // Max 3 gruppi di cifre
-          
-          if (hasOnlyYearInfo) {
-            candidateYears.push({
-              year: year,
-              col: colIdx,
-              row: rowIdx,
-              cell: cellStr,
-              priority: rowIdx === 0 ? 10 : (rowIdx === 1 ? 5 : 1) // Priorità alla riga 0
-            });
-            
-            console.log(`[${sessionId}]       ✅ Candidato valido: ${year} in colonna ${colIdx}`);
-          } else {
-            console.log(`[${sessionId}]       ⚠️ Scartato (troppo complesso): "${cellStr}"`);
-          }
-        } else {
-          console.log(`[${sessionId}]       ❌ Scartato (anno troppo vecchio o futuro): ${year}`);
+      if (match) {
+        const year = parseInt(match[1], 10);
+        // Salva solo la prima occorrenza di un anno per evitare sovrascritture
+        if (!candidates[year]) {
+            candidates[year] = colIdx;
+            console.log(`[${sessionId}]   • Trovato anno ${year} in colonna ${colIdx}`);
         }
       }
     }
   }
-  
-  // ============================================
-  // STRATEGIA 2: Se non trova nulla, estendi a 10 righe
-  // ============================================
-  
-  if (candidateYears.length < 2) {
-    console.log(`[${sessionId}]   🔄 Strategia 2: Estendo ricerca a 10 righe...`);
-    
-    const extendedRowsToScan = Math.min(10, sheetData.length);
-    
-    for (let rowIdx = headerRowsToScan; rowIdx < extendedRowsToScan; rowIdx++) {
-      const row = sheetData[rowIdx];
-      if (!row || row.length === 0) continue;
-      
-      for (let colIdx = 2; colIdx < Math.min(row.length, 15); colIdx++) {
-        const cellValue = row[colIdx];
-        if (cellValue === null || cellValue === undefined) continue;
-        
-        const cellStr = String(cellValue).trim();
-        if (cellStr === '') continue;
-        
-        const yearMatch = cellStr.match(/20(\d{2})/);
-        
-        if (yearMatch) {
-          const year = parseInt('20' + yearMatch[1], 10);
-          
-          if (year >= minValidYear && year <= maxValidYear) {
-            const hasOnlyYearInfo = cellStr.length < 50 && (cellStr.match(/\d+/g) || []).length <= 3;
-            
-            if (hasOnlyYearInfo) {
-              candidateYears.push({
-                year: year,
-                col: colIdx,
-                row: rowIdx,
-                cell: cellStr,
-                priority: 1
-              });
-              
-              console.log(`[${sessionId}]     • R${rowIdx}C${colIdx}: "${cellStr}" → Anno ${year} ✅`);
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  // ============================================
-  // VALIDAZIONE E SELEZIONE
-  // ============================================
-  
-  if (candidateYears.length < 2) {
-    console.error(`[${sessionId}]   ❌ FALLIMENTO: trovati solo ${candidateYears.length} anni validi`);
-    console.log(`[${sessionId}]   🔎 Debug - Stampo TUTTE le prime 5 righe per analisi manuale:`);
-    
-    for (let i = 0; i < Math.min(5, sheetData.length); i++) {
-      console.log(`[${sessionId}]     Riga ${i}:`, sheetData[i]?.slice(0, 10));
-    }
-    
-    // FALLBACK con anni più recenti
+
+  // Estrai tutti gli anni unici trovati e ordinali
+  const foundYears = Object.keys(candidates).map(Number).sort((a, b) => b - a);
+
+  // Se non abbiamo almeno 2 anni, usiamo il fallback
+  if (foundYears.length < 2) {
+    console.warn(`[${sessionId}]   ⚠️ Trovati meno di 2 anni. Uso fallback.`);
+    const currentYear = new Date().getFullYear();
+    const yearN = currentYear -1;
+    const yearN1 = currentYear - 2;
     return {
       currentYearCol: 3,
       previousYearCol: 4,
       years: [
-        { year: currentYear - 1, col: 4, row: 0, isFallback: true },
-        { year: currentYear, col: 3, row: 0, isFallback: true }
+        { year: yearN1, col: 4, isFallback: true },
+        { year: yearN, col: 3, isFallback: true }
       ],
-      warning: `ATTENZIONE: Impossibile trovare anni automaticamente. Usando fallback ${currentYear-1}/${currentYear}.`,
-      requiresManualValidation: true
+      warning: `Usando colonne di default per gli anni ${yearN} e ${yearN1}`
     };
   }
+
+  // Prendi i due anni più recenti
+  const yearN = foundYears[0];
+  const yearN1 = foundYears[1];
+
+  const colN = candidates[yearN];
+  const colN1 = candidates[yearN1];
+
+  console.log(`[${sessionId}]   ✅ Anni selezionati: N=${yearN} (col ${colN}), N-1=${yearN1} (col ${colN1})`);
   
-  // Rimuovi duplicati (stesso anno)
-  const uniqueYears = [];
-  const seenYears = new Set();
-  
-  for (const candidate of candidateYears) {
-    if (!seenYears.has(candidate.year)) {
-      seenYears.add(candidate.year);
-      uniqueYears.push(candidate);
-    }
-  }
-  
-  // Ordina per priorità (riga 0 prima) poi per anno decrescente
-  uniqueYears.sort((a, b) => {
-    if (a.priority !== b.priority) return b.priority - a.priority;
-    return b.year - a.year;
-  });
-  
-  // Prendi i 2 più recenti
-  const twoMostRecent = uniqueYears.slice(0, 2);
-  
-  // Ordina in ordine cronologico [vecchio, nuovo]
-  twoMostRecent.sort((a, b) => a.year - b.year);
-  
-  // ============================================
-  // VALIDAZIONE FINALE
-  // ============================================
-  
-  const result = {
-    currentYearCol: twoMostRecent[1].col,
-    previousYearCol: twoMostRecent[0].col,
-    years: twoMostRecent
+  return {
+    currentYearCol: colN,
+    previousYearCol: colN1,
+    years: [
+      { year: yearN1, col: colN1 },
+      { year: yearN, col: colN }
+    ]
   };
-  
-  console.log(`[${sessionId}]   ✅ Anni finali selezionati:`);
-  console.log(`[${sessionId}]     • N-1 = ${twoMostRecent[0].year} (colonna ${twoMostRecent[0].col}, riga ${twoMostRecent[0].row})`);
-  console.log(`[${sessionId}]     • N   = ${twoMostRecent[1].year} (colonna ${twoMostRecent[1].col}, riga ${twoMostRecent[1].row})`);
-  
-  // Controlli di sicurezza
-  const warnings = [];
-  
-  if (twoMostRecent[0].col === twoMostRecent[1].col) {
-    warnings.push('Gli anni sono nella stessa colonna');
-    console.error(`[${sessionId}]   ❌ ERRORE: stessa colonna ${twoMostRecent[0].col}!`);
-  }
-  
-  const yearDiff = Math.abs(twoMostRecent[1].year - twoMostRecent[0].year);
-  if (yearDiff !== 1) {
-    warnings.push(`Gli anni non sono consecutivi (distanza: ${yearDiff} anni)`);
-    console.warn(`[${sessionId}]   ⚠️ ATTENZIONE: anni non consecutivi`);
-  }
-  
-  // CONTROLLO CRITICO: anni troppo vecchi
-  if (twoMostRecent[1].year < currentYear - 3) {
-    warnings.push(`ATTENZIONE: l'anno più recente (${twoMostRecent[1].year}) è troppo vecchio`);
-    console.error(`[${sessionId}]   ❌ CRITICO: anno più recente è ${twoMostRecent[1].year}, sospetto di estrazione errata`);
-    result.requiresManualValidation = true;
-  }
-  
-  if (warnings.length > 0) {
-    result.warning = warnings.join('; ');
-  }
-  
-  return result;
 };
 
 
@@ -476,29 +333,9 @@ export default async function handler(req, res) {
     
     console.log(`[${sessionId}] 🚀 Sessione valutazione creata per "${companyName}"`);
 
-    // 7. TROVA ANNI (con validazione critica)
+    // 7. TROVA ANNI (versione semplificata)
     const yearColsBS = findYearColumns(balanceSheetData, sessionId);
     const yearColsIS = findYearColumns(incomeStatementData, sessionId);
-
-    // CONTROLLO CRITICO: Se gli anni sono troppo vecchi, blocca e chiedi input manuale
-    if (yearColsBS.requiresManualValidation || yearColsIS.requiresManualValidation) {
-      console.error(`[${sessionId}] ❌ VALIDAZIONE FALLITA: anni estratti sembrano errati`);
-      
-      await supabase
-        .from('valuations')
-        .update({ 
-          status: 'year_validation_required',
-          error_message: `Gli anni estratti (${yearColsBS.years.map(y => y.year).join(', ')}) sembrano non corretti. Verifica manualmente.`
-        })
-        .eq('session_id', sessionId);
-      
-      return res.status(400).json({ 
-        error: 'Impossibile determinare gli anni del bilancio automaticamente',
-        sessionId: sessionId,
-        detectedYears: yearColsBS.years.map(y => y.year),
-        requiresManualInput: true
-      });
-    }
 
     const yearsExtracted = yearColsBS.years.map(y => y.year);
     console.log(`[${sessionId}] 📅 Anni validati:`, yearsExtracted);
@@ -521,17 +358,24 @@ export default async function handler(req, res) {
     const debitiFinanziari = findDebitiFinanziariCivilistico(balanceSheetData, yearColsBS, sessionId);
     
     const historicalData = {};
-    yearsExtracted.forEach((year, index) => {
-        const yearKey = index === 1 ? 'currentYear' : 'previousYear';
-        historicalData[year] = {
-            ricavi: metrics.fatturato[yearKey],
-            ebitda: metrics.ebitda[yearKey],
-            patrimonio_netto: metrics.patrimonioNetto[yearKey],
-            debiti_finanziari_ml: debitiFinanziari.ml_termine[yearKey],
-            debiti_finanziari_breve: debitiFinanziari.breve_termine[yearKey],
-            disponibilita_liquide: metrics.disponibilitaLiquide[yearKey],
-        };
-    });
+    const sortedYears = [...yearsExtracted].sort((a,b) => b-a); // [nuovo, vecchio]
+    
+    historicalData[sortedYears[1]] = { // Anno vecchio
+        ricavi: metrics.fatturato.previousYear,
+        ebitda: metrics.ebitda.previousYear,
+        patrimonio_netto: metrics.patrimonioNetto.previousYear,
+        debiti_finanziari_ml: debitiFinanziari.ml_termine.previousYear,
+        debiti_finanziari_breve: debitiFinanziari.breve_termine.previousYear,
+        disponibilita_liquide: metrics.disponibilitaLiquide.previousYear,
+    };
+    historicalData[sortedYears[0]] = { // Anno nuovo
+        ricavi: metrics.fatturato.currentYear,
+        ebitda: metrics.ebitda.currentYear,
+        patrimonio_netto: metrics.patrimonioNetto.currentYear,
+        debiti_finanziari_ml: debitiFinanziari.ml_termine.currentYear,
+        debiti_finanziari_breve: debitiFinanziari.breve_termine.currentYear,
+        disponibilita_liquide: metrics.disponibilitaLiquide.currentYear,
+    };
 
     const valuationInputs = {
       market_position: 'follower',
@@ -542,7 +386,7 @@ export default async function handler(req, res) {
     const { error: updateError } = await supabase
       .from('valuations')
       .update({
-        years_analyzed: yearsExtracted,
+        years_analyzed: yearsExtracted.sort((a,b) => a-b), // Salva come [vecchio, nuovo]
         historical_data: historicalData,
         valuation_inputs: valuationInputs,
         sector_ateco: atecoCode,
@@ -561,7 +405,7 @@ export default async function handler(req, res) {
       success: true, 
       sessionId: sessionId,
       companyName: companyName,
-      years: yearsExtracted
+      years: yearsExtracted.sort((a,b) => a-b)
     });
 
   } catch (error) {
