@@ -1,6 +1,6 @@
 // /pages/api/valuta-pmi/upload.js
 // Valuta-PMI: Upload XBRL, Parse dati finanziari e crea sessione valutazione
-// VERSIONE 8.0 - LOGICA ANNI IBRIDA (Semplice + Validata)
+// VERSIONE 8.1 - Reintroduzione calcolo EBITDA manuale
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -41,14 +41,6 @@ const parseValue = (val) => {
 // ============================================
 // LOGICA ANNI IBRIDA: Semplice + Validata
 // ============================================
-
-/**
- * STRATEGIA:
- * 1. Prova a leggere gli anni dall'header XBRL (semplificato)
- * 2. Se fallisce, usa logica statica con anno corrente - 1
- * 3. Valida SEMPRE che i dati estratti abbiano senso
- * 4. Se c'è discrepanza, chiedi conferma all'utente
- */
 
 const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionId) => {
   console.log(`[${sessionId}] 📅 Inizio estrazione e validazione anni...`);
@@ -130,7 +122,6 @@ const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionI
   
   const warnings = [];
   
-  // Validazione 1: Gli anni sono troppo vecchi?
   if (yearN < currentYear - 3) {
     warnings.push({
       severity: 'high',
@@ -139,7 +130,6 @@ const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionI
     });
   }
   
-  // Validazione 2: Gli anni sono consecutivi?
   if (yearN - yearN1 !== 1) {
     warnings.push({
       severity: 'critical',
@@ -148,7 +138,6 @@ const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionI
     });
   }
   
-  // Validazione 3: Le colonne sono diverse?
   if (colN === colN1) {
     warnings.push({
       severity: 'critical',
@@ -157,7 +146,6 @@ const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionI
     });
   }
   
-  // Validazione 4: Anno futuro?
   if (yearN > currentYear) {
     warnings.push({
       severity: 'critical',
@@ -173,14 +161,12 @@ const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionI
   const validateExtractedValues = (metrics) => {
     const valueWarnings = [];
     
-    // Check 1: Ricavi N > Ricavi N-1? (crescita normale)
     const ricaviN = metrics.fatturato?.currentYear;
     const ricaviN1 = metrics.fatturato?.previousYear;
     
     if (ricaviN && ricaviN1) {
       const growth = ((ricaviN - ricaviN1) / ricaviN1) * 100;
       
-      // Se crescita > 200% o < -80%, probabile inversione colonne
       if (growth > 200 || growth < -80) {
         valueWarnings.push({
           severity: 'high',
@@ -191,7 +177,6 @@ const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionI
       }
     }
     
-    // Check 2: Valori nulli su entrambi gli anni?
     const allMetrics = Object.keys(metrics);
     const nullCount = allMetrics.filter(key => 
       metrics[key]?.currentYear === null && metrics[key]?.previousYear === null
@@ -222,7 +207,6 @@ const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionI
     warnings: warnings,
     requiresUserConfirmation: warnings.some(w => w.severity === 'critical'),
     
-    // Funzione per validazione post-estrazione
     validateExtractedValues: validateExtractedValues
   };
 };
@@ -363,6 +347,21 @@ const metricsConfigs = {
     { primary: ["margine operativo lordo (ebitda)"] },
     { primary: ["ebitda"] }
   ],
+  // Aggiunto per calcolo EBITDA
+  utilePerdita: [
+    { primary: ["utile (perdita) dell'esercizio"] }, 
+    { primary: ["risultato dell'esercizio"] }
+  ],
+  imposte: [
+    { primary: ["imposte sul reddito dell'esercizio"] }, 
+    { primary: ["imposte sul reddito"] }
+  ],
+  oneriFinanziari: [
+    { primary: ["interessi e altri oneri finanziari"] }
+  ],
+  ammortamenti: [
+    { primary: ["ammortamenti e svalutazioni"] }
+  ]
 };
 
 const findSimpleValue = (sheetData, searchTexts) => {
@@ -456,7 +455,6 @@ export default async function handler(req, res) {
     // STEP 7: Estrai e valida anni
     const yearConfig = extractAndValidateYears(balanceSheetData, incomeStatementData, sessionId);
 
-    // Log warnings
     if (yearConfig.warnings.length > 0) {
       console.warn(`[${sessionId}] ⚠️ Warning estrazione anni:`);
       yearConfig.warnings.forEach(w => {
@@ -480,13 +478,21 @@ export default async function handler(req, res) {
     const metrics = {};
     for (const key in metricsConfigs) {
       const isBalanceSheetMetric = ['patrimonioNetto', 'disponibilitaLiquide'].includes(key);
-      metrics[key] = findValueInSheet(
-        isBalanceSheetMetric ? balanceSheetData : incomeStatementData,
-        metricsConfigs[key],
-        yearCols,
-        key
-      );
+      const sheet = isBalanceSheetMetric ? balanceSheetData : incomeStatementData;
+      metrics[key] = findValueInSheet(sheet, metricsConfigs[key], yearCols, key);
     }
+    
+    // Calcolo EBITDA manuale come fallback
+    const calculatedEbitda = {
+      currentYear: (metrics.utilePerdita.currentYear || 0) + 
+                   (metrics.imposte.currentYear || 0) + 
+                   (metrics.oneriFinanziari.currentYear || 0) + 
+                   (metrics.ammortamenti.currentYear || 0),
+      previousYear: (metrics.utilePerdita.previousYear || 0) + 
+                    (metrics.imposte.previousYear || 0) + 
+                    (metrics.oneriFinanziari.previousYear || 0) + 
+                    (metrics.ammortamenti.previousYear || 0)
+    };
     
     const debitiFinanziari = findDebitiFinanziariCivilistico(balanceSheetData, yearCols, sessionId);
     
@@ -494,17 +500,17 @@ export default async function handler(req, res) {
     const yearN1 = yearsExtracted[0];
     const yearN = yearsExtracted[1];
 
-    historicalData[yearN1] = { // Anno vecchio
+    historicalData[yearN1] = {
         ricavi: metrics.fatturato.previousYear,
-        ebitda: metrics.ebitda.previousYear,
+        ebitda: metrics.ebitda.previousYear ?? calculatedEbitda.previousYear,
         patrimonio_netto: metrics.patrimonioNetto.previousYear,
         debiti_finanziari_ml: debitiFinanziari.ml_termine.previousYear,
         debiti_finanziari_breve: debitiFinanziari.breve_termine.previousYear,
         disponibilita_liquide: metrics.disponibilitaLiquide.previousYear,
     };
-    historicalData[yearN] = { // Anno nuovo
+    historicalData[yearN] = {
         ricavi: metrics.fatturato.currentYear,
-        ebitda: metrics.ebitda.currentYear,
+        ebitda: metrics.ebitda.currentYear ?? calculatedEbitda.currentYear,
         patrimonio_netto: metrics.patrimonioNetto.currentYear,
         debiti_finanziari_ml: debitiFinanziari.ml_termine.currentYear,
         debiti_finanziari_breve: debitiFinanziari.breve_termine.currentYear,
@@ -528,7 +534,6 @@ export default async function handler(req, res) {
       technology_risk: 'medium'
     };
     
-    // STEP 10 & 11: Se ci sono warning critici o tutto OK
     const allWarnings = [...yearConfig.warnings, ...valueWarnings];
     const hasCriticalWarnings = allWarnings.some(w => w.severity === 'critical');
 
@@ -543,7 +548,6 @@ export default async function handler(req, res) {
           historical_data: historicalData,
           valuation_inputs: valuationInputs,
           sector_ateco: atecoCode,
-          // Salva i warning per mostrarli all'utente
           metadata: {
             extraction_method: yearConfig.extractionMethod,
             warnings: allWarnings
@@ -564,11 +568,10 @@ export default async function handler(req, res) {
       });
     }
 
-    // Procedi normalmente se non ci sono errori critici
     const { error: updateError } = await supabase
       .from('valuations')
       .update({
-        years_analyzed: yearsExtracted, // Salva come [vecchio, nuovo]
+        years_analyzed: yearsExtracted,
         historical_data: historicalData,
         valuation_inputs: valuationInputs,
         sector_ateco: atecoCode,
