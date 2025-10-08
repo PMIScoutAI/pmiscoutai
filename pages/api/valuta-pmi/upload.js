@@ -1,6 +1,6 @@
 // /pages/api/valuta-pmi/upload.js
 // Valuta-PMI: Upload XBRL, Parse dati finanziari e crea sessione valutazione
-// VERSIONE 7.0 - LOGICA ANNI SEMPLIFICATA E STATICA (come da richiesta utente)
+// VERSIONE 8.0 - LOGICA ANNI IBRIDA (Semplice + Validata)
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -39,9 +39,194 @@ const parseValue = (val) => {
 };
 
 // ============================================
-// ESTRAZIONE ANNI - FUNZIONE RIMOSSA
-// Non cerchiamo più gli anni, li assumiamo staticamente.
+// LOGICA ANNI IBRIDA: Semplice + Validata
 // ============================================
+
+/**
+ * STRATEGIA:
+ * 1. Prova a leggere gli anni dall'header XBRL (semplificato)
+ * 2. Se fallisce, usa logica statica con anno corrente - 1
+ * 3. Valida SEMPRE che i dati estratti abbiano senso
+ * 4. Se c'è discrepanza, chiedi conferma all'utente
+ */
+
+const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionId) => {
+  console.log(`[${sessionId}] 📅 Inizio estrazione e validazione anni...`);
+  
+  const currentYear = new Date().getFullYear();
+  
+  // ============================================
+  // STEP 1: Prova estrazione SEMPLIFICATA dall'header
+  // ============================================
+  
+  const tryExtractYearsFromHeader = (sheetData) => {
+    // Cerca SOLO nelle prime 3 righe, SOLO nelle colonne 2-6
+    for (let row = 0; row < Math.min(3, sheetData.length); row++) {
+      for (let col = 2; col <= 6; col++) {
+        const cell = String(sheetData[row]?.[col] || '').trim();
+        
+        // Pattern semplice: cerca 4 cifre che iniziano con "20"
+        const match = cell.match(/20(\d{2})/);
+        if (match) {
+          const year = parseInt('20' + match[1], 10);
+          
+          // Valida che sia negli ultimi 5 anni
+          if (year >= currentYear - 5 && year <= currentYear) {
+            return { year, col, found: true };
+          }
+        }
+      }
+    }
+    return { found: false };
+  };
+  
+  const extractedBS = tryExtractYearsFromHeader(balanceSheetData);
+  const extractedIS = tryExtractYearsFromHeader(incomeStatementData);
+  
+  console.log(`[${sessionId}]   🔍 Estrazione header:`, {
+    statoPatrimoniale: extractedBS.found ? `${extractedBS.year} (col ${extractedBS.col})` : 'non trovato',
+    contoEconomico: extractedIS.found ? `${extractedIS.year} (col ${extractedIS.col})` : 'non trovato'
+  });
+  
+  // ============================================
+  // STEP 2: Determina anni e colonne
+  // ============================================
+  
+  let yearN, yearN1, colN, colN1;
+  let extractionMethod = 'unknown';
+  
+  if (extractedBS.found) {
+    // CASO 1: Estrazione riuscita - usa anni dall'header
+    yearN = extractedBS.year;
+    yearN1 = yearN - 1;
+    colN = extractedBS.col;
+    colN1 = extractedBS.col + 1; // Assumi colonna successiva per N-1
+    extractionMethod = 'header_extraction';
+    
+    console.log(`[${sessionId}]   ✅ Metodo: Estrazione da header`);
+    
+  } else {
+    // CASO 2: Estrazione fallita - usa logica statica
+    yearN = currentYear - 1;
+    yearN1 = yearN - 1;
+    colN = 3;
+    colN1 = 4;
+    extractionMethod = 'static_fallback';
+    
+    console.log(`[${sessionId}]   🔄 Metodo: Fallback statico (anno corrente - 1)`);
+  }
+  
+  console.log(`[${sessionId}]   📊 Configurazione:`, {
+    yearN: yearN,
+    yearN1: yearN1,
+    colN: colN,
+    colN1: colN1,
+    metodo: extractionMethod
+  });
+  
+  // ============================================
+  // STEP 3: VALIDAZIONE CRITICA
+  // ============================================
+  
+  const warnings = [];
+  
+  // Validazione 1: Gli anni sono troppo vecchi?
+  if (yearN < currentYear - 3) {
+    warnings.push({
+      severity: 'high',
+      code: 'OLD_YEAR',
+      message: `L'anno più recente (${yearN}) è troppo vecchio. Il bilancio potrebbe essere stato depositato in ritardo.`
+    });
+  }
+  
+  // Validazione 2: Gli anni sono consecutivi?
+  if (yearN - yearN1 !== 1) {
+    warnings.push({
+      severity: 'critical',
+      code: 'NON_CONSECUTIVE',
+      message: `Gli anni ${yearN1} e ${yearN} non sono consecutivi.`
+    });
+  }
+  
+  // Validazione 3: Le colonne sono diverse?
+  if (colN === colN1) {
+    warnings.push({
+      severity: 'critical',
+      code: 'SAME_COLUMN',
+      message: `Anno N e N-1 risultano nella stessa colonna (${colN}).`
+    });
+  }
+  
+  // Validazione 4: Anno futuro?
+  if (yearN > currentYear) {
+    warnings.push({
+      severity: 'critical',
+      code: 'FUTURE_YEAR',
+      message: `L'anno ${yearN} è nel futuro. Possibile errore di estrazione.`
+    });
+  }
+  
+  // ============================================
+  // STEP 4: VALIDAZIONE INCROCIATA CON VALORI
+  // ============================================
+  
+  const validateExtractedValues = (metrics) => {
+    const valueWarnings = [];
+    
+    // Check 1: Ricavi N > Ricavi N-1? (crescita normale)
+    const ricaviN = metrics.fatturato?.currentYear;
+    const ricaviN1 = metrics.fatturato?.previousYear;
+    
+    if (ricaviN && ricaviN1) {
+      const growth = ((ricaviN - ricaviN1) / ricaviN1) * 100;
+      
+      // Se crescita > 200% o < -80%, probabile inversione colonne
+      if (growth > 200 || growth < -80) {
+        valueWarnings.push({
+          severity: 'high',
+          code: 'ANOMALOUS_GROWTH',
+          message: `Crescita ricavi anomala: ${growth.toFixed(1)}%. Possibile inversione colonne o errore estrazione anni.`,
+          data: { ricaviN, ricaviN1, growth }
+        });
+      }
+    }
+    
+    // Check 2: Valori nulli su entrambi gli anni?
+    const allMetrics = Object.keys(metrics);
+    const nullCount = allMetrics.filter(key => 
+      metrics[key]?.currentYear === null && metrics[key]?.previousYear === null
+    ).length;
+    
+    if (nullCount > allMetrics.length / 2) {
+      valueWarnings.push({
+        severity: 'critical',
+        code: 'TOO_MANY_NULLS',
+        message: `Oltre il 50% delle metriche non è stato estratto. Possibile problema con colonne o anni.`
+      });
+    }
+    
+    return valueWarnings;
+  };
+  
+  // ============================================
+  // STEP 5: Return completo
+  // ============================================
+  
+  return {
+    yearCols: {
+      currentYearCol: colN,
+      previousYearCol: colN1
+    },
+    years: [yearN1, yearN],
+    extractionMethod: extractionMethod,
+    warnings: warnings,
+    requiresUserConfirmation: warnings.some(w => w.severity === 'critical'),
+    
+    // Funzione per validazione post-estrazione
+    validateExtractedValues: validateExtractedValues
+  };
+};
+
 
 // ============================================
 // PARSING DEBITI CIVILISTICO
@@ -268,29 +453,30 @@ export default async function handler(req, res) {
     
     console.log(`[${sessionId}] 🚀 Sessione valutazione creata per "${companyName}"`);
 
-    // =================================================================
-    // NUOVA LOGICA SEMPLIFICATA PER ANNI E COLONNE
-    // =================================================================
-    const systemCurrentYear = new Date().getFullYear();
-    const yearN = systemCurrentYear - 1; // Anno più recente del bilancio (es. 2024)
-    const yearN1 = yearN - 1; // Anno precedente del bilancio (es. 2023)
+    // STEP 7: Estrai e valida anni
+    const yearConfig = extractAndValidateYears(balanceSheetData, incomeStatementData, sessionId);
 
-    // Assumiamo posizioni fisse: Dati più recenti in colonna 3, precedenti in colonna 4
-    const yearCols = {
-      currentYearCol: 3,
-      previousYearCol: 4,
-    };
+    // Log warnings
+    if (yearConfig.warnings.length > 0) {
+      console.warn(`[${sessionId}] ⚠️ Warning estrazione anni:`);
+      yearConfig.warnings.forEach(w => {
+        console.warn(`[${sessionId}]   [${w.severity.toUpperCase()}] ${w.code}: ${w.message}`);
+      });
+    }
 
-    const yearsExtracted = [yearN1, yearN];
-    
-    console.log(`[${sessionId}] 📅 Anni assunti (logica semplificata): N=${yearN}, N-1=${yearN1}`);
-    console.log(`[${sessionId}] 📊 Colonne assunte: N=${yearCols.currentYearCol}, N-1=${yearCols.previousYearCol}`);
-    // =================================================================
+    const yearCols = yearConfig.yearCols;
+    const yearsExtracted = yearConfig.years;
+
+    console.log(`[${sessionId}] 📅 Anni finali: N=${yearsExtracted[1]}, N-1=${yearsExtracted[0]}`);
+    console.log(`[${sessionId}] 📊 Colonne: N=${yearCols.currentYearCol}, N-1=${yearCols.previousYearCol}`);
+    console.log(`[${sessionId}] 🔧 Metodo: ${yearConfig.extractionMethod}`);
+
 
     const atecoRaw = companyInfoData.length > 0 ? findSimpleValue(companyInfoData, ['settore di attività prevalente', 'codice ateco']) : null;
     const atecoCode = atecoRaw?.match(/(\d{2})/)?.[1] || null;
     console.log(`[${sessionId}] 🏢 ATECO estratto: ${atecoCode}`);
 
+    // STEP 8: Estrai metriche
     const metrics = {};
     for (const key in metricsConfigs) {
       const isBalanceSheetMetric = ['patrimonioNetto', 'disponibilitaLiquide'].includes(key);
@@ -305,7 +491,9 @@ export default async function handler(req, res) {
     const debitiFinanziari = findDebitiFinanziariCivilistico(balanceSheetData, yearCols, sessionId);
     
     const historicalData = {};
-    
+    const yearN1 = yearsExtracted[0];
+    const yearN = yearsExtracted[1];
+
     historicalData[yearN1] = { // Anno vecchio
         ricavi: metrics.fatturato.previousYear,
         ebitda: metrics.ebitda.previousYear,
@@ -323,12 +511,60 @@ export default async function handler(req, res) {
         disponibilita_liquide: metrics.disponibilitaLiquide.currentYear,
     };
 
+    // STEP 9: VALIDAZIONE INCROCIATA
+    const valueWarnings = yearConfig.validateExtractedValues(metrics);
+
+    if (valueWarnings.length > 0) {
+      console.warn(`[${sessionId}] ⚠️ Warning validazione valori:`);
+      valueWarnings.forEach(w => {
+        console.warn(`[${sessionId}]   [${w.severity.toUpperCase()}] ${w.code}: ${w.message}`);
+        if (w.data) console.warn(`[${sessionId}]     Dati:`, w.data);
+      });
+    }
+
     const valuationInputs = {
       market_position: 'follower',
       customer_concentration: 'medium',
       technology_risk: 'medium'
     };
     
+    // STEP 10 & 11: Se ci sono warning critici o tutto OK
+    const allWarnings = [...yearConfig.warnings, ...valueWarnings];
+    const hasCriticalWarnings = allWarnings.some(w => w.severity === 'critical');
+
+    if (hasCriticalWarnings) {
+      console.error(`[${sessionId}] ❌ Rilevati warning critici - Richiesta conferma utente`);
+      
+      await supabase
+        .from('valuations')
+        .update({ 
+          status: 'needs_validation',
+          years_analyzed: yearsExtracted,
+          historical_data: historicalData,
+          valuation_inputs: valuationInputs,
+          sector_ateco: atecoCode,
+          // Salva i warning per mostrarli all'utente
+          metadata: {
+            extraction_method: yearConfig.extractionMethod,
+            warnings: allWarnings
+          }
+        })
+        .eq('session_id', sessionId);
+      
+      return res.status(200).json({ 
+        success: true, 
+        sessionId: sessionId,
+        companyName: companyName,
+        years: yearsExtracted,
+        status: 'needs_validation',
+        warnings: allWarnings.map(w => ({
+          severity: w.severity,
+          message: w.message
+        }))
+      });
+    }
+
+    // Procedi normalmente se non ci sono errori critici
     const { error: updateError } = await supabase
       .from('valuations')
       .update({
