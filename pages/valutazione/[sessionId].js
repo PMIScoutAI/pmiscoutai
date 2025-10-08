@@ -1,7 +1,6 @@
 // /pages/valutazione/[sessionId].js
 // Pagina dinamica per il wizard di valutazione aziendale.
-// VERSIONE 4.1 - Correzione visualizzazione anni
-
+// VERSIONE 4.0 - SEMPLIFICATA: Solo anni (no date esercizi)
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Script from 'next/script';
@@ -26,7 +25,6 @@ export default function ValutazionePageWrapper() {
         src="https://cdn.outseta.com/outseta.min.js"
         strategy="beforeInteractive"
       />
-      
       <ProtectedPage>
         <Layout pageTitle="Valutazione Aziendale">
           <ValutazioneWizard />
@@ -40,12 +38,10 @@ export default function ValutazionePageWrapper() {
 function ValutazioneWizard() {
   const router = useRouter();
   const { sessionId } = router.query;
-  
   const [sessionData, setSessionData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentStep, setCurrentStep] = useState('loading');
-
   const [financialData, setFinancialData] = useState({});
   const [valuationInputs, setValuationInputs] = useState({
     market_position: 'follower',
@@ -89,10 +85,8 @@ function ValutazioneWizard() {
             if (data.status === 'completed' && data.results_data) {
               setResults(data.results_data);
               setCurrentStep('results');
-            } else if (data.status === 'data_entry' || data.status === 'complete') { // Supporta entrambi
-              setCurrentStep('entry');
             } else {
-              throw new Error(`Stato sessione non gestito: ${data.status}`);
+              setCurrentStep('entry');
             }
           } else {
             throw new Error(response.data.error || 'Errore nel caricamento della sessione');
@@ -140,7 +134,6 @@ function ValutazioneWizard() {
       };
       
       console.log('[ValutaPMI] Invio calcolo valutazione:', payload);
-      
       const response = await api.post('/valuta-pmi/calculate', payload);
       
       if (response.data.success) {
@@ -199,7 +192,7 @@ function ValutazioneWizard() {
       case 'results':
         return <ResultsStep results={results} sessionData={sessionData} onRecalculate={() => setCurrentStep('entry')} />;
       default:
-        return <div className="text-center p-12">Stato non valido: {currentStep}</div>;
+        return <div className="text-center p-12">Stato non valido</div>;
     }
   };
 
@@ -276,15 +269,13 @@ const DataEntryStep = ({
     );
   }
 
-  const years = (sessionData.years_analyzed || [])
-    .map(y => parseInt(y, 10))
-    .sort((a, b) => b - a);
+  const years = (sessionData.years_analyzed || []).sort((a, b) => b - a);
   
-  if (years.length < 2) {
+  if (years.length === 0) {
     return (
       <div className="p-6 bg-yellow-100 border border-yellow-300 rounded-lg text-center">
         <p className="text-yellow-800 font-semibold mb-4">
-          ⚠️ Anni insufficienti estratti dal file XBRL. Sono necessari almeno 2 anni per il confronto.
+          ⚠️ Nessun anno disponibile nei dati estratti dal file XBRL.
         </p>
         <a 
           href="/valuta-pmi" 
@@ -298,6 +289,7 @@ const DataEntryStep = ({
 
   return (
     <div className="space-y-8">
+      {/* Header con nome azienda e anni */}
       <div className="text-center">
         <h1 className="text-3xl font-bold text-slate-900">Verifica e Completa i Dati</h1>
         {sessionData.company_name && (
@@ -306,7 +298,7 @@ const DataEntryStep = ({
               🏢 {sessionData.company_name}
             </p>
             <p className="text-sm text-blue-600 mt-1">
-              Anno {years[0]} | Anno {years[1]}
+              Anno {years[1]} | Anno {years[0]}
             </p>
           </div>
         )}
@@ -315,16 +307,20 @@ const DataEntryStep = ({
         </p>
       </div>
 
+      {/* Sezione Dati Finanziari */}
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h2 className="text-xl font-semibold mb-4">Dati Finanziari</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {years.map(year => {
             const yearData = financialData[year] || {};
+            
+            // Check se i debiti sono mancanti (null)
             const debitiMLMissing = yearData.debiti_finanziari_ml === null || yearData.debiti_finanziari_ml === undefined;
             const debitiBreveMissing = yearData.debiti_finanziari_breve === null || yearData.debiti_finanziari_breve === undefined;
             
             return (
               <div key={year} className="space-y-4 p-4 border border-slate-200 rounded-lg">
+                {/* Header anno */}
                 <div className="border-b border-slate-200 pb-2 mb-3">
                   <h3 className="font-bold text-lg text-blue-600">Anno {year}</h3>
                 </div>
@@ -345,11 +341,15 @@ const DataEntryStep = ({
                   onChange={(e) => handleFinancialChange(e, year, 'patrimonio_netto')} 
                 />
                 
+                {/* Warning per debiti M/L mancanti */}
                 {debitiMLMissing && (
                   <div className="p-3 bg-orange-50 border border-orange-300 rounded-md">
                     <p className="text-xs text-orange-800 font-semibold flex items-start gap-2">
                       <span className="text-base">⚠️</span>
-                      <span><strong>Debiti M/L non trovati.</strong><br/>Inserisci il valore da "oltre l'esercizio".</span>
+                      <span>
+                        <strong>Debiti M/L non trovati nel file XBRL.</strong><br />
+                        Inserisci manualmente il valore consultando il bilancio (voce D.3/D.4 "oltre l'esercizio").
+                      </span>
                     </p>
                   </div>
                 )}
@@ -359,14 +359,18 @@ const DataEntryStep = ({
                   value={yearData.debiti_finanziari_ml} 
                   onChange={(e) => handleFinancialChange(e, year, 'debiti_finanziari_ml')}
                   hasWarning={debitiMLMissing}
-                  helpText={debitiMLMissing ? '⚠️ Inserire manualmente' : 'Estratto dal bilancio'}
+                  helpText={debitiMLMissing ? '⚠️ Valore da inserire manualmente' : 'Estratto dal bilancio (D.3/D.4 oltre esercizio)'}
                 />
                 
+                {/* Warning per debiti breve mancanti */}
                 {debitiBreveMissing && (
                   <div className="p-3 bg-orange-50 border border-orange-300 rounded-md">
                     <p className="text-xs text-orange-800 font-semibold flex items-start gap-2">
                       <span className="text-base">⚠️</span>
-                      <span><strong>Debiti a breve non trovati.</strong><br/>Inserisci il valore da "entro l'esercizio".</span>
+                      <span>
+                        <strong>Debiti a breve non trovati nel file XBRL.</strong><br />
+                        Inserisci manualmente il valore consultando il bilancio (voce D.3/D.4 "entro l'esercizio").
+                      </span>
                     </p>
                   </div>
                 )}
@@ -376,7 +380,7 @@ const DataEntryStep = ({
                   value={yearData.debiti_finanziari_breve} 
                   onChange={(e) => handleFinancialChange(e, year, 'debiti_finanziari_breve')}
                   hasWarning={debitiBreveMissing}
-                  helpText={debitiBreveMissing ? '⚠️ Inserire manualmente' : 'Estratto dal bilancio'}
+                  helpText={debitiBreveMissing ? '⚠️ Valore da inserire manualmente' : 'Estratto dal bilancio (D.3/D.4 entro esercizio)'}
                 />
                 
                 <InputField 
@@ -385,10 +389,10 @@ const DataEntryStep = ({
                   onChange={(e) => handleFinancialChange(e, year, 'disponibilita_liquide')} 
                 />
                 <InputField 
-                  label="PFN (Calcolata)" 
+                  label="PFN (Calcolata automaticamente)" 
                   value={yearData.pfn} 
                   readOnly={true}
-                  helpText="PFN = Debiti Totali - Liquidità"
+                  helpText="PFN = Debiti Finanziari Totali - Disponibilità Liquide"
                 />
               </div>
             );
@@ -396,23 +400,42 @@ const DataEntryStep = ({
         </div>
       </div>
       
+      {/* Sezione Input Qualitativi */}
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h2 className="text-xl font-semibold mb-4">Parametri Qualitativi</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <SelectField id="market_position" label="Posizione di Mercato" value={valuationInputs.market_position || 'follower'} onChange={handleInputChange} helpText="La posizione competitiva dell'azienda.">
+          <SelectField 
+            id="market_position" 
+            label="Posizione di Mercato" 
+            value={valuationInputs.market_position || 'follower'} 
+            onChange={handleInputChange}
+            helpText="La posizione competitiva dell'azienda nel suo settore di riferimento."
+          >
             <option value="leader">Leader</option>
             <option value="challenger">Challenger</option>
             <option value="follower">Follower</option>
             <option value="niche">Nicchia</option>
           </SelectField>
           
-          <SelectField id="customer_concentration" label="Concentrazione Clienti" value={valuationInputs.customer_concentration || 'medium'} onChange={handleInputChange} helpText="Dipendenza dai clienti principali.">
-            <option value="low">Bassa (&lt;10%)</option>
+          <SelectField 
+            id="customer_concentration" 
+            label="Concentrazione Clienti" 
+            value={valuationInputs.customer_concentration || 'medium'} 
+            onChange={handleInputChange}
+            helpText="Indica la dipendenza dal fatturato generato dai clienti principali."
+          >
+            <option value="low">Bassa (&lt;10% dal cliente principale)</option>
             <option value="medium">Media (10-30%)</option>
             <option value="high">Alta (&gt;30%)</option>
           </SelectField>
           
-          <SelectField id="technology_risk" label="Rischio Tecnologico" value={valuationInputs.technology_risk || 'medium'} onChange={handleInputChange} helpText="Impatto dell'innovazione sul business.">
+          <SelectField 
+            id="technology_risk" 
+            label="Rischio Tecnologico/Obsolescenza" 
+            value={valuationInputs.technology_risk || 'medium'} 
+            onChange={handleInputChange}
+            helpText="Valuta l'impatto dell'innovazione tecnologica sul modello di business."
+          >
             <option value="low">Basso</option>
             <option value="medium">Medio</option>
             <option value="high">Alto</option>
@@ -420,10 +443,22 @@ const DataEntryStep = ({
         </div>
       </div>
 
-      <button onClick={onCalculate} disabled={isCalculating} className="w-full flex justify-center items-center px-4 py-3 font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors">
+      <button 
+        onClick={onCalculate} 
+        disabled={isCalculating} 
+        className="w-full flex justify-center items-center px-4 py-3 font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
+      >
         {isCalculating ? (
-          <><svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Calcolo in corso...</>
-        ) : 'Calcola Valutazione'}
+          <>
+            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Calcolo in corso...
+          </>
+        ) : (
+          'Calcola Valutazione'
+        )}
       </button>
     </div>
   );
@@ -432,6 +467,7 @@ const DataEntryStep = ({
 // ============================================
 // STEP 2: RESULTS
 // ============================================
+
 const ResultsStep = ({ results, sessionData, onRecalculate }) => {
   if (!results) {
     return (
@@ -451,6 +487,7 @@ const ResultsStep = ({ results, sessionData, onRecalculate }) => {
 
   return (
     <div className="space-y-8">
+      {/* Header risultati con nome azienda */}
       <div className="text-center">
         <h1 className="text-3xl font-bold text-slate-900">Risultato della Valutazione</h1>
         {sessionData?.company_name && (
@@ -465,6 +502,7 @@ const ResultsStep = ({ results, sessionData, onRecalculate }) => {
         </p>
       </div>
 
+      {/* Valore Principale */}
       <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-8 rounded-xl shadow-xl text-center border border-blue-200">
         <p className="text-lg text-slate-700 font-medium">Valore di Mercato Stimato (Equity Value)</p>
         <p className="text-5xl font-extrabold text-blue-600 my-4">
@@ -486,44 +524,62 @@ const ResultsStep = ({ results, sessionData, onRecalculate }) => {
         </div>
       </div>
 
+      {/* Dettagli Calcolo */}
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h2 className="text-xl font-semibold mb-4 text-slate-900">Dettagli del Calcolo</h2>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div className="p-3 bg-slate-50 rounded">
             <p className="text-slate-600 text-xs mb-1">Settore</p>
-            <p className="font-bold text-slate-900">{results.calculation_details.multiples_used.sector}</p>
+            <p className="font-bold text-slate-900">
+              {results.calculation_details.multiples_used.sector}
+            </p>
           </div>
           <div className="p-3 bg-slate-50 rounded">
             <p className="text-slate-600 text-xs mb-1">Multiplo EBITDA</p>
-            <p className="font-bold text-slate-900">{results.calculation_details.multiples_used.ebitda}x</p>
+            <p className="font-bold text-slate-900">
+              {results.calculation_details.multiples_used.ebitda}x
+            </p>
           </div>
           <div className="p-3 bg-slate-50 rounded">
             <p className="text-slate-600 text-xs mb-1">Multiplo Ricavi</p>
-            <p className="font-bold text-slate-900">{results.calculation_details.multiples_used.revenue}x</p>
+            <p className="font-bold text-slate-900">
+              {results.calculation_details.multiples_used.revenue}x
+            </p>
           </div>
           <div className="p-3 bg-slate-50 rounded">
             <p className="text-slate-600 text-xs mb-1">Fattore Aggiustamento</p>
-            <p className="font-bold text-slate-900">{results.calculation_details.adjustment_factor}x</p>
+            <p className="font-bold text-slate-900">
+              {results.calculation_details.adjustment_factor}x
+            </p>
           </div>
           <div className="p-3 bg-slate-50 rounded">
             <p className="text-slate-600 text-xs mb-1">Enterprise Value (Base)</p>
-            <p className="font-bold text-slate-900">{formatCurrency(results.calculation_details.base_ev)}</p>
+            <p className="font-bold text-slate-900">
+              {formatCurrency(results.calculation_details.base_ev)}
+            </p>
           </div>
           <div className="p-3 bg-slate-50 rounded">
             <p className="text-slate-600 text-xs mb-1">Enterprise Value (Aggiustato)</p>
-            <p className="font-bold text-slate-900">{formatCurrency(results.calculation_details.adjusted_ev)}</p>
+            <p className="font-bold text-slate-900">
+              {formatCurrency(results.calculation_details.adjusted_ev)}
+            </p>
           </div>
           <div className="p-3 bg-slate-50 rounded col-span-2">
             <p className="text-slate-600 text-xs mb-1">PFN sottratta</p>
-            <p className="font-bold text-slate-900">{formatCurrency(results.calculation_details.pfn_used)}</p>
+            <p className="font-bold text-slate-900">
+              {formatCurrency(results.calculation_details.pfn_used)}
+            </p>
           </div>
         </div>
       </div>
-
-      <button onClick={onRecalculate} className="w-full px-4 py-3 font-bold text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors">
+      
+      {/* Button Ricalcola */}
+      <button 
+        onClick={onRecalculate} 
+        className="w-full px-4 py-3 font-bold text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors"
+      >
         Modifica Dati e Ricalcola
       </button>
     </div>
   );
 };
-
