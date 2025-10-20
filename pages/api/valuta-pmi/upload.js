@@ -1,6 +1,6 @@
 // FILE 1: upload_FIXED.js - BACKEND API
 // Percorso: pages/api/valuta-pmi/upload.js
-// SOSTITUISCI COMPLETAMENTE il file attuale con questo
+// VERSIONE SENZA EBITDA MARGIN %
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -346,47 +346,41 @@ export default async function handler(req, res) {
 
     const debitiFinanziari = findDebitiFinanziariCivilistico(balanceSheetData, yearCols, sessionId);
 
-    // ✅ NUOVO: CALCOLO EBITDA %
-    const calculateEbitdaMargin = (ebitda, ricavi) => {
-      if (!ebitda || !ricavi || ricavi === 0) return null;
-      return (ebitda / ricavi) * 100;
-    };
-
     const ebitdaN = metrics.ebitda.currentYear ?? calculatedEbitda.currentYear;
     const ebitdaN1 = metrics.ebitda.previousYear ?? calculatedEbitda.previousYear;
     const ricaviN = metrics.fatturato.currentYear;
     const ricaviN1 = metrics.fatturato.previousYear;
 
-    const ebitdaMarginN = calculateEbitdaMargin(ebitdaN, ricaviN);
-    const ebitdaMarginN1 = calculateEbitdaMargin(ebitdaN1, ricaviN1);
+    // ✅ RIMOSSO: Calcolo EBITDA Margin %
 
-    console.log(`[${sessionId}] 📊 EBITDA Margin: N=${ebitdaMarginN?.toFixed(2)}%, N-1=${ebitdaMarginN1?.toFixed(2)}%`);
-
-    // ✅ NUOVO: SALVA EBITDA % in historicalData
     const historicalData = {};
     historicalData[yearN1] = {
       ricavi: ricaviN1,
       ebitda: ebitdaN1,
-      ebitda_margin_pct: ebitdaMarginN1, // ← NUOVO
       patrimonio_netto: metrics.patrimonioNetto.previousYear,
       debiti_finanziari_ml: debitiFinanziari.ml_termine.previousYear,
       debiti_finanziari_breve: debitiFinanziari.breve_termine.previousYear,
       disponibilita_liquide: metrics.disponibilitaLiquide.previousYear,
+      imposte: metrics.imposte.previousYear,
+      oneriFinanziari: metrics.oneriFinanziari.previousYear,
+      ammortamenti: metrics.ammortamenti.previousYear
     };
 
     historicalData[yearN] = {
       ricavi: ricaviN,
       ebitda: ebitdaN,
-      ebitda_margin_pct: ebitdaMarginN, // ← NUOVO
       patrimonio_netto: metrics.patrimonioNetto.currentYear,
       debiti_finanziari_ml: debitiFinanziari.ml_termine.currentYear,
       debiti_finanziari_breve: debitiFinanziari.breve_termine.currentYear,
       disponibilita_liquide: metrics.disponibilitaLiquide.currentYear,
+      imposte: metrics.imposte.currentYear,
+      oneriFinanziari: metrics.oneriFinanziari.currentYear,
+      ammortamenti: metrics.ammortamenti.currentYear
     };
 
     const valuationInputs = {
       market_position: 'follower',
-      customer_concentration: 'medium',
+      customer_concentration: null,
       technology_risk: 'medium'
     };
 
