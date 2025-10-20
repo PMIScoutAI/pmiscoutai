@@ -1,5 +1,5 @@
 // /pages/valutazione/[sessionId].js
-// VERSIONE 5.1 - Con EBITDA % Informativo e fix expandedSection
+// VERSIONE 6.0 - SENZA EBITDA % + BOTTONE STAMPA PDF
 // SOSTITUISCI COMPLETAMENTE il tuo file attuale con questo
 
 import { useState, useEffect } from 'react';
@@ -467,11 +467,41 @@ const ResultsStep = ({ results, sessionData, onRecalculate }) => {
     setExpandedSection(expandedSection === section ? null : section);
   };
 
+  // ✅ FUNZIONE STAMPA PDF
+  const handlePrintPDF = () => {
+    window.print();
+  };
+
   const details = results.calculation_details;
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="space-y-6" id="results-section">
+      {/* CSS per stampa */}
+      <style jsx global>{`
+        @media print {
+          /* Nascondi elementi non necessari */
+          nav, header, footer, .no-print {
+            display: none !important;
+          }
+          
+          /* Ottimizza layout per stampa */
+          body {
+            background: white;
+          }
+          
+          .print-container {
+            max-width: 100%;
+            padding: 20px;
+          }
+          
+          /* Evita rotture di pagina nei box */
+          .print-avoid-break {
+            page-break-inside: avoid;
+          }
+        }
+      `}</style>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print-avoid-break">
         <div className="bg-green-50 border border-green-200 rounded-lg p-6">
           <p className="text-sm text-green-700 mb-2">Fair Market Value</p>
           <p className="text-3xl font-bold text-green-900">{formatCurrency(results.fair_market_value)}</p>
@@ -489,10 +519,10 @@ const ResultsStep = ({ results, sessionData, onRecalculate }) => {
       </div>
 
       {/* Accordion: Calcolo */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+      <div className="bg-white rounded-lg shadow-md overflow-hidden print-avoid-break">
         <button
           onClick={() => toggleSection('risultati')}
-          className="w-full px-6 py-4 flex justify-between items-center hover:bg-slate-50"
+          className="w-full px-6 py-4 flex justify-between items-center hover:bg-slate-50 no-print"
         >
           <span className="text-lg font-semibold text-slate-900">📈 Dettaglio Calcolo</span>
           <svg className={`w-6 h-6 transform ${expandedSection === 'risultati' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -524,121 +554,25 @@ const ResultsStep = ({ results, sessionData, onRecalculate }) => {
         )}
       </div>
 
-      {/* ✅ NUOVO: Accordion EBITDA % */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <button
-          onClick={() => toggleSection('ebitda_margin')}
-          className="w-full px-6 py-4 flex justify-between items-center hover:bg-slate-50"
+      {/* ✅ BOTTONI AZIONE */}
+      <div className="flex gap-4 no-print">
+        <button 
+          onClick={handlePrintPDF}
+          className="flex-1 px-4 py-3 font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2"
         >
-          <span className="text-lg font-semibold text-slate-900">📊 Analisi EBITDA %</span>
-          <svg className={`w-6 h-6 transform ${expandedSection === 'ebitda_margin' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
           </svg>
+          Stampa PDF
         </button>
         
-        {expandedSection === 'ebitda_margin' && (
-          <div className="px-6 pb-6 border-t border-slate-200">
-            <div className="mt-4 space-y-4">
-              
-              {details.ebitda_margin_informativo?.ebitda_margin_current_pct !== null && (
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <h4 className="font-semibold text-blue-900 mb-3">💰 EBITDA Margin</h4>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-700">Vostro EBITDA %:</span>
-                      <span className="text-2xl font-bold text-blue-700">
-                        {details.ebitda_margin_informativo.ebitda_margin_current_pct.toFixed(1)}%
-                      </span>
-                    </div>
-                    
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-700">Media settore:</span>
-                      <span className="text-lg font-semibold text-slate-600">
-                        {details.ebitda_margin_informativo.ebitda_margin_benchmark_pct.toFixed(1)}%
-                      </span>
-                    </div>
-                    
-                    <div className="bg-white p-3 rounded flex justify-between items-center">
-                      <span className="text-slate-700">Delta vs benchmark:</span>
-                      <span className={`text-lg font-bold ${details.ebitda_margin_informativo.ebitda_margin_delta_vs_benchmark > 0 ? 'text-green-700' : 'text-red-700'}`}>
-                        {details.ebitda_margin_informativo.ebitda_margin_delta_vs_benchmark > 0 ? '+' : ''}
-                        {details.ebitda_margin_informativo.ebitda_margin_delta_vs_benchmark.toFixed(1)} pp
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {details.ebitda_margin_informativo?.ebitda_margin_previous_pct !== null && (
-                <div className="p-4 bg-orange-50 rounded-lg">
-                  <h4 className="font-semibold text-orange-900 mb-3">📈 Trend</h4>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span>Anno N-1:</span>
-                      <span>{details.ebitda_margin_informativo.ebitda_margin_previous_pct.toFixed(1)}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Anno N:</span>
-                      <span>{details.ebitda_margin_informativo.ebitda_margin_current_pct.toFixed(1)}%</span>
-                    </div>
-                    <div className="bg-white p-3 rounded flex justify-between">
-                      <span>Variazione:</span>
-                      <span className={`font-bold ${details.ebitda_margin_informativo.ebitda_margin_trend > 0 ? 'text-green-700' : details.ebitda_margin_informativo.ebitda_margin_trend < 0 ? 'text-red-700' : 'text-slate-700'}`}>
-                        {details.ebitda_margin_informativo.ebitda_margin_trend > 0 ? '↗️ +' : details.ebitda_margin_informativo.ebitda_margin_trend < 0 ? '↘️ ' : '→ '}
-                        {details.ebitda_margin_informativo.ebitda_margin_trend.toFixed(1)} pp
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <h4 className="font-semibold text-slate-900 mb-3">💡 Interpretazione</h4>
-                
-                {details.ebitda_margin_informativo?.ebitda_margin_assessment === 'excellent' && (
-                  <div className="text-sm text-green-800">
-                    <p className="font-semibold">✅ ECCELLENTE</p>
-                    <p>EBITDA % significativamente sopra la media del settore.</p>
-                  </div>
-                )}
-                {details.ebitda_margin_informativo?.ebitda_margin_assessment === 'good' && (
-                  <div className="text-sm text-green-800">
-                    <p className="font-semibold">✅ BUONA</p>
-                    <p>EBITDA % leggermente sopra la media. Gestione costi efficiente.</p>
-                  </div>
-                )}
-                {details.ebitda_margin_informativo?.ebitda_margin_assessment === 'average' && (
-                  <div className="text-sm text-blue-800">
-                    <p className="font-semibold">➖ MEDIA</p>
-                    <p>EBITDA % allineata alla media del settore.</p>
-                  </div>
-                )}
-                {details.ebitda_margin_informativo?.ebitda_margin_assessment === 'poor' && (
-                  <div className="text-sm text-orange-800">
-                    <p className="font-semibold">⚠️ RIDOTTA</p>
-                    <p>EBITDA % sotto la media. Margini di miglioramento.</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                <h4 className="font-semibold text-yellow-900 mb-2">📝 Cosa Significa?</h4>
-                <p className="text-sm text-yellow-800">
-                  <strong>EBITDA %</strong> = (EBITDA / Ricavi) × 100. Misura quale % dei ricavi rimane come margine operativo.
-                </p>
-              </div>
-
-            </div>
-          </div>
-        )}
+        <button 
+          onClick={onRecalculate} 
+          className="flex-1 px-4 py-3 font-bold text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200"
+        >
+          Modifica Dati e Ricalcola
+        </button>
       </div>
-
-      <button 
-        onClick={onRecalculate} 
-        className="w-full px-4 py-3 font-bold text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200"
-      >
-        Modifica Dati e Ricalcola
-      </button>
     </div>
   );
 };
