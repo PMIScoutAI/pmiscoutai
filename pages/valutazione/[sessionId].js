@@ -280,3 +280,365 @@ const DataEntryStep = ({
           const data = financialData[year] || {};
           return (
             <div key={year} className="border border-slate-200 rounded-lg p-6 bg-white">
+              <h3 className="font-bold text-lg mb-4 text-slate-900">Anno {year}</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Ricavi (€)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    value={data.ricavi ?? ''}
+                    onChange={(e) => onFinancialChange(e, year, 'ricavi')}
+                    placeholder="Es: 1000000"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">EBITDA (€)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    value={data.ebitda ?? ''}
+                    onChange={(e) => onFinancialChange(e, year, 'ebitda')}
+                    placeholder="Es: 150000"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Debiti M/L (€)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    value={data.debiti_finanziari_ml ?? ''}
+                    onChange={(e) => onFinancialChange(e, year, 'debiti_finanziari_ml')}
+                    placeholder="Es: 500000"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Debiti Breve (€)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    value={data.debiti_finanziari_breve ?? ''}
+                    onChange={(e) => onFinancialChange(e, year, 'debiti_finanziari_breve')}
+                    placeholder="Es: 200000"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Disponibilità Liquide (€)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    value={data.disponibilita_liquide ?? ''}
+                    onChange={(e) => onFinancialChange(e, year, 'disponibilita_liquide')}
+                    placeholder="Es: 100000"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="border border-slate-200 rounded-lg p-6 bg-white space-y-4">
+        <h3 className="font-bold text-lg text-slate-900">📋 Parametri di Valutazione</h3>
+
+        <SelectField 
+          id="settore" 
+          label="Settore" 
+          value={valuationInputs.settore} 
+          onChange={onInputChange}
+          helpText="Seleziona il settore"
+        >
+          {SETTORI_ITALIANI.map(s => (
+            <option key={s.id} value={s.id}>{s.nome}</option>
+          ))}
+        </SelectField>
+
+        <SelectField 
+          id="dimensione" 
+          label="Dimensione Azienda" 
+          value={valuationInputs.dimensione} 
+          onChange={onInputChange}
+          helpText="Basato sui ricavi"
+        >
+          <option value="micro">Micro (&lt;€2M)</option>
+          <option value="piccola">Piccola (€2M-€10M)</option>
+          <option value="media">Media (€10M-€50M)</option>
+          <option value="grande">Grande (&gt;€50M)</option>
+        </SelectField>
+
+        <div>
+          <label htmlFor="margine_lordo" className="block text-sm font-medium text-slate-700 mb-1">
+            Margine Lordo (%)
+          </label>
+          <input
+            id="margine_lordo"
+            type="number"
+            step="0.1"
+            min="0"
+            max="100"
+            value={valuationInputs.margine_lordo ?? ''}
+            onChange={onInputChange}
+            placeholder="Es: 35"
+            className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            Formula: (Ricavi - Costo del Venduto) / Ricavi × 100
+            {margineLordoAuto && <span className="block text-blue-600 mt-1">💡 Stima: {margineLordoAuto}%</span>}
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor="customer_concentration" className="block text-sm font-medium text-slate-700 mb-1">
+            Concentrazione Clienti Top 3 (%)
+          </label>
+          <input
+            id="customer_concentration"
+            type="number"
+            step="1"
+            min="0"
+            max="100"
+            value={valuationInputs.customer_concentration ?? ''}
+            onChange={onInputChange}
+            placeholder="Es: 35"
+            className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500"
+          />
+          <p className="mt-1 text-xs text-slate-500">% fatturato dai 3 clienti principali</p>
+        </div>
+
+        <SelectField 
+          id="market_position" 
+          label="Posizione Mercato" 
+          value={valuationInputs.market_position} 
+          onChange={onInputChange}
+          helpText="Posizione competitiva"
+        >
+          <option value="leader">Leader (&gt;25%)</option>
+          <option value="challenger">Challenger (10-25%)</option>
+          <option value="follower">Follower (5-10%)</option>
+          <option value="niche">Nicchia (&lt;5%)</option>
+        </SelectField>
+        
+        <SelectField 
+          id="technology_risk" 
+          label="Rischio Tecnologico" 
+          value={valuationInputs.technology_risk} 
+          onChange={onInputChange}
+          helpText="Impatto innovazione"
+        >
+          <option value="low">Basso</option>
+          <option value="medium">Medio</option>
+          <option value="high">Alto</option>
+        </SelectField>
+      </div>
+
+      <button 
+        onClick={onCalculate} 
+        disabled={isCalculating} 
+        className="w-full flex justify-center items-center px-4 py-3 font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-slate-400"
+      >
+        {isCalculating ? 'Calcolo in corso...' : 'Calcola Valutazione'}
+      </button>
+    </div>
+  );
+};
+
+const ResultsStep = ({ results, sessionData, onRecalculate }) => {
+  const [expandedSection, setExpandedSection] = useState('risultati');
+
+  if (!results) {
+    return <div className="text-center p-12"><p className="text-slate-600">Caricamento...</p></div>;
+  }
+
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value);
+  };
+
+  const toggleSection = (section) => {
+    setExpandedSection(expandedSection === section ? null : section);
+  };
+
+  const details = results.calculation_details;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+          <p className="text-sm text-green-700 mb-2">Fair Market Value</p>
+          <p className="text-3xl font-bold text-green-900">{formatCurrency(results.fair_market_value)}</p>
+        </div>
+        
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+          <p className="text-sm text-blue-700 mb-2">Conservativo (-15%)</p>
+          <p className="text-3xl font-bold text-blue-900">{formatCurrency(results.conservative_value)}</p>
+        </div>
+        
+        <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
+          <p className="text-sm text-purple-700 mb-2">Ottimistico (+15%)</p>
+          <p className="text-3xl font-bold text-purple-900">{formatCurrency(results.optimistic_value)}</p>
+        </div>
+      </div>
+
+      {/* Accordion: Calcolo */}
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <button
+          onClick={() => toggleSection('risultati')}
+          className="w-full px-6 py-4 flex justify-between items-center hover:bg-slate-50"
+        >
+          <span className="text-lg font-semibold text-slate-900">📈 Dettaglio Calcolo</span>
+          <svg className={`w-6 h-6 transform ${expandedSection === 'risultati' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        {expandedSection === 'risultati' && (
+          <div className="px-6 pb-6 border-t border-slate-200">
+            <div className="mt-4 space-y-4 text-sm">
+              <div className="p-4 bg-red-50 rounded-lg">
+                <h4 className="font-bold text-red-900 mb-2">1️⃣ Multiplo Settore</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between bg-white p-2 rounded">
+                    <span>EBITDA:</span>
+                    <span>{formatCurrency(details.inputs_used.ebitda)}</span>
+                  </div>
+                  <div className="flex justify-between bg-white p-2 rounded">
+                    <span>Multiplo:</span>
+                    <span>{details.step1_multiplo}x</span>
+                  </div>
+                  <div className="flex justify-between bg-red-700 text-white p-2 rounded font-bold">
+                    <span>EV Base:</span>
+                    <span>{formatCurrency(details.step1_ev_base)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ✅ NUOVO: Accordion EBITDA % */}
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <button
+          onClick={() => toggleSection('ebitda_margin')}
+          className="w-full px-6 py-4 flex justify-between items-center hover:bg-slate-50"
+        >
+          <span className="text-lg font-semibold text-slate-900">📊 Analisi EBITDA %</span>
+          <svg className={`w-6 h-6 transform ${expandedSection === 'ebitda_margin' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        
+        {expandedSection === 'ebitda_margin' && (
+          <div className="px-6 pb-6 border-t border-slate-200">
+            <div className="mt-4 space-y-4">
+              
+              {details.ebitda_margin_informativo?.ebitda_margin_current_pct !== null && (
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <h4 className="font-semibold text-blue-900 mb-3">💰 EBITDA Margin</h4>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-700">Vostro EBITDA %:</span>
+                      <span className="text-2xl font-bold text-blue-700">
+                        {details.ebitda_margin_informativo.ebitda_margin_current_pct.toFixed(1)}%
+                      </span>
+                    </div>
+                    
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-700">Media settore:</span>
+                      <span className="text-lg font-semibold text-slate-600">
+                        {details.ebitda_margin_informativo.ebitda_margin_benchmark_pct.toFixed(1)}%
+                      </span>
+                    </div>
+                    
+                    <div className="bg-white p-3 rounded flex justify-between items-center">
+                      <span className="text-slate-700">Delta vs benchmark:</span>
+                      <span className={`text-lg font-bold ${details.ebitda_margin_informativo.ebitda_margin_delta_vs_benchmark > 0 ? 'text-green-700' : 'text-red-700'}`}>
+                        {details.ebitda_margin_informativo.ebitda_margin_delta_vs_benchmark > 0 ? '+' : ''}
+                        {details.ebitda_margin_informativo.ebitda_margin_delta_vs_benchmark.toFixed(1)} pp
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {details.ebitda_margin_informativo?.ebitda_margin_previous_pct !== null && (
+                <div className="p-4 bg-orange-50 rounded-lg">
+                  <h4 className="font-semibold text-orange-900 mb-3">📈 Trend</h4>
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span>Anno N-1:</span>
+                      <span>{details.ebitda_margin_informativo.ebitda_margin_previous_pct.toFixed(1)}%</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Anno N:</span>
+                      <span>{details.ebitda_margin_informativo.ebitda_margin_current_pct.toFixed(1)}%</span>
+                    </div>
+                    <div className="bg-white p-3 rounded flex justify-between">
+                      <span>Variazione:</span>
+                      <span className={`font-bold ${details.ebitda_margin_informativo.ebitda_margin_trend > 0 ? 'text-green-700' : details.ebitda_margin_informativo.ebitda_margin_trend < 0 ? 'text-red-700' : 'text-slate-700'}`}>
+                        {details.ebitda_margin_informativo.ebitda_margin_trend > 0 ? '↗️ +' : details.ebitda_margin_informativo.ebitda_margin_trend < 0 ? '↘️ ' : '→ '}
+                        {details.ebitda_margin_informativo.ebitda_margin_trend.toFixed(1)} pp
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <h4 className="font-semibold text-slate-900 mb-3">💡 Interpretazione</h4>
+                
+                {details.ebitda_margin_informativo?.ebitda_margin_assessment === 'excellent' && (
+                  <div className="text-sm text-green-800">
+                    <p className="font-semibold">✅ ECCELLENTE</p>
+                    <p>EBITDA % significativamente sopra la media del settore.</p>
+                  </div>
+                )}
+                {details.ebitda_margin_informativo?.ebitda_margin_assessment === 'good' && (
+                  <div className="text-sm text-green-800">
+                    <p className="font-semibold">✅ BUONA</p>
+                    <p>EBITDA % leggermente sopra la media. Gestione costi efficiente.</p>
+                  </div>
+                )}
+                {details.ebitda_margin_informativo?.ebitda_margin_assessment === 'average' && (
+                  <div className="text-sm text-blue-800">
+                    <p className="font-semibold">➖ MEDIA</p>
+                    <p>EBITDA % allineata alla media del settore.</p>
+                  </div>
+                )}
+                {details.ebitda_margin_informativo?.ebitda_margin_assessment === 'poor' && (
+                  <div className="text-sm text-orange-800">
+                    <p className="font-semibold">⚠️ RIDOTTA</p>
+                    <p>EBITDA % sotto la media. Margini di miglioramento.</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                <h4 className="font-semibold text-yellow-900 mb-2">📝 Cosa Significa?</h4>
+                <p className="text-sm text-yellow-800">
+                  <strong>EBITDA %</strong> = (EBITDA / Ricavi) × 100. Misura quale % dei ricavi rimane come margine operativo.
+                </p>
+              </div>
+
+            </div>
+          </div>
+        )}
+      </div>
+
+      <button 
+        onClick={onRecalculate} 
+        className="w-full px-4 py-3 font-bold text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200"
+      >
+        Modifica Dati e Ricalcola
+      </button>
+    </div>
+  );
+};
