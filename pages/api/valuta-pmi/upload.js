@@ -1,6 +1,6 @@
-// /pages/api/valuta-pmi/upload.js
-// Valuta-PMI: Upload XBRL, Parse dati finanziari e crea sessione valutazione
-// VERSIONE 8.2 - Calcolo EBITDA robusto
+// FILE 1: upload_FIXED.js - BACKEND API
+// Percorso: pages/api/valuta-pmi/upload.js
+// SOSTITUISCI COMPLETAMENTE il file attuale con questo
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -13,10 +13,6 @@ const supabase = createClient(
 );
 
 export const config = { api: { bodyParser: false } };
-
-// ============================================
-// FUNZIONI UTILITY
-// ============================================
 
 const parseValue = (val) => {
   if (val === null || val === undefined || String(val).trim() === '') return null;
@@ -38,31 +34,18 @@ const parseValue = (val) => {
   return null;
 };
 
-// ============================================
-// LOGICA ANNI IBRIDA: Semplice + Validata
-// ============================================
-
 const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionId) => {
   console.log(`[${sessionId}] 📅 Inizio estrazione e validazione anni...`);
   
   const currentYear = new Date().getFullYear();
   
-  // ============================================
-  // STEP 1: Prova estrazione SEMPLIFICATA dall'header
-  // ============================================
-  
   const tryExtractYearsFromHeader = (sheetData) => {
-    // Cerca SOLO nelle prime 3 righe, SOLO nelle colonne 2-6
     for (let row = 0; row < Math.min(3, sheetData.length); row++) {
       for (let col = 2; col <= 6; col++) {
         const cell = String(sheetData[row]?.[col] || '').trim();
-        
-        // Pattern semplice: cerca 4 cifre che iniziano con "20"
         const match = cell.match(/20(\d{2})/);
         if (match) {
           const year = parseInt('20' + match[1], 10);
-          
-          // Valida che sia negli ultimi 5 anni
           if (year >= currentYear - 5 && year <= currentYear) {
             return { year, col, found: true };
           }
@@ -75,58 +58,31 @@ const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionI
   const extractedBS = tryExtractYearsFromHeader(balanceSheetData);
   const extractedIS = tryExtractYearsFromHeader(incomeStatementData);
   
-  console.log(`[${sessionId}]   🔍 Estrazione header:`, {
-    statoPatrimoniale: extractedBS.found ? `${extractedBS.year} (col ${extractedBS.col})` : 'non trovato',
-    contoEconomico: extractedIS.found ? `${extractedIS.year} (col ${extractedIS.col})` : 'non trovato'
-  });
-  
-  // ============================================
-  // STEP 2: Determina anni e colonne
-  // ============================================
-  
   let yearN, yearN1, colN, colN1;
   let extractionMethod = 'unknown';
   
   if (extractedBS.found) {
-    // CASO 1: Estrazione riuscita - usa anni dall'header
     yearN = extractedBS.year;
     yearN1 = yearN - 1;
     colN = extractedBS.col;
-    colN1 = extractedBS.col + 1; // Assumi colonna successiva per N-1
+    colN1 = extractedBS.col + 1;
     extractionMethod = 'header_extraction';
-    
     console.log(`[${sessionId}]   ✅ Metodo: Estrazione da header`);
-    
   } else {
-    // CASO 2: Estrazione fallita - usa logica statica
     yearN = currentYear - 1;
     yearN1 = yearN - 1;
     colN = 3;
     colN1 = 4;
     extractionMethod = 'static_fallback';
-    
-    console.log(`[${sessionId}]   🔄 Metodo: Fallback statico (anno corrente - 1)`);
+    console.log(`[${sessionId}]   🔄 Metodo: Fallback statico`);
   }
   
-  console.log(`[${sessionId}]   📊 Configurazione:`, {
-    yearN: yearN,
-    yearN1: yearN1,
-    colN: colN,
-    colN1: colN1,
-    metodo: extractionMethod
-  });
-  
-  // ============================================
-  // STEP 3: VALIDAZIONE CRITICA
-  // ============================================
-  
   const warnings = [];
-  
   if (yearN < currentYear - 3) {
     warnings.push({
       severity: 'high',
       code: 'OLD_YEAR',
-      message: `L'anno più recente (${yearN}) è troppo vecchio. Il bilancio potrebbe essere stato depositato in ritardo.`
+      message: `L'anno più recente (${yearN}) è troppo vecchio.`
     });
   }
   
@@ -138,65 +94,6 @@ const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionI
     });
   }
   
-  if (colN === colN1) {
-    warnings.push({
-      severity: 'critical',
-      code: 'SAME_COLUMN',
-      message: `Anno N e N-1 risultano nella stessa colonna (${colN}).`
-    });
-  }
-  
-  if (yearN > currentYear) {
-    warnings.push({
-      severity: 'critical',
-      code: 'FUTURE_YEAR',
-      message: `L'anno ${yearN} è nel futuro. Possibile errore di estrazione.`
-    });
-  }
-  
-  // ============================================
-  // STEP 4: VALIDAZIONE INCROCIATA CON VALORI
-  // ============================================
-  
-  const validateExtractedValues = (metrics) => {
-    const valueWarnings = [];
-    
-    const ricaviN = metrics.fatturato?.currentYear;
-    const ricaviN1 = metrics.fatturato?.previousYear;
-    
-    if (ricaviN && ricaviN1) {
-      const growth = ((ricaviN - ricaviN1) / ricaviN1) * 100;
-      
-      if (growth > 200 || growth < -80) {
-        valueWarnings.push({
-          severity: 'high',
-          code: 'ANOMALOUS_GROWTH',
-          message: `Crescita ricavi anomala: ${growth.toFixed(1)}%. Possibile inversione colonne o errore estrazione anni.`,
-          data: { ricaviN, ricaviN1, growth }
-        });
-      }
-    }
-    
-    const allMetrics = Object.keys(metrics);
-    const nullCount = allMetrics.filter(key => 
-      metrics[key]?.currentYear === null && metrics[key]?.previousYear === null
-    ).length;
-    
-    if (nullCount > allMetrics.length / 2) {
-      valueWarnings.push({
-        severity: 'critical',
-        code: 'TOO_MANY_NULLS',
-        message: `Oltre il 50% delle metriche non è stato estratto. Possibile problema con colonne o anni.`
-      });
-    }
-    
-    return valueWarnings;
-  };
-  
-  // ============================================
-  // STEP 5: Return completo
-  // ============================================
-  
   return {
     yearCols: {
       currentYearCol: colN,
@@ -206,21 +103,31 @@ const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionI
     extractionMethod: extractionMethod,
     warnings: warnings,
     requiresUserConfirmation: warnings.some(w => w.severity === 'critical'),
-    
-    validateExtractedValues: validateExtractedValues
+    validateExtractedValues: (metrics) => {
+      const valueWarnings = [];
+      const ricaviN = metrics.fatturato?.currentYear;
+      const ricaviN1 = metrics.fatturato?.previousYear;
+      
+      if (ricaviN && ricaviN1) {
+        const growth = ((ricaviN - ricaviN1) / ricaviN1) * 100;
+        if (growth > 200 || growth < -80) {
+          valueWarnings.push({
+            severity: 'high',
+            code: 'ANOMALOUS_GROWTH',
+            message: `Crescita ricavi anomala: ${growth.toFixed(1)}%.`
+          });
+        }
+      }
+      return valueWarnings;
+    }
   };
 };
 
-
-// ============================================
-// PARSING DEBITI CIVILISTICO
-// ============================================
 const findDebitiFinanziariCivilistico = (sheetData, yearCols, sessionId) => {
-  console.log(`[${sessionId}] 🔍 Ricerca Debiti secondo schema civilistico italiano...`);
+  console.log(`[${sessionId}] 🔍 Ricerca Debiti...`);
 
   let debitiML = { currentYear: 0, previousYear: 0 };
   let debitiBreve = { currentYear: 0, previousYear: 0 };
-
   let inSezioneDebiti = false;
   let foundAny = false;
 
@@ -231,23 +138,13 @@ const findDebitiFinanziariCivilistico = (sheetData, yearCols, sessionId) => {
     }
     desc = desc.replace(/\s+/g, ' ').trim();
 
-    if (!inSezioneDebiti && (
-        desc.includes('d) debiti') || 
-        desc.includes('d. debiti') ||
-        desc.includes('d)debiti') ||
-        desc.includes('d debiti')
-    )) {
+    if (!inSezioneDebiti && (desc.includes('d) debiti') || desc.includes('d. debiti'))) {
       inSezioneDebiti = true;
       console.log(`[${sessionId}]   ✅ Sezione D) DEBITI trovata`);
       continue;
     }
 
-    if (inSezioneDebiti && (
-        desc.match(/^e[\)\.]/) || 
-        desc.includes('totale passivo') ||
-        desc.includes('totale passività')
-    )) {
-      console.log(`[${sessionId}]   ℹ️ Fine sezione debiti`);
+    if (inSezioneDebiti && (desc.match(/^e[\)\.]/))) {
       break;
     }
 
@@ -262,33 +159,25 @@ const findDebitiFinanziariCivilistico = (sheetData, yearCols, sessionId) => {
 
       if (cur !== null || prev !== null) {
         foundAny = true;
-
         if (isOltre) {
           debitiML.currentYear += (cur || 0);
           debitiML.previousYear += (prev || 0);
-          console.log(`[${sessionId}]   └─ M/L: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
         }
-
         if (isEntro) {
           debitiBreve.currentYear += (cur || 0);
           debitiBreve.previousYear += (prev || 0);
-          console.log(`[${sessionId}]   └─ Breve: N=${cur}, N-1=${prev} | "${desc.substring(0, 50)}..."`);
         }
       }
     }
   }
 
   if (!foundAny || (debitiML.currentYear === 0 && debitiBreve.currentYear === 0)) {
-    console.log(`[${sessionId}]   ⚠️ Debiti non trovati → richiede input manuale`);
     return {
       breve_termine: { currentYear: null, previousYear: null },
       ml_termine: { currentYear: null, previousYear: null },
       requiresManualEntry: true
     };
   }
-
-  console.log(`[${sessionId}]   ✅ Debiti M/L: N=${debitiML.currentYear}, N-1=${debitiML.previousYear}`);
-  console.log(`[${sessionId}]   ✅ Debiti Breve: N=${debitiBreve.currentYear}, N-1=${debitiBreve.previousYear}`);
 
   return {
     breve_termine: debitiBreve,
@@ -297,13 +186,9 @@ const findDebitiFinanziariCivilistico = (sheetData, yearCols, sessionId) => {
   };
 };
 
-// ============================================
-// FUNZIONI DI RICERCA ALTRE METRICHE
-// ============================================
 const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
   for (const config of searchConfigs) {
     const primaryTerms = config.primary.map(t => t.toLowerCase().trim());
-    const exclusionTerms = (config.exclusion || []).map(t => t.toLowerCase().trim());
     
     for (const row of sheetData) {
       let description = '';
@@ -313,21 +198,18 @@ const findValueInSheet = (sheetData, searchConfigs, yearCols, metricName) => {
       description = description.replace(/\s+/g, ' ').trim();
       
       const allPrimaryFound = primaryTerms.every(term => description.includes(term));
-      const anyExclusionFound = exclusionTerms.some(term => description.includes(term));
       
-      if (allPrimaryFound && !anyExclusionFound) {
+      if (allPrimaryFound) {
         const result = {
           currentYear: parseValue(row[yearCols.currentYearCol]),
           previousYear: parseValue(row[yearCols.previousYearCol])
         };
         if (result.currentYear !== null || result.previousYear !== null) {
-          console.log(`[${metricName}] Trovato: "${description.substring(0, 50)}..." | N=${result.currentYear}, N-1=${result.previousYear}`);
           return result;
         }
       }
     }
   }
-  console.log(`[${metricName}] Non trovato`);
   return { currentYear: null, previousYear: null };
 };
 
@@ -347,14 +229,12 @@ const metricsConfigs = {
     { primary: ["margine operativo lordo (ebitda)"] },
     { primary: ["ebitda"] }
   ],
-  // Aggiunto per calcolo EBITDA
   utilePerdita: [
     { primary: ["utile (perdita) dell'esercizio"] }, 
     { primary: ["risultato dell'esercizio"] }
   ],
   imposte: [
-    { primary: ["imposte sul reddito dell'esercizio"] }, 
-    { primary: ["imposte sul reddito"] }
+    { primary: ["imposte sul reddito dell'esercizio"] }
   ],
   oneriFinanziari: [
     { primary: ["interessi e altri oneri finanziari"] }
@@ -364,27 +244,6 @@ const metricsConfigs = {
   ]
 };
 
-const findSimpleValue = (sheetData, searchTexts) => {
-  const normalizedSearchTexts = searchTexts.map(t => t.toLowerCase().trim());
-  for (const row of sheetData) {
-    for (let j = 0; j < row.length; j++) {
-      const cellContent = String(row[j] || '').toLowerCase().trim();
-      if (normalizedSearchTexts.some(searchText => cellContent.includes(searchText))) {
-        for (let k = j + 1; k < row.length; k++) {
-          const valueCell = String(row[k] || '').trim();
-          if (valueCell && valueCell !== '' && !normalizedSearchTexts.some(st => valueCell.toLowerCase().includes(st))) {
-            return valueCell;
-          }
-        }
-      }
-    }
-  }
-  return null;
-};
-
-// ============================================
-// HANDLER PRINCIPALE
-// ============================================
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
   
@@ -403,11 +262,11 @@ export default async function handler(req, res) {
     const { data: userRow } = await supabase
       .from('users')
       .upsert({ 
-          outseta_user_id: outsetaUser.Uid, 
-          email: outsetaUser.Email, 
-          first_name: outsetaUser.FirstName || '', 
-          last_name: outsetaUser.LastName || '' 
-        }, { onConflict: 'outseta_user_id' })
+        outseta_user_id: outsetaUser.Uid, 
+        email: outsetaUser.Email, 
+        first_name: outsetaUser.FirstName || '', 
+        last_name: outsetaUser.LastName || '' 
+      }, { onConflict: 'outseta_user_id' })
       .select('id')
       .single();
     
@@ -422,15 +281,13 @@ export default async function handler(req, res) {
     const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
     const balanceSheet = workbook.Sheets['T0002'] || workbook.Sheets['T0001'];
     const incomeStatement = workbook.Sheets['T0006'] || workbook.Sheets['T0005'];
-    const companyInfo = workbook.Sheets['T0000'];
     
     if (!balanceSheet || !incomeStatement) {
-      throw new Error('Fogli XBRL mancanti (T0002/T0006 o T0001/T0005)');
+      throw new Error('Fogli XBRL mancanti');
     }
 
     const balanceSheetData = xlsx.utils.sheet_to_json(balanceSheet, { header: 1 });
     const incomeStatementData = xlsx.utils.sheet_to_json(incomeStatement, { header: 1 });
-    const companyInfoData = companyInfo ? xlsx.utils.sheet_to_json(companyInfo, { header: 1 }) : [];
     
     const companyName = String(fields.companyName?.[0] || '').trim() || 'Azienda non specificata';
     
@@ -444,41 +301,21 @@ export default async function handler(req, res) {
     
     sessionId = `val_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     await supabase.from('valuations').insert({ 
-        session_id: sessionId, 
-        user_id: userRow.id, 
-        company_name: companyName, 
-        status: 'processing' 
-      });
+      session_id: sessionId, 
+      user_id: userRow.id, 
+      company_name: companyName, 
+      status: 'processing' 
+    });
     
-    console.log(`[${sessionId}] 🚀 Sessione valutazione creata per "${companyName}"`);
+    console.log(`[${sessionId}] 🚀 Sessione creata`);
 
-    // STEP 7: Estrai e valida anni
     const yearConfig = extractAndValidateYears(balanceSheetData, incomeStatementData, sessionId);
-
-    if (yearConfig.warnings.length > 0) {
-      console.warn(`[${sessionId}] ⚠️ Warning estrazione anni:`);
-      yearConfig.warnings.forEach(w => {
-        console.warn(`[${sessionId}]   [${w.severity.toUpperCase()}] ${w.code}: ${w.message}`);
-      });
-    }
-
     const yearCols = yearConfig.yearCols;
     const yearsExtracted = yearConfig.years;
+    const yearN1 = yearsExtracted[0];
+    const yearN = yearsExtracted[1];
 
-    console.log(`[${sessionId}] 📅 Anni finali: N=${yearsExtracted[1]}, N-1=${yearsExtracted[0]}`);
-    console.log(`[${sessionId}] 📊 Colonne: N=${yearCols.currentYearCol}, N-1=${yearCols.previousYearCol}`);
-    console.log(`[${sessionId}] 🔧 Metodo: ${yearConfig.extractionMethod}`);
-
-
-    const atecoRaw = companyInfoData.length > 0 ? findSimpleValue(companyInfoData, ['settore di attività prevalente', 'codice ateco']) : null;
-    const atecoCode = atecoRaw?.match(/(\d{2})/)?.[1] || null;
-    console.log(`[${sessionId}] 🏢 ATECO estratto: ${atecoCode}`);
-
-    // ============================================
-    // CALCOLO EBITDA ROBUSTO - Versione 8.2
-    // ============================================
-
-    // STEP 8: Estrai metriche
+    // Estrai metriche
     const metrics = {};
     for (const key in metricsConfigs) {
       const isBalanceSheetMetric = ['patrimonioNetto', 'disponibilitaLiquide'].includes(key);
@@ -486,32 +323,10 @@ export default async function handler(req, res) {
       metrics[key] = findValueInSheet(sheet, metricsConfigs[key], yearCols, key);
     }
 
-    console.log(`[${sessionId}] 💰 Componenti EBITDA estratte:`);
-    console.log(`[${sessionId}]   Utile/Perdita: N=${metrics.utilePerdita?.currentYear}, N-1=${metrics.utilePerdita?.previousYear}`);
-    console.log(`[${sessionId}]   Imposte: N=${metrics.imposte?.currentYear}, N-1=${metrics.imposte?.previousYear}`);
-    console.log(`[${sessionId}]   Oneri Finanziari: N=${metrics.oneriFinanziari?.currentYear}, N-1=${metrics.oneriFinanziari?.previousYear}`);
-    console.log(`[${sessionId}]   Ammortamenti: N=${metrics.ammortamenti?.currentYear}, N-1=${metrics.ammortamenti?.previousYear}`);
-
-    const calculateEbitdaSafely = (utile, imposte, oneri, ammortamenti, year) => {
-      if (utile === null) {
-        console.log(`[${sessionId}]   ⚠️ EBITDA ${year}: null (Utile/Perdita non trovato)`);
-        return null;
-      }
-      
-      const ebitda = utile + (imposte || 0) + (oneri || 0) + (ammortamenti || 0);
-      
-      const missingComponents = [];
-      if (imposte === null) missingComponents.push('Imposte');
-      if (oneri === null) missingComponents.push('Oneri Finanziari');
-      if (ammortamenti === null) missingComponents.push('Ammortamenti');
-      
-      if (missingComponents.length > 0) {
-        console.log(`[${sessionId}]   ℹ️ EBITDA ${year}: calcolato con componenti mancanti (${missingComponents.join(', ')}) trattate come 0`);
-      } else {
-        console.log(`[${sessionId}]   ✅ EBITDA ${year}: calcolato con tutte le componenti`);
-      }
-      
-      return ebitda;
+    // Calcolo EBITDA
+    const calculateEbitdaSafely = (utile, imposte, oneri, ammortamenti) => {
+      if (utile === null) return null;
+      return utile + (imposte || 0) + (oneri || 0) + (ammortamenti || 0);
     };
 
     const calculatedEbitda = {
@@ -519,135 +334,61 @@ export default async function handler(req, res) {
         metrics.utilePerdita.currentYear,
         metrics.imposte.currentYear,
         metrics.oneriFinanziari.currentYear,
-        metrics.ammortamenti.currentYear,
-        'N'
+        metrics.ammortamenti.currentYear
       ),
       previousYear: calculateEbitdaSafely(
         metrics.utilePerdita.previousYear,
         metrics.imposte.previousYear,
         metrics.oneriFinanziari.previousYear,
-        metrics.ammortamenti.previousYear,
-        'N-1'
+        metrics.ammortamenti.previousYear
       )
     };
 
-    console.log(`[${sessionId}] 💰 EBITDA calcolato: N=${calculatedEbitda.currentYear}, N-1=${calculatedEbitda.previousYear}`);
-
     const debitiFinanziari = findDebitiFinanziariCivilistico(balanceSheetData, yearCols, sessionId);
 
-    const historicalData = {};
-    const yearN1 = yearsExtracted[0];
-    const yearN = yearsExtracted[1];
+    // ✅ NUOVO: CALCOLO EBITDA %
+    const calculateEbitdaMargin = (ebitda, ricavi) => {
+      if (!ebitda || !ricavi || ricavi === 0) return null;
+      return (ebitda / ricavi) * 100;
+    };
 
+    const ebitdaN = metrics.ebitda.currentYear ?? calculatedEbitda.currentYear;
+    const ebitdaN1 = metrics.ebitda.previousYear ?? calculatedEbitda.previousYear;
+    const ricaviN = metrics.fatturato.currentYear;
+    const ricaviN1 = metrics.fatturato.previousYear;
+
+    const ebitdaMarginN = calculateEbitdaMargin(ebitdaN, ricaviN);
+    const ebitdaMarginN1 = calculateEbitdaMargin(ebitdaN1, ricaviN1);
+
+    console.log(`[${sessionId}] 📊 EBITDA Margin: N=${ebitdaMarginN?.toFixed(2)}%, N-1=${ebitdaMarginN1?.toFixed(2)}%`);
+
+    // ✅ NUOVO: SALVA EBITDA % in historicalData
+    const historicalData = {};
     historicalData[yearN1] = {
-        ricavi: metrics.fatturato.previousYear,
-        ebitda: metrics.ebitda.previousYear ?? calculatedEbitda.previousYear,
-        patrimonio_netto: metrics.patrimonioNetto.previousYear,
-        debiti_finanziari_ml: debitiFinanziari.ml_termine.previousYear,
-        debiti_finanziari_breve: debitiFinanziari.breve_termine.previousYear,
-        disponibilita_liquide: metrics.disponibilitaLiquide.previousYear,
+      ricavi: ricaviN1,
+      ebitda: ebitdaN1,
+      ebitda_margin_pct: ebitdaMarginN1, // ← NUOVO
+      patrimonio_netto: metrics.patrimonioNetto.previousYear,
+      debiti_finanziari_ml: debitiFinanziari.ml_termine.previousYear,
+      debiti_finanziari_breve: debitiFinanziari.breve_termine.previousYear,
+      disponibilita_liquide: metrics.disponibilitaLiquide.previousYear,
     };
 
     historicalData[yearN] = {
-        ricavi: metrics.fatturato.currentYear,
-        ebitda: metrics.ebitda.currentYear ?? calculatedEbitda.currentYear,
-        patrimonio_netto: metrics.patrimonioNetto.currentYear,
-        debiti_finanziari_ml: debitiFinanziari.ml_termine.currentYear,
-        debiti_finanziari_breve: debitiFinanziari.breve_termine.currentYear,
-        disponibilita_liquide: metrics.disponibilitaLiquide.currentYear,
+      ricavi: ricaviN,
+      ebitda: ebitdaN,
+      ebitda_margin_pct: ebitdaMarginN, // ← NUOVO
+      patrimonio_netto: metrics.patrimonioNetto.currentYear,
+      debiti_finanziari_ml: debitiFinanziari.ml_termine.currentYear,
+      debiti_finanziari_breve: debitiFinanziari.breve_termine.currentYear,
+      disponibilita_liquide: metrics.disponibilitaLiquide.currentYear,
     };
-    
-    console.log(`[${sessionId}] 📊 Historical Data:`, JSON.stringify(historicalData, null, 2));
-
-    const validateEbitda = () => {
-      const warnings = [];
-      
-      if (historicalData[yearN].ebitda === null && historicalData[yearN1].ebitda === null) {
-        warnings.push({
-          severity: 'high',
-          code: 'EBITDA_NOT_CALCULABLE',
-          message: 'EBITDA non calcolabile: Utile/Perdita non trovato in entrambi gli anni.'
-        });
-      }
-      
-      if (historicalData[yearN].ebitda !== null && historicalData[yearN].ebitda < 0) {
-        warnings.push({
-          severity: 'info',
-          code: 'NEGATIVE_EBITDA',
-          message: `EBITDA negativo nell'anno ${yearN}: ${historicalData[yearN].ebitda}. Possibile marginalità operativa negativa.`
-        });
-      }
-      
-      const ricaviN = historicalData[yearN].ricavi;
-      const ebitdaN = historicalData[yearN].ebitda;
-      
-      if (ricaviN && ebitdaN !== null) {
-        const ebitdaMargin = (ebitdaN / ricaviN) * 100;
-        
-        if (ebitdaMargin < -10 || ebitdaMargin > 50) {
-          warnings.push({
-            severity: 'medium',
-            code: 'ANOMALOUS_EBITDA_MARGIN',
-            message: `EBITDA Margin anomalo: ${ebitdaMargin.toFixed(1)}%. Verifica i dati estratti.`,
-            data: { ricavi: ricaviN, ebitda: ebitdaN, margin: ebitdaMargin }
-          });
-        }
-      }
-      
-      return warnings;
-    };
-
-    const ebitdaWarnings = validateEbitda();
-
-    if (ebitdaWarnings.length > 0) {
-      console.warn(`[${sessionId}] ⚠️ Warning EBITDA:`);
-      ebitdaWarnings.forEach(w => {
-        console.warn(`[${sessionId}]   [${w.severity.toUpperCase()}] ${w.code}: ${w.message}`);
-        if (w.data) console.warn(`[${sessionId}]     Dati:`, w.data);
-      });
-    }
-
-    // STEP 9: VALIDAZIONE INCROCIATA
-    const valueWarnings = yearConfig.validateExtractedValues(metrics);
-    const allWarnings = [...yearConfig.warnings, ...valueWarnings, ...ebitdaWarnings];
-    const hasCriticalWarnings = allWarnings.some(w => w.severity === 'critical');
 
     const valuationInputs = {
       market_position: 'follower',
       customer_concentration: 'medium',
       technology_risk: 'medium'
     };
-    
-    if (hasCriticalWarnings) {
-      console.error(`[${sessionId}] ❌ Rilevati warning critici - Richiesta conferma utente`);
-      
-      await supabase
-        .from('valuations')
-        .update({ 
-          status: 'needs_validation',
-          years_analyzed: yearsExtracted,
-          historical_data: historicalData,
-          valuation_inputs: valuationInputs,
-          sector_ateco: atecoCode,
-          metadata: {
-            extraction_method: yearConfig.extractionMethod,
-            warnings: allWarnings
-          }
-        })
-        .eq('session_id', sessionId);
-      
-      return res.status(200).json({ 
-        success: true, 
-        sessionId: sessionId,
-        companyName: companyName,
-        years: yearsExtracted,
-        status: 'needs_validation',
-        warnings: allWarnings.map(w => ({
-          severity: w.severity,
-          message: w.message
-        }))
-      });
-    }
 
     const { error: updateError } = await supabase
       .from('valuations')
@@ -655,17 +396,13 @@ export default async function handler(req, res) {
         years_analyzed: yearsExtracted,
         historical_data: historicalData,
         valuation_inputs: valuationInputs,
-        sector_ateco: atecoCode,
         status: debitiFinanziari.requiresManualEntry ? 'data_entry' : 'complete'
       })
       .eq('session_id', sessionId);
     
-    if (updateError) {
-      console.error(`[${sessionId}] ❌ Errore update:`, updateError);
-      throw updateError;
-    }
+    if (updateError) throw updateError;
     
-    console.log(`[${sessionId}] ✅ Dati salvati correttamente su Supabase`);
+    console.log(`[${sessionId}] ✅ Dati salvati`);
     
     return res.status(200).json({ 
       success: true, 
@@ -675,19 +412,13 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error(`[${sessionId || 'NO_SESSION'}] ❌ Errore upload XBRL:`, error);
+    console.error(`Error:`, error);
     if (sessionId) {
       await supabase
         .from('valuations')
-        .update({ 
-          status: 'failed', 
-          error_message: error.message 
-        })
+        .update({ status: 'failed', error_message: error.message })
         .eq('session_id', sessionId);
     }
-    return res.status(500).json({ 
-      error: error.message || "Errore durante l'upload del file" 
-    });
+    return res.status(500).json({ error: error.message || "Errore durante l'upload" });
   }
 }
-
