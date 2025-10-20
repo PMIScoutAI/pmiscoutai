@@ -1,6 +1,6 @@
-// FILE 1: upload_FIXED.js - BACKEND API
+// FILE: upload.js - VERSIONE SEMPLIFICATA CORRETTA
 // Percorso: pages/api/valuta-pmi/upload.js
-// VERSIONE SENZA EBITDA MARGIN %
+// ✅ RIMOZIONE parametri qualitativi da valuation_inputs
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -56,7 +56,6 @@ const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionI
   };
   
   const extractedBS = tryExtractYearsFromHeader(balanceSheetData);
-  const extractedIS = tryExtractYearsFromHeader(incomeStatementData);
   
   let yearN, yearN1, colN, colN1;
   let extractionMethod = 'unknown';
@@ -77,49 +76,13 @@ const extractAndValidateYears = (balanceSheetData, incomeStatementData, sessionI
     console.log(`[${sessionId}]   🔄 Metodo: Fallback statico`);
   }
   
-  const warnings = [];
-  if (yearN < currentYear - 3) {
-    warnings.push({
-      severity: 'high',
-      code: 'OLD_YEAR',
-      message: `L'anno più recente (${yearN}) è troppo vecchio.`
-    });
-  }
-  
-  if (yearN - yearN1 !== 1) {
-    warnings.push({
-      severity: 'critical',
-      code: 'NON_CONSECUTIVE',
-      message: `Gli anni ${yearN1} e ${yearN} non sono consecutivi.`
-    });
-  }
-  
   return {
     yearCols: {
       currentYearCol: colN,
       previousYearCol: colN1
     },
     years: [yearN1, yearN],
-    extractionMethod: extractionMethod,
-    warnings: warnings,
-    requiresUserConfirmation: warnings.some(w => w.severity === 'critical'),
-    validateExtractedValues: (metrics) => {
-      const valueWarnings = [];
-      const ricaviN = metrics.fatturato?.currentYear;
-      const ricaviN1 = metrics.fatturato?.previousYear;
-      
-      if (ricaviN && ricaviN1) {
-        const growth = ((ricaviN - ricaviN1) / ricaviN1) * 100;
-        if (growth > 200 || growth < -80) {
-          valueWarnings.push({
-            severity: 'high',
-            code: 'ANOMALOUS_GROWTH',
-            message: `Crescita ricavi anomala: ${growth.toFixed(1)}%.`
-          });
-        }
-      }
-      return valueWarnings;
-    }
+    extractionMethod: extractionMethod
   };
 };
 
@@ -315,7 +278,6 @@ export default async function handler(req, res) {
     const yearN1 = yearsExtracted[0];
     const yearN = yearsExtracted[1];
 
-    // Estrai metriche
     const metrics = {};
     for (const key in metricsConfigs) {
       const isBalanceSheetMetric = ['patrimonioNetto', 'disponibilitaLiquide'].includes(key);
@@ -323,7 +285,6 @@ export default async function handler(req, res) {
       metrics[key] = findValueInSheet(sheet, metricsConfigs[key], yearCols, key);
     }
 
-    // Calcolo EBITDA
     const calculateEbitdaSafely = (utile, imposte, oneri, ammortamenti) => {
       if (utile === null) return null;
       return utile + (imposte || 0) + (oneri || 0) + (ammortamenti || 0);
@@ -348,14 +309,10 @@ export default async function handler(req, res) {
 
     const ebitdaN = metrics.ebitda.currentYear ?? calculatedEbitda.currentYear;
     const ebitdaN1 = metrics.ebitda.previousYear ?? calculatedEbitda.previousYear;
-    const ricaviN = metrics.fatturato.currentYear;
-    const ricaviN1 = metrics.fatturato.previousYear;
-
-    // ✅ RIMOSSO: Calcolo EBITDA Margin %
 
     const historicalData = {};
     historicalData[yearN1] = {
-      ricavi: ricaviN1,
+      ricavi: metrics.fatturato.previousYear,
       ebitda: ebitdaN1,
       patrimonio_netto: metrics.patrimonioNetto.previousYear,
       debiti_finanziari_ml: debitiFinanziari.ml_termine.previousYear,
@@ -367,7 +324,7 @@ export default async function handler(req, res) {
     };
 
     historicalData[yearN] = {
-      ricavi: ricaviN,
+      ricavi: metrics.fatturato.currentYear,
       ebitda: ebitdaN,
       patrimonio_netto: metrics.patrimonioNetto.currentYear,
       debiti_finanziari_ml: debitiFinanziari.ml_termine.currentYear,
@@ -378,11 +335,9 @@ export default async function handler(req, res) {
       ammortamenti: metrics.ammortamenti.currentYear
     };
 
-    const valuationInputs = {
-      market_position: 'follower',
-      customer_concentration: null,
-      technology_risk: 'medium'
-    };
+    // ✅ CORRETTO: Nessun parametro qualitativo iniziale
+    // Il settore e la dimensione verranno impostati dall'utente nel form
+    const valuationInputs = {};
 
     const { error: updateError } = await supabase
       .from('valuations')
