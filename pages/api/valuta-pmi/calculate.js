@@ -1,6 +1,6 @@
-// FILE 2: calculate_FIXED.js
+// FILE: calculate.js - VERSIONE SEMPLIFICATA
 // Percorso: pages/api/valuta-pmi/calculate.js
-// VERSIONE SENZA EBITDA MARGIN %
+// RIMOZIONE COMPLETA: Margine Lordo, Posizione Mercato, Rischio Tech, Concentrazione Clienti
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -64,6 +64,7 @@ const calculateLiquidityDiscount = (dimensione, liquiditaSettore) => {
   return SCONTO_LIQUIDITA_BAGNA[dim][liq];
 };
 
+// ✅ SEMPLIFICATO: Solo crescita ricavi
 const calculateGrowthAdjustment = (ricaviN, ricaviN1) => {
   if (!ricaviN1 || ricaviN1 === 0) return 0;
   
@@ -76,25 +77,7 @@ const calculateGrowthAdjustment = (ricaviN, ricaviN1) => {
   return -0.20;
 };
 
-const calculateMarginAdjustment = (margineLordo) => {
-  if (margineLordo === null || margineLordo === undefined) return 0;
-  
-  if (margineLordo > 60) return 0.08;
-  if (margineLordo >= 40) return 0.04;
-  if (margineLordo >= 25) return 0;
-  return -0.12;
-};
-
-const calculateMarketPositionAdjustment = (position) => {
-  const adjustments = {
-    leader: 0.08,
-    challenger: 0.03,
-    follower: -0.08,
-    niche: 0.02
-  };
-  return adjustments[position] || 0;
-};
-
+// ✅ SEMPLIFICATO: Solo indebitamento
 const calculateDebtAdjustment = (debitiTotali, ebitda) => {
   if (!ebitda || ebitda === 0) return -0.15;
   
@@ -105,36 +88,16 @@ const calculateDebtAdjustment = (debitiTotali, ebitda) => {
   return -0.15;
 };
 
-const calculateTechRiskAdjustment = (techRisk) => {
-  const adjustments = {
-    low: 0.05,
-    medium: 0,
-    high: -0.15
-  };
-  return adjustments[techRisk] || 0;
-};
-
-const calculateEVAdjustments = (inputs, dataN, dataN1) => {
+// ✅ NUOVO: Calcolo aggiustamenti semplificato (solo 2 fattori)
+const calculateEVAdjustments = (dataN, dataN1) => {
   const factors = {
     growth: calculateGrowthAdjustment(dataN.ricavi, dataN1?.ricavi),
-    margin: calculateMarginAdjustment(inputs.margine_lordo),
-    market_position: calculateMarketPositionAdjustment(inputs.market_position),
-    debt: calculateDebtAdjustment(dataN.debiti_finanziari_ml + dataN.debiti_finanziari_breve, dataN.ebitda),
-    tech_risk: calculateTechRiskAdjustment(inputs.technology_risk)
+    debt: calculateDebtAdjustment(dataN.debiti_finanziari_ml + dataN.debiti_finanziari_breve, dataN.ebitda)
   };
   
   const totalAdjustment = Object.values(factors).reduce((sum, val) => sum + val, 0);
   
   return { factors, totalAdjustment };
-};
-
-const calculateCustomerConcentrationAdjustment = (concentration) => {
-  if (concentration === null || concentration === undefined) return 0;
-  
-  if (concentration > 50) return -0.20;
-  if (concentration >= 30) return -0.10;
-  if (concentration >= 15) return 0;
-  return 0.05;
 };
 
 export default async function handler(req, res) {
@@ -180,34 +143,30 @@ export default async function handler(req, res) {
     const dataN = updatedData[yearN];
     const dataN1 = updatedData[yearN1];
     
-    console.log(`[${sessionId}] 📊 Inizio calcolo valutazione`);
+    console.log(`[${sessionId}] 📊 Inizio calcolo valutazione SEMPLIFICATA`);
     
-    // Multipli settore
+    // STEP 1: Multipli settore
     const settore = getSettoreMultiples(valuationInputs.settore);
     const multiploEbitda = settore.ev_ebitda;
     
-    // Valutazione base
+    // STEP 2: Valutazione base
     const evBase = dataN.ebitda * multiploEbitda;
     
-    // Sconto liquidità
+    // STEP 3: Sconto liquidità
     const scontoLiquidita = calculateLiquidityDiscount(valuationInputs.dimensione, settore.liquidita);
     const evPostSconto = evBase * (1 - scontoLiquidita);
     
-    // Fattori aggiustamento
-    const { factors, totalAdjustment } = calculateEVAdjustments(valuationInputs, dataN, dataN1);
+    // STEP 4: Fattori aggiustamento (SOLO crescita + debito)
+    const { factors, totalAdjustment } = calculateEVAdjustments(dataN, dataN1);
     const evAggiustato = evPostSconto * (1 + totalAdjustment);
     
-    // Equity
-    const equityValueLordo = evAggiustato - dataN.pfn;
-    const concentrationAdj = calculateCustomerConcentrationAdjustment(valuationInputs.customer_concentration);
-    const equityValueNetto = equityValueLordo * (1 + concentrationAdj);
-    
-    // ✅ RIMOSSO: Calcolo EBITDA Margin Assessment
+    // STEP 5: Equity Value (sottrazione PFN)
+    const equityValue = evAggiustato - dataN.pfn;
     
     const results = {
-      fair_market_value: Math.round(equityValueNetto),
-      conservative_value: Math.round(equityValueNetto * 0.85),
-      optimistic_value: Math.round(equityValueNetto * 1.15),
+      fair_market_value: Math.round(equityValue),
+      conservative_value: Math.round(equityValue * 0.85),
+      optimistic_value: Math.round(equityValue * 1.15),
       calculation_details: {
         step1_ev_base: Math.round(evBase),
         step1_multiplo: multiploEbitda,
@@ -215,17 +174,12 @@ export default async function handler(req, res) {
         step2_ev_post_sconto: Math.round(evPostSconto),
         step3_fattori_ev: {
           crescita_ricavi: parseFloat((factors.growth * 100).toFixed(1)),
-          margine_lordo: parseFloat((factors.margin * 100).toFixed(1)),
-          posizione_mercato: parseFloat((factors.market_position * 100).toFixed(1)),
           indebitamento: parseFloat((factors.debt * 100).toFixed(1)),
-          rischio_tecnologico: parseFloat((factors.tech_risk * 100).toFixed(1)),
           totale: parseFloat((totalAdjustment * 100).toFixed(1))
         },
         step3_ev_aggiustato: Math.round(evAggiustato),
         step4_pfn_sottratta: Math.round(dataN.pfn),
-        step4_equity_lordo: Math.round(equityValueLordo),
-        step5_concentrazione_clienti_pct: parseFloat((concentrationAdj * 100).toFixed(1)),
-        step5_equity_netto: Math.round(equityValueNetto),
+        step4_equity_value: Math.round(equityValue),
         settore: {
           nome: settore.nome,
           multiplo_ebitda: settore.ev_ebitda,
@@ -233,11 +187,12 @@ export default async function handler(req, res) {
         },
         dimensione_azienda: valuationInputs.dimensione,
         inputs_used: {
-          ...dataN,
-          ...valuationInputs,
+          ebitda: dataN.ebitda,
+          ricavi: dataN.ricavi,
           ricavi_n1: dataN1?.ricavi,
           crescita_ricavi_pct: dataN1?.ricavi ? parseFloat((((dataN.ricavi - dataN1.ricavi) / dataN1.ricavi) * 100).toFixed(1)) : null,
-          debt_ebitda_ratio: dataN.ebitda ? parseFloat(((dataN.debiti_finanziari_ml + dataN.debiti_finanziari_breve) / dataN.ebitda).toFixed(2)) : null
+          debt_ebitda_ratio: dataN.ebitda ? parseFloat(((dataN.debiti_finanziari_ml + dataN.debiti_finanziari_breve) / dataN.ebitda).toFixed(2)) : null,
+          pfn: dataN.pfn
         }
       }
     };
