@@ -1,6 +1,6 @@
 // FILE 2: calculate_FIXED.js
 // Percorso: pages/api/valuta-pmi/calculate.js
-// SOSTITUISCI COMPLETAMENTE il file attuale con questo
+// VERSIONE SENZA EBITDA MARGIN %
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -10,31 +10,31 @@ const supabase = createClient(
 );
 
 const SETTORI_ITALIANI = [
-  { id: 'manifatturiero_generale', nome: 'Manifatturiero - Generale', ev_ebitda: 7.86, ev_ebit: 8.81, liquidita: 'medio', ebitda_margin_benchmark: 10.5 },
-  { id: 'manifatturiero_metalli', nome: 'Manifatturiero - Metalli', ev_ebitda: 8.68, ev_ebit: 12.27, liquidita: 'medio', ebitda_margin_benchmark: 9.8 },
-  { id: 'manifatturiero_plastica', nome: 'Manifatturiero - Plastica/Gomma', ev_ebitda: 13.31, ev_ebit: 22.13, liquidita: 'medio', ebitda_margin_benchmark: 11.2 },
-  { id: 'manifatturiero_macchinari', nome: 'Manifatturiero - Macchinari', ev_ebitda: 15.35, ev_ebit: 20.02, liquidita: 'medio', ebitda_margin_benchmark: 12.0 },
-  { id: 'manifatturiero_elettronica', nome: 'Manifatturiero - Elettronica', ev_ebitda: 17.28, ev_ebit: 28.93, liquidita: 'liquido', ebitda_margin_benchmark: 13.5 },
-  { id: 'alimentare_produzione', nome: 'Alimentare - Produzione', ev_ebitda: 11.17, ev_ebit: 14.76, liquidita: 'medio', ebitda_margin_benchmark: 8.5 },
-  { id: 'alimentare_distribuzione', nome: 'Alimentare - Distribuzione', ev_ebitda: 10.77, ev_ebit: 16.86, liquidita: 'medio', ebitda_margin_benchmark: 6.5 },
-  { id: 'ristorazione', nome: 'Ristorazione', ev_ebitda: 18.67, ev_ebit: 32.11, liquidita: 'illiquido', ebitda_margin_benchmark: 18.0 },
-  { id: 'retail_abbigliamento', nome: 'Retail - Abbigliamento', ev_ebitda: 9.22, ev_ebit: 14.64, liquidita: 'medio', ebitda_margin_benchmark: 7.5 },
-  { id: 'retail_alimentare', nome: 'Retail - Alimentare', ev_ebitda: 7.74, ev_ebit: 16.89, liquidita: 'medio', ebitda_margin_benchmark: 5.5 },
-  { id: 'retail_specializzato', nome: 'Retail - Specializzato', ev_ebitda: 9.90, ev_ebit: 19.99, liquidita: 'medio', ebitda_margin_benchmark: 8.0 },
-  { id: 'retail_edilizia', nome: 'Retail - Edilizia', ev_ebitda: 15.75, ev_ebit: 20.75, liquidita: 'medio', ebitda_margin_benchmark: 9.5 },
-  { id: 'edilizia_costruzioni', nome: 'Edilizia - Costruzioni', ev_ebitda: 15.65, ev_ebit: 24.03, liquidita: 'illiquido', ebitda_margin_benchmark: 7.0 },
-  { id: 'edilizia_materiali', nome: 'Edilizia - Materiali', ev_ebitda: 13.14, ev_ebit: 17.28, liquidita: 'medio', ebitda_margin_benchmark: 10.0 },
-  { id: 'trasporti_logistica', nome: 'Trasporti - Logistica', ev_ebitda: 11.33, ev_ebit: 25.31, liquidita: 'medio', ebitda_margin_benchmark: 9.0 },
-  { id: 'servizi_professionali', nome: 'Servizi Professionali', ev_ebitda: 16.75, ev_ebit: 23.77, liquidita: 'medio', ebitda_margin_benchmark: 25.0 },
-  { id: 'software_it', nome: 'Software/IT', ev_ebitda: 27.98, ev_ebit: 37.85, liquidita: 'liquido', ebitda_margin_benchmark: 35.0 },
-  { id: 'ecommerce', nome: 'E-commerce', ev_ebitda: 28.08, ev_ebit: null, liquidita: 'liquido', ebitda_margin_benchmark: 12.0 },
-  { id: 'sanita_prodotti', nome: 'Sanità - Prodotti', ev_ebitda: 21.20, ev_ebit: 33.63, liquidita: 'medio', ebitda_margin_benchmark: 20.0 },
-  { id: 'sanita_servizi', nome: 'Sanità - Servizi', ev_ebitda: 11.32, ev_ebit: 15.15, liquidita: 'medio', ebitda_margin_benchmark: 22.0 },
-  { id: 'turismo_hotel', nome: 'Turismo/Hotel', ev_ebitda: 15.42, ev_ebit: 28.23, liquidita: 'illiquido', ebitda_margin_benchmark: 20.0 },
-  { id: 'energia_rinnovabili', nome: 'Energia - Rinnovabili', ev_ebitda: 11.30, ev_ebit: 31.91, liquidita: 'medio', ebitda_margin_benchmark: 15.0 },
-  { id: 'commercio_auto', nome: 'Commercio Auto', ev_ebitda: 14.42, ev_ebit: 21.68, liquidita: 'medio', ebitda_margin_benchmark: 6.0 },
-  { id: 'tessile', nome: 'Tessile', ev_ebitda: 9.22, ev_ebit: 14.64, liquidita: 'medio', ebitda_margin_benchmark: 8.5 },
-  { id: 'packaging', nome: 'Packaging', ev_ebitda: 9.46, ev_ebit: 15.43, liquidita: 'medio', ebitda_margin_benchmark: 10.0 }
+  { id: 'manifatturiero_generale', nome: 'Manifatturiero - Generale', ev_ebitda: 7.86, ev_ebit: 8.81, liquidita: 'medio' },
+  { id: 'manifatturiero_metalli', nome: 'Manifatturiero - Metalli', ev_ebitda: 8.68, ev_ebit: 12.27, liquidita: 'medio' },
+  { id: 'manifatturiero_plastica', nome: 'Manifatturiero - Plastica/Gomma', ev_ebitda: 13.31, ev_ebit: 22.13, liquidita: 'medio' },
+  { id: 'manifatturiero_macchinari', nome: 'Manifatturiero - Macchinari', ev_ebitda: 15.35, ev_ebit: 20.02, liquidita: 'medio' },
+  { id: 'manifatturiero_elettronica', nome: 'Manifatturiero - Elettronica', ev_ebitda: 17.28, ev_ebit: 28.93, liquidita: 'liquido' },
+  { id: 'alimentare_produzione', nome: 'Alimentare - Produzione', ev_ebitda: 11.17, ev_ebit: 14.76, liquidita: 'medio' },
+  { id: 'alimentare_distribuzione', nome: 'Alimentare - Distribuzione', ev_ebitda: 10.77, ev_ebit: 16.86, liquidita: 'medio' },
+  { id: 'ristorazione', nome: 'Ristorazione', ev_ebitda: 18.67, ev_ebit: 32.11, liquidita: 'illiquido' },
+  { id: 'retail_abbigliamento', nome: 'Retail - Abbigliamento', ev_ebitda: 9.22, ev_ebit: 14.64, liquidita: 'medio' },
+  { id: 'retail_alimentare', nome: 'Retail - Alimentare', ev_ebitda: 7.74, ev_ebit: 16.89, liquidita: 'medio' },
+  { id: 'retail_specializzato', nome: 'Retail - Specializzato', ev_ebitda: 9.90, ev_ebit: 19.99, liquidita: 'medio' },
+  { id: 'retail_edilizia', nome: 'Retail - Edilizia', ev_ebitda: 15.75, ev_ebit: 20.75, liquidita: 'medio' },
+  { id: 'edilizia_costruzioni', nome: 'Edilizia - Costruzioni', ev_ebitda: 15.65, ev_ebit: 24.03, liquidita: 'illiquido' },
+  { id: 'edilizia_materiali', nome: 'Edilizia - Materiali', ev_ebitda: 13.14, ev_ebit: 17.28, liquidita: 'medio' },
+  { id: 'trasporti_logistica', nome: 'Trasporti - Logistica', ev_ebitda: 11.33, ev_ebit: 25.31, liquidita: 'medio' },
+  { id: 'servizi_professionali', nome: 'Servizi Professionali', ev_ebitda: 16.75, ev_ebit: 23.77, liquidita: 'medio' },
+  { id: 'software_it', nome: 'Software/IT', ev_ebitda: 27.98, ev_ebit: 37.85, liquidita: 'liquido' },
+  { id: 'ecommerce', nome: 'E-commerce', ev_ebitda: 28.08, ev_ebit: null, liquidita: 'liquido' },
+  { id: 'sanita_prodotti', nome: 'Sanità - Prodotti', ev_ebitda: 21.20, ev_ebit: 33.63, liquidita: 'medio' },
+  { id: 'sanita_servizi', nome: 'Sanità - Servizi', ev_ebitda: 11.32, ev_ebit: 15.15, liquidita: 'medio' },
+  { id: 'turismo_hotel', nome: 'Turismo/Hotel', ev_ebitda: 15.42, ev_ebit: 28.23, liquidita: 'illiquido' },
+  { id: 'energia_rinnovabili', nome: 'Energia - Rinnovabili', ev_ebitda: 11.30, ev_ebit: 31.91, liquidita: 'medio' },
+  { id: 'commercio_auto', nome: 'Commercio Auto', ev_ebitda: 14.42, ev_ebit: 21.68, liquidita: 'medio' },
+  { id: 'tessile', nome: 'Tessile', ev_ebitda: 9.22, ev_ebit: 14.64, liquidita: 'medio' },
+  { id: 'packaging', nome: 'Packaging', ev_ebitda: 9.46, ev_ebit: 15.43, liquidita: 'medio' }
 ];
 
 const SCONTO_LIQUIDITA_BAGNA = {
@@ -202,21 +202,7 @@ export default async function handler(req, res) {
     const concentrationAdj = calculateCustomerConcentrationAdjustment(valuationInputs.customer_concentration);
     const equityValueNetto = equityValueLordo * (1 + concentrationAdj);
     
-    // ✅ NUOVO: Calcola EBITDA % Assessment
-    const ebitdaMarginN = dataN.ebitda_margin_pct || null;
-    const ebitdaMarginN1 = dataN1.ebitda_margin_pct || null;
-    const ebitdaMarginBenchmark = settore.ebitda_margin_benchmark;
-    
-    let ebitdaMarginAssessment = 'neutral';
-    if (ebitdaMarginN !== null) {
-      const delta = ebitdaMarginN - ebitdaMarginBenchmark;
-      if (delta > 5) ebitdaMarginAssessment = 'excellent';
-      else if (delta > 2) ebitdaMarginAssessment = 'good';
-      else if (delta > -2) ebitdaMarginAssessment = 'average';
-      else ebitdaMarginAssessment = 'poor';
-    }
-    
-    console.log(`[${sessionId}]   📊 EBITDA Margin: N=${ebitdaMarginN?.toFixed(2)}%, Benchmark=${ebitdaMarginBenchmark}%`);
+    // ✅ RIMOSSO: Calcolo EBITDA Margin Assessment
     
     const results = {
       fair_market_value: Math.round(equityValueNetto),
@@ -246,15 +232,6 @@ export default async function handler(req, res) {
           liquidita: settore.liquidita
         },
         dimensione_azienda: valuationInputs.dimensione,
-        // ✅ NUOVO: EBITDA % informativo
-        ebitda_margin_informativo: {
-          ebitda_margin_current_pct: ebitdaMarginN ? parseFloat(ebitdaMarginN.toFixed(1)) : null,
-          ebitda_margin_previous_pct: ebitdaMarginN1 ? parseFloat(ebitdaMarginN1.toFixed(1)) : null,
-          ebitda_margin_benchmark_pct: parseFloat(ebitdaMarginBenchmark.toFixed(1)),
-          ebitda_margin_delta_vs_benchmark: ebitdaMarginN ? parseFloat((ebitdaMarginN - ebitdaMarginBenchmark).toFixed(1)) : null,
-          ebitda_margin_trend: ebitdaMarginN && ebitdaMarginN1 ? parseFloat((ebitdaMarginN - ebitdaMarginN1).toFixed(1)) : null,
-          ebitda_margin_assessment: ebitdaMarginAssessment
-        },
         inputs_used: {
           ...dataN,
           ...valuationInputs,
