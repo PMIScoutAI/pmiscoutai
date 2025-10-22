@@ -67,12 +67,16 @@ const { data: analysisData, error: analysisError } = await supabase
 
     const rawData = analysisData.raw_parsed_data || {};
     const contextData = rawData.context || {};
-    
+
+    // FIX 1: Estrazione della regione da multiple sorgenti possibili
+    const region = contextData.region || contextData.sede_legale?.regione || null;
+
 return {
   hasAnalysis: true,
   context: {
     company_name: analysisData.company_name || "la tua azienda",
-    ateco_code: contextData.ateco_code || null
+    ateco_code: contextData.ateco_code || null,
+    region: region
       }
     };
   } catch (error) {
@@ -138,11 +142,36 @@ export default async function handler(req, res) {
     const atecoDivision = ateco ? ateco.substring(0, 2) : null;
     const region = context?.region || 'Italia';
 
-    const relevantAlerts = allAlerts.filter(alert => {
-      const regionMatch = alert.tags.region.includes('all') || alert.tags.region.includes(region);
-      const atecoMatch = alert.tags.ateco.includes('all') || (atecoDivision && alert.tags.ateco.includes(atecoDivision));
-      return regionMatch && atecoMatch;
-    });
+    // FIX 2: Sistema di scoring per maggiore flessibilità nel matching
+    const relevantAlerts = allAlerts
+      .map(alert => {
+        let score = 0;
+
+        // Scoring per regione
+        if (alert.tags.region.includes(region)) {
+          score += 10; // Match perfetto regione
+        } else if (alert.tags.region.includes('all')) {
+          score += 5; // Match generico regione
+        }
+
+        // Scoring per ATECO
+        if (atecoDivision && alert.tags.ateco.includes(atecoDivision)) {
+          score += 10; // Match perfetto ATECO
+        } else if (alert.tags.ateco.includes('all')) {
+          score += 5; // Match generico ATECO
+        }
+
+        // Bonus per urgenza alta
+        if (alert.urgenza === 'alta') {
+          score += 3;
+        } else if (alert.urgenza === 'media') {
+          score += 1;
+        }
+
+        return { ...alert, relevance_score: score };
+      })
+      .filter(alert => alert.relevance_score > 0) // Solo alert con almeno qualche match
+      .sort((a, b) => b.relevance_score - a.relevance_score); // Ordina per rilevanza
 
     let finalAlerts = [];
     const fiscalAlert = relevantAlerts.find(a => a.categoria === 'fiscale');
