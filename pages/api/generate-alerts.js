@@ -9,7 +9,6 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 async function generateImpactWithAI(alert, context) {
   const { company_name, ateco_code } = context;
   
-  // Prompt più dettagliato per sfruttare le capacità di GPT-4o-mini
   const prompt = `Sei un esperto consulente fiscale e normativo per PMI italiane.
 
 DATA ODIERNA: ${new Date().toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })}
@@ -120,8 +119,6 @@ const allAlerts = [
   { id: 4, titolo: "Bando Costruzioni Sostenibili - Abruzzo", categoria: "bando", urgenza: "alta", descrizione: "Contributi regionali per l'adozione di materiali e tecniche eco-sostenibili nel settore edile.", cta: "Partecipa ora", link: "#", tags: { region: ['Abruzzo'], ateco: ['41', '42', '43'] } },
   { id: 7, titolo: "Nuovo Regolamento Sicurezza Cantieri", categoria: "normativa", urgenza: "alta", descrizione: "Pubblicati aggiornamenti normativi cruciali sulla sicurezza nei cantieri edili.", cta: "Leggi la norma", link: "#", tags: { region: ['all'], ateco: ['41', '42', '43'] } },
   { id: 8, titolo: "Decreto Flussi 2025", categoria: "normativa", urgenza: "media", descrizione: "Pubblicate le nuove quote per l'ingresso di lavoratori extracomunitari.", cta: "Consulta il decreto", link: "#", tags: { region: ['all'], ateco: ['all'] } },
-  // Fallback generico sempre disponibile
-  { id: 99, titolo: "Calendario fiscale di fine mese", categoria: "fiscale", urgenza: "bassa", descrizione: "Controlla le principali scadenze fiscali e contributive in arrivo.", cta: "Dettagli", link: "#", tags: { region: ['all'], ateco: ['all'] } },
 ];
 
 export default async function handler(req, res) {
@@ -190,7 +187,17 @@ export default async function handler(req, res) {
     if (bandoAlert) finalAlerts.push(bandoAlert);
     if (normativaAlert) finalAlerts.push(normativaAlert);
 
-    // Il fallback è ora nell'array allAlerts, quindi questo blocco non serve più
+    // Fallback SOLO se non hai trovato niente
+    if (finalAlerts.length === 0) {
+      finalAlerts.push({
+        titolo: "Calendario fiscale di fine mese",
+        categoria: "fiscale",
+        urgenza: "bassa",
+        descrizione: "Controlla le principali scadenze fiscali e contributive in arrivo.",
+        cta: "Dettagli",
+        link: "#"
+      });
+    }
     
     finalAlerts = finalAlerts.slice(0, 3);
 
@@ -213,13 +220,11 @@ export default async function handler(req, res) {
         .select();
 
       if (insertError) {
-        // Errore 23505 = violazione unique constraint (alert duplicati)
         if (insertError.code === '23505') {
           console.log(`ℹ️ Alert già esistenti per user ${userId} (duplicati rilevati)`);
           return res.status(200).json(existingAlerts || finalAlerts);
         }
         
-        // Altri errori sono problemi veri
         console.error("❌ Errore salvataggio alert:", insertError);
         return res.status(500).json({ message: 'Errore durante il salvataggio degli alert' });
       } 
