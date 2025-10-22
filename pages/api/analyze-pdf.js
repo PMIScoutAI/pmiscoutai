@@ -4,6 +4,7 @@
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import pdf from 'pdf-parse';
+import { applyRateLimit } from '../../utils/rateLimitMiddleware';
 
 // Inizializzazione client Supabase e OpenAI
 const supabase = createClient(
@@ -143,8 +144,15 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // 🛡️ Rate Limiting (con feature flag per rollback sicuro)
+  const rateLimitError = applyRateLimit(req, res);
+  if (rateLimitError) {
+    console.error('[PDF] 🚫 Rate limit bloccato');
+    return res.status(429).json(rateLimitError);
+  }
+
   let sessionId = '';
-  
+
   try {
     // ✅ 1. MODIFICA: Legge il sessionId dall'URL (query parameter)
     const { sessionId: session_id } = req.query;

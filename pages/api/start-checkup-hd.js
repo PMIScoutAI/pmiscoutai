@@ -9,6 +9,7 @@ import { OpenAIEmbeddings, ChatOpenAI } from "@langchain/openai";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 import { formatDocumentsAsString } from "langchain/util/document";
 import { z } from "zod";
+import { applyRateLimit } from '../../utils/rateLimitMiddleware';
 
 // Inizializzazione dei client
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -59,7 +60,14 @@ const analysisSchema = z.object({
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
-  
+
+  // 🛡️ Rate Limiting (con feature flag per rollback sicuro)
+  const rateLimitError = applyRateLimit(req, res);
+  if (rateLimitError) {
+    console.error('[HD] 🚫 Rate limit bloccato');
+    return res.status(429).json(rateLimitError);
+  }
+
   let session;
   try {
     // FASE 1 e 2 (invariate)

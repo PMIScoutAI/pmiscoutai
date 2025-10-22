@@ -1,6 +1,7 @@
 // pages/api/generate-alerts.js
 
 import { createClient } from '@supabase/supabase-js';
+import { applyRateLimit } from '../../utils/rateLimitMiddleware';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -183,6 +184,12 @@ async function getLatestUserAnalysisContext(userId) {
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ message: 'Method Not Allowed' });
+  }
+
+  // 🛡️ Rate Limiting (con feature flag per rollback sicuro)
+  const rateLimitError = applyRateLimit(req, res);
+  if (rateLimitError) {
+    return res.status(429).json(rateLimitError);
   }
 
   try {

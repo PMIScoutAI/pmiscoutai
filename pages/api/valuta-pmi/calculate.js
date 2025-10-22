@@ -3,6 +3,7 @@
 // RIMOZIONE COMPLETA: Margine Lordo, Posizione Mercato, Rischio Tech, Concentrazione Clienti
 
 import { createClient } from '@supabase/supabase-js';
+import { applyRateLimit } from '../../../utils/rateLimitMiddleware';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -103,6 +104,12 @@ const calculateEVAdjustments = (dataN, dataN1) => {
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Metodo non permesso' });
+  }
+
+  // 🛡️ Rate Limiting (con feature flag per rollback sicuro)
+  const rateLimitError = applyRateLimit(req, res);
+  if (rateLimitError) {
+    return res.status(429).json(rateLimitError);
   }
 
   try {

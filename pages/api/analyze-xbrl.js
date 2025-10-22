@@ -7,6 +7,7 @@
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import xlsx from 'xlsx';
+import { applyRateLimit } from '../../utils/rateLimitMiddleware';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -602,7 +603,14 @@ export default async function handler(req, res) {
   const { sessionId } = req.query;
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
   if (!sessionId) return res.status(400).json({ error: 'SessionId è richiesto' });
-  
+
+  // 🛡️ Rate Limiting (con feature flag per rollback sicuro)
+  const rateLimitError = applyRateLimit(req, res);
+  if (rateLimitError) {
+    console.error(`[${sessionId}] 🚫 Rate limit bloccato`);
+    return res.status(429).json(rateLimitError);
+  }
+
   console.log(`[${sessionId}] 🚀 Avvio analisi XBRL (versione 13.9 - Raccomandazioni Strategiche AI).`);
 
   try {

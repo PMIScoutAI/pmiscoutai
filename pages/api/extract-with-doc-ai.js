@@ -5,6 +5,7 @@
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import formidable from 'formidable';
 import fs from 'fs';
+import { applyRateLimit } from '../../utils/rateLimitMiddleware';
 
 // --- CONFIGURAZIONE ---
 const gcloudProjectId = process.env.GCLOUD_PROJECT_ID;
@@ -52,6 +53,13 @@ export const config = {
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Metodo non permesso' });
+    }
+
+    // 🛡️ Rate Limiting (con feature flag per rollback sicuro)
+    const rateLimitError = applyRateLimit(req, res);
+    if (rateLimitError) {
+        console.error('[DocAI] 🚫 Rate limit bloccato');
+        return res.status(429).json(rateLimitError);
     }
 
     try {

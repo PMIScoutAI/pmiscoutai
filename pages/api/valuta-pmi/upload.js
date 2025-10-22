@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
 import xlsx from 'xlsx';
 import fs from 'fs';
+import { applyRateLimit } from '../../../utils/rateLimitMiddleware';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -209,9 +210,15 @@ const metricsConfigs = {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non permesso' });
-  
+
+  // 🛡️ Rate Limiting (con feature flag per rollback sicuro)
+  const rateLimitError = applyRateLimit(req, res);
+  if (rateLimitError) {
+    return res.status(429).json(rateLimitError);
+  }
+
   let sessionId = null;
-  
+
   try {
     const outsetaToken = req.headers.authorization?.split(' ')[1];
     if (!outsetaToken) return res.status(401).json({ error: 'Token mancante' });
