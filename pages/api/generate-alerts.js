@@ -8,7 +8,31 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function generateImpactWithAI(alert, context) {
   const { company_name, ateco_code } = context;
-  const prompt = `Sintetizza in massimo 30 parole l'impatto per ${company_name}, impresa del settore ${ateco_code}, di questo avviso: "${alert.descrizione}".`;
+  
+  // Prompt più dettagliato per sfruttare le capacità di GPT-4o-mini
+  const prompt = `Sei un esperto consulente fiscale e normativo per PMI italiane.
+
+DATA ODIERNA: ${new Date().toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })}
+
+CONTESTO AZIENDA:
+- Nome: ${company_name}
+- Settore ATECO: ${ateco_code || 'non specificato'}
+- Categoria alert: ${alert.categoria}
+
+AVVISO DA ANALIZZARE:
+"${alert.descrizione}"
+
+COMPITO:
+Genera un'analisi dell'impatto concreto di questo avviso per questa specifica azienda.
+
+REQUISITI:
+- Massimo 30 parole
+- Linguaggio professionale ma accessibile
+- Focalizzati su azioni concrete che il commercialista deve intraprendere
+- Se menzioni scadenze, verifica che siano realistiche rispetto alla data odierna
+- NON inventare date o bandi se non sei certo
+
+FORMATO: Testo diretto senza introduzioni.`.trim();
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -18,23 +42,30 @@ async function generateImpactWithAI(alert, context) {
         'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 60,
-        temperature: 0.5,
+        max_tokens: 150,
+        temperature: 0.2,
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`Chiamata a OpenAI fallita con status: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`❌ OpenAI HTTP ${response.status}:`, errorText);
+      throw new Error(`OpenAI API failed with status ${response.status}`);
     }
 
     const data = await response.json();
     const impatto_ai = data.choices[0]?.message?.content.trim() || '';
 
+    if (!impatto_ai) {
+      console.warn(`⚠️ GPT-4o-mini returned empty response for alert: ${alert.titolo}`);
+    }
+
     return { impatto_ai, prompt_usato: prompt };
+    
   } catch (error) {
-    console.error("Errore durante la chiamata a OpenAI:", error);
+    console.error(`❌ Errore GPT-4o-mini per alert "${alert.titolo}":`, error.message);
     return { impatto_ai: '', prompt_usato: prompt };
   }
 }
@@ -54,11 +85,11 @@ async function getLatestUserAnalysisContext(userId) {
       return { hasAnalysis: false, context: null };
     }
 
-const { data: analysisData, error: analysisError } = await supabase
-  .from('analysis_results')
-  .select('health_score, raw_parsed_data, company_name')
-  .eq('session_id', sessionData.id)
-  .single();
+    const { data: analysisData, error: analysisError } = await supabase
+      .from('analysis_results')
+      .select('health_score, raw_parsed_data, company_name')
+      .eq('session_id', sessionData.id)
+      .single();
 
     if (analysisError || !analysisData) {
       console.error(`Dati di analisi non trovati per session_id: ${sessionData.id}`, analysisError);
@@ -68,11 +99,12 @@ const { data: analysisData, error: analysisError } = await supabase
     const rawData = analysisData.raw_parsed_data || {};
     const contextData = rawData.context || {};
     
-return {
-  hasAnalysis: true,
-  context: {
-    company_name: analysisData.company_name || "la tua azienda",
-    ateco_code: contextData.ateco_code || null
+    return {
+      hasAnalysis: true,
+      context: {
+        company_name: analysisData.company_name || "la tua azienda",
+        ateco_code: contextData.ateco_code || null,
+        region: contextData.region || null
       }
     };
   } catch (error) {
@@ -88,6 +120,8 @@ const allAlerts = [
   { id: 4, titolo: "Bando Costruzioni Sostenibili - Abruzzo", categoria: "bando", urgenza: "alta", descrizione: "Contributi regionali per l'adozione di materiali e tecniche eco-sostenibili nel settore edile.", cta: "Partecipa ora", link: "#", tags: { region: ['Abruzzo'], ateco: ['41', '42', '43'] } },
   { id: 7, titolo: "Nuovo Regolamento Sicurezza Cantieri", categoria: "normativa", urgenza: "alta", descrizione: "Pubblicati aggiornamenti normativi cruciali sulla sicurezza nei cantieri edili.", cta: "Leggi la norma", link: "#", tags: { region: ['all'], ateco: ['41', '42', '43'] } },
   { id: 8, titolo: "Decreto Flussi 2025", categoria: "normativa", urgenza: "media", descrizione: "Pubblicate le nuove quote per l'ingresso di lavoratori extracomunitari.", cta: "Consulta il decreto", link: "#", tags: { region: ['all'], ateco: ['all'] } },
+  // Fallback generico sempre disponibile
+  { id: 99, titolo: "Calendario fiscale di fine mese", categoria: "fiscale", urgenza: "bassa", descrizione: "Controlla le principali scadenze fiscali e contributive in arrivo.", cta: "Dettagli", link: "#", tags: { region: ['all'], ateco: ['all'] } },
 ];
 
 export default async function handler(req, res) {
@@ -123,23 +157,26 @@ export default async function handler(req, res) {
     }
 
     if (existingAlerts && existingAlerts.length > 0) {
-      console.log(`Trovati ${existingAlerts.length} alert validi nel DB per l'utente ${userId}.`);
+      console.log(`✅ Trovati ${existingAlerts.length} alert validi in cache per user ${userId}`);
       return res.status(200).json(existingAlerts);
     }
 
-    console.log(`Nessun alert valido trovato, ne genero di nuovi per l'utente ${userId}.`);
+    console.log(`ℹ️ Nessun alert in cache, genero nuovi alert per user ${userId}`);
     const { hasAnalysis, context } = await getLatestUserAnalysisContext(userId);
 
     if (!hasAnalysis) {
+      console.log(`⚠️ User ${userId} non ha analisi disponibili, nessun alert generato`);
       return res.status(200).json([]);
     }
 
     const ateco = context?.ateco_code;
     const atecoDivision = ateco ? ateco.substring(0, 2) : null;
-    const region = context?.region || 'Italia';
+    const region = context?.region || 'all';
+
+    console.log(`📊 Context estratto: ATECO=${ateco}, Division=${atecoDivision}, Region=${region}`);
 
     const relevantAlerts = allAlerts.filter(alert => {
-      const regionMatch = alert.tags.region.includes('all') || alert.tags.region.includes(region);
+      const regionMatch = alert.tags.region.includes('all') || (region && region !== 'all' && alert.tags.region.includes(region));
       const atecoMatch = alert.tags.ateco.includes('all') || (atecoDivision && alert.tags.ateco.includes(atecoDivision));
       return regionMatch && atecoMatch;
     });
@@ -153,16 +190,8 @@ export default async function handler(req, res) {
     if (bandoAlert) finalAlerts.push(bandoAlert);
     if (normativaAlert) finalAlerts.push(normativaAlert);
 
-    if (finalAlerts.length === 0) {
-      finalAlerts.push({
-        titolo: "Calendario fiscale di fine mese",
-        categoria: "fiscale",
-        urgenza: "bassa",
-        descrizione: "Controlla le principali scadenze fiscali e contributive in arrivo.",
-        cta: "Dettagli",
-        link: "#"
-      });
-    }
+    // Il fallback è ora nell'array allAlerts, quindi questo blocco non serve più
+    
     finalAlerts = finalAlerts.slice(0, 3);
 
     if (finalAlerts.length > 0) {
@@ -184,32 +213,44 @@ export default async function handler(req, res) {
         .select();
 
       if (insertError) {
-        console.error("Errore durante il salvataggio dei nuovi alert:", insertError);
-        return res.status(200).json(finalAlerts);
+        // Errore 23505 = violazione unique constraint (alert duplicati)
+        if (insertError.code === '23505') {
+          console.log(`ℹ️ Alert già esistenti per user ${userId} (duplicati rilevati)`);
+          return res.status(200).json(existingAlerts || finalAlerts);
+        }
+        
+        // Altri errori sono problemi veri
+        console.error("❌ Errore salvataggio alert:", insertError);
+        return res.status(500).json({ message: 'Errore durante il salvataggio degli alert' });
       } 
       
       if (insertedData) {
-        console.log(`Salvati ${insertedData.length} nuovi alert per l'utente ${userId}. Inizio arricchimento AI...`);
+        console.log(`💾 Salvati ${insertedData.length} nuovi alert per user ${userId}. Avvio arricchimento AI...`);
         
         const enrichedAlerts = await Promise.all(
           insertedData.map(async (alert) => {
             const { impatto_ai, prompt_usato } = await generateImpactWithAI(alert, context);
             
-            if (impatto_ai) {
+            if (impatto_ai && impatto_ai.length > 0) {
               const { error: updateError } = await supabase
                 .from('alerts')
                 .update({ impatto_ai, prompt_usato })
                 .eq('id', alert.id);
 
               if (updateError) {
-                console.error(`Errore durante l'aggiornamento dell'alert ${alert.id} con i dati AI:`, updateError);
+                console.error(`❌ Update fallito per alert ${alert.id}:`, updateError);
+              } else {
+                console.log(`✅ Alert "${alert.titolo}" arricchito con AI (${impatto_ai.length} char)`);
               }
+            } else {
+              console.warn(`⚠️ Alert "${alert.titolo}": impatto_ai vuoto, non salvato nel DB`);
             }
+            
             return { ...alert, impatto_ai, prompt_usato };
           })
         );
         
-        console.log("Arricchimento AI completato.");
+        console.log(`🎉 Arricchimento AI completato per user ${userId}`);
         return res.status(200).json(enrichedAlerts);
       }
     }
@@ -217,7 +258,7 @@ export default async function handler(req, res) {
     res.status(200).json(finalAlerts);
 
   } catch (error) {
-    console.error("Errore handler /api/generate-alerts:", error);
+    console.error("❌ Errore handler /api/generate-alerts:", error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 }
