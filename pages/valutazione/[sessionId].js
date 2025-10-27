@@ -1,6 +1,6 @@
 // /pages/valutazione/[sessionId].js
-// VERSIONE 8.0 - UX/UI UPGRADE: Hero Value, KPI Dashboard, Metodologia Always Visible, Benchmark Settore
-// MODIFICHE: Hero gradient, Range slider, KPI cards, Step flow verticale, Benchmark posizionamento
+// VERSIONE 9.0 - SEMPLIFICATA: Solo Fair Value + Range ±10% + Nota Metodologica
+// REMOVED: KPI Dashboard, Step dettagliati, Benchmark, DataEntryStep complesso
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -200,7 +200,7 @@ function ValutazioneWizard() {
   return (
     <div className="space-y-6">
       {currentStep === 'entry' && (
-        <DataEntryStep 
+        <InputStep 
           sessionData={sessionData}
           financialData={financialData}
           valuationInputs={valuationInputs}
@@ -215,6 +215,7 @@ function ValutazioneWizard() {
         <ResultsStep 
           results={results} 
           sessionData={sessionData}
+          valuationInputs={valuationInputs}
           onRecalculate={handleRecalculate}
         />
       )}
@@ -222,7 +223,10 @@ function ValutazioneWizard() {
   );
 }
 
-const DataEntryStep = ({ 
+// ============================================
+// STEP 1: INPUT FORM - MINIMALISTA
+// ============================================
+const InputStep = ({ 
   sessionData, 
   financialData, 
   valuationInputs, 
@@ -241,6 +245,7 @@ const DataEntryStep = ({
 
   return (
     <div className="space-y-6">
+      {/* Header Info */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <p className="text-sm text-blue-800">
           <strong>📊 Azienda:</strong> {sessionData.company_name} <br/>
@@ -248,6 +253,7 @@ const DataEntryStep = ({
         </p>
       </div>
 
+      {/* Dati Finanziari */}
       <div className="grid grid-cols-1 gap-6">
         {[yearN, yearN1].map((year) => {
           const data = financialData[year] || {};
@@ -321,6 +327,7 @@ const DataEntryStep = ({
         })}
       </div>
 
+      {/* Parametri Valutazione - Minimalista */}
       <div className="border border-slate-200 rounded-lg p-6 bg-white space-y-4">
         <h3 className="font-bold text-lg text-slate-900">📋 Parametri di Valutazione</h3>
 
@@ -338,7 +345,6 @@ const DataEntryStep = ({
               <option key={s.id} value={s.id}>{s.nome}</option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-slate-500">Seleziona il settore dell'azienda</p>
         </div>
 
         <div>
@@ -356,14 +362,14 @@ const DataEntryStep = ({
             <option value="media">Media (€10M-€50M)</option>
             <option value="grande">Grande (&gt;€50M)</option>
           </select>
-          <p className="mt-1 text-xs text-slate-500">Basato sui ricavi annuali</p>
         </div>
       </div>
 
+      {/* Calcola Button */}
       <button 
         onClick={onCalculate} 
         disabled={isCalculating} 
-        className="w-full flex justify-center items-center px-4 py-3 font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-slate-400"
+        className="w-full flex justify-center items-center px-4 py-3 font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-slate-400 transition-colors"
       >
         {isCalculating ? 'Calcolo in corso...' : '🚀 Calcola Valutazione'}
       </button>
@@ -371,13 +377,20 @@ const DataEntryStep = ({
   );
 };
 
-const ResultsStep = ({ results, sessionData, onRecalculate }) => {
+// ============================================
+// STEP 2: RISULTATI - SEMPLIFICATI
+// ============================================
+const ResultsStep = ({ results, sessionData, valuationInputs, onRecalculate }) => {
   if (!results) {
     return <div className="text-center p-12"><p className="text-slate-600">Caricamento...</p></div>;
   }
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value);
+    return new Intl.NumberFormat('it-IT', { 
+      style: 'currency', 
+      currency: 'EUR', 
+      minimumFractionDigits: 0 
+    }).format(value);
   };
 
   const handlePrintPDF = () => {
@@ -386,15 +399,30 @@ const ResultsStep = ({ results, sessionData, onRecalculate }) => {
 
   const details = results.calculation_details;
 
-  // Calcolo benchmark settore
-  const multiploBase = details.step1_multiplo;
-  const multiploMin = (multiploBase * 0.8).toFixed(1);
-  const multiploMax = (multiploBase * 1.2).toFixed(1);
-  const percentile = Math.round(((multiploBase - parseFloat(multiploMin)) / (parseFloat(multiploMax) - parseFloat(multiploMin))) * 100);
+  // Calcolo generazione nota metodologica (semplificata)
+  const generateMethodologyNote = () => {
+    const settoreName = details.settore.nome;
+    const multiploEbitda = details.step1_multiplo;
+    const sconto = details.step2_sconto_liquidita_pct;
+    const dimensione = valuationInputs.dimensione;
+    
+    return `
+Valutazione tramite Multipli di Mercato
+
+Il valore è calcolato applicando i multipli EBITDA medi del settore "${settoreName}" (${multiploEbitda}x) ai dati dell'azienda, aggiustati per:
+
+• Dimensione: ${dimensione} (sconto liquidità −${sconto}%)
+• Andamento finanziario: basato su crescita ricavi e livello di indebitamento
+• Posizione finanziaria netta: ${formatCurrency(details.inputs_used.pfn)}
+
+Il range ±10% rappresenta l'incertezza naturale nel comparare questa azienda con il benchmark di mercato.
+
+Disclaimer: Questa è una stima indicativa basata su dati storici e multipli di mercato standard. Per una Due Diligence formale o valutazione per transazioni, consigliamo una valutazione da esperti indipendenti qualificati.
+    `.trim();
+  };
 
   return (
     <div className="space-y-6" id="results-section">
-      {/* CSS per stampa */}
       <style jsx global>{`
         @media print {
           nav, header, footer, .no-print {
@@ -415,14 +443,12 @@ const ResultsStep = ({ results, sessionData, onRecalculate }) => {
             break-inside: avoid;
           }
 
-          /* Forza colori gradient su stampa */
           .bg-gradient-to-br {
             background: linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%) !important;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
 
-          /* Ottimizza dimensioni font per A4 */
           .text-7xl {
             font-size: 3.5rem !important;
           }
@@ -433,9 +459,9 @@ const ResultsStep = ({ results, sessionData, onRecalculate }) => {
         }
       `}</style>
 
-      {/* 🎯 HERO VALUE - VERSIONE UPGRADE */}
+      {/* 🎯 HERO CARD - SEMPLIFICATO */}
       <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-blue-900 rounded-2xl p-8 md:p-12 text-white shadow-2xl print-avoid-break">
-        {/* Decorazione sfondo */}
+        {/* Decorazioni sfondo */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-400/20 rounded-full blur-2xl"></div>
         
@@ -457,60 +483,35 @@ const ResultsStep = ({ results, sessionData, onRecalculate }) => {
             <p className="text-sm md:text-base uppercase tracking-wider opacity-80 mb-3">
               Fair Market Value
             </p>
-            <p className="text-5xl md:text-7xl font-bold mb-2">
+            <p className="text-5xl md:text-7xl font-bold mb-4">
               {formatCurrency(results.fair_market_value)}
-            </p>
-            <p className="text-sm md:text-base opacity-70">
-              Valore equo di mercato
             </p>
           </div>
           
-          {/* Range Slider Visuale */}
-          <div className="mt-10">
-            <p className="text-sm uppercase tracking-wide opacity-80 mb-4 text-center">
-              Range Valutativo
+          {/* Range Valutativo Semplice */}
+          <div className="mt-8">
+            <p className="text-sm uppercase tracking-wide opacity-80 mb-4 text-center font-semibold">
+              Range Valutativo (±10%)
             </p>
             
-            {/* Barra range */}
-            <div className="relative h-3 bg-white/20 rounded-full mb-6">
-              {/* Sezione conservativa (sinistra) */}
-              <div 
-                className="absolute left-0 h-3 bg-blue-400 rounded-l-full" 
-                style={{width: '33.33%'}}
-              ></div>
-              {/* Sezione fair value (centro) */}
-              <div 
-                className="absolute left-1/3 right-1/3 h-3 bg-white"
-              ></div>
-              {/* Sezione ottimistica (destra) */}
-              <div 
-                className="absolute right-0 h-3 bg-purple-400 rounded-r-full" 
-                style={{width: '33.33%'}}
-              ></div>
-              
-              {/* Indicatore punto centrale */}
-              <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full border-4 border-blue-900"></div>
-            </div>
-            
-            {/* Etichette range */}
-            <div className="grid grid-cols-3 gap-2 text-xs md:text-sm">
-              <div className="text-left">
-                <p className="opacity-70 mb-1">Conservativo (-15%)</p>
-                <p className="font-semibold text-base md:text-lg">
+            <div className="grid grid-cols-3 gap-2 text-sm md:text-base">
+              <div className="text-center p-3 bg-white/10 rounded-lg">
+                <p className="opacity-70 text-xs mb-1">Conservativo</p>
+                <p className="font-bold">
                   {formatCurrency(results.conservative_value)}
                 </p>
               </div>
               
-              <div className="text-center">
-                <p className="opacity-70 mb-1">Fair Value</p>
-                <p className="font-semibold text-base md:text-lg">
+              <div className="text-center p-3 bg-white/20 rounded-lg border border-white/40">
+                <p className="opacity-70 text-xs mb-1">Fair Value</p>
+                <p className="font-bold text-lg">
                   {formatCurrency(results.fair_market_value)}
                 </p>
               </div>
               
-              <div className="text-right">
-                <p className="opacity-70 mb-1">Ottimistico (+15%)</p>
-                <p className="font-semibold text-base md:text-lg">
+              <div className="text-center p-3 bg-white/10 rounded-lg">
+                <p className="opacity-70 text-xs mb-1">Ottimistico</p>
+                <p className="font-bold">
                   {formatCurrency(results.optimistic_value)}
                 </p>
               </div>
@@ -519,300 +520,102 @@ const ResultsStep = ({ results, sessionData, onRecalculate }) => {
         </div>
       </div>
 
-      {/* 📊 KPI DASHBOARD */}
-      <div className="bg-white rounded-lg shadow-md p-6 print-avoid-break">
-        <h3 className="text-lg font-bold text-slate-900 mb-4">📊 Dati Aziendali Utilizzati</h3>
+      {/* 📊 NOTA METODOLOGICA */}
+      <div className="bg-white rounded-lg shadow-md p-8 print-avoid-break border border-slate-200">
+        <h3 className="text-lg font-bold text-slate-900 mb-6">📊 Metodologia di Valutazione</h3>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* EBITDA */}
-          <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <p className="text-xs text-slate-600 mb-1 uppercase tracking-wide">EBITDA</p>
-            <p className="text-2xl font-bold text-slate-900">{formatCurrency(details.inputs_used.ebitda)}</p>
-            <p className="text-xs text-slate-500 mt-1">Anno N</p>
-          </div>
+        <div className="prose prose-sm max-w-none">
+          <p className="text-slate-700 whitespace-pre-wrap leading-relaxed text-sm">
+            {generateMethodologyNote()}
+          </p>
+        </div>
 
-          {/* Crescita Ricavi */}
-          <div className={`text-center p-4 rounded-lg border ${details.inputs_used.crescita_ricavi_pct >= 0 ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`}>
-            <p className="text-xs text-slate-600 mb-1 uppercase tracking-wide">Crescita Ricavi</p>
-            <p className={`text-2xl font-bold ${details.inputs_used.crescita_ricavi_pct >= 0 ? 'text-green-900' : 'text-orange-900'}`}>
-              {details.inputs_used.crescita_ricavi_pct >= 0 ? '+' : ''}{details.inputs_used.crescita_ricavi_pct?.toFixed(1) || 'N/A'}%
-            </p>
-            <p className="text-xs text-slate-500 mt-1">vs Anno N-1</p>
+        {/* Dettagli Nascosti (collassabile per stampa) */}
+        <details className="mt-6 pt-6 border-t border-slate-200">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-700 hover:text-slate-900">
+            💡 Dettagli Calcolo (espandi)
+          </summary>
+          
+          <div className="mt-4 space-y-2 text-xs text-slate-600">
+            <div className="flex justify-between">
+              <span>EBITDA (Anno N):</span>
+              <span className="font-mono font-semibold">{formatCurrency(details.inputs_used.ebitda)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Multiplo Settore:</span>
+              <span className="font-mono font-semibold">{details.step1_multiplo}x</span>
+            </div>
+            <div className="flex justify-between">
+              <span>EV Base:</span>
+              <span className="font-mono font-semibold">{formatCurrency(details.step1_ev_base)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Sconto Liquidità:</span>
+              <span className="font-mono font-semibold">−{details.step2_sconto_liquidita_pct}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span>EV Post-Sconto:</span>
+              <span className="font-mono font-semibold">{formatCurrency(details.step2_ev_post_sconto)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Aggiustamenti:</span>
+              <span className="font-mono font-semibold">{details.step3_fattori_ev.totale >= 0 ? '+' : ''}{details.step3_fattori_ev.totale}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span>EV Aggiustato:</span>
+              <span className="font-mono font-semibold">{formatCurrency(details.step3_ev_aggiustato)}</span>
+            </div>
+            <div className="border-t border-slate-300 pt-2 mt-2 flex justify-between font-semibold">
+              <span>PFN (sottratta):</span>
+              <span className="font-mono">−{formatCurrency(details.step4_pfn_sottratta)}</span>
+            </div>
+            <div className="bg-slate-100 p-2 rounded flex justify-between font-bold">
+              <span>EQUITY VALUE:</span>
+              <span className="font-mono text-blue-600">{formatCurrency(details.step4_equity_value)}</span>
+            </div>
           </div>
+        </details>
+      </div>
 
-          {/* Debt/EBITDA */}
-          <div className={`text-center p-4 rounded-lg border ${details.inputs_used.debt_ebitda_ratio < 2 ? 'bg-green-50 border-green-200' : details.inputs_used.debt_ebitda_ratio <= 4 ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200'}`}>
-            <p className="text-xs text-slate-600 mb-1 uppercase tracking-wide">Debt/EBITDA</p>
-            <p className={`text-2xl font-bold ${details.inputs_used.debt_ebitda_ratio < 2 ? 'text-green-900' : details.inputs_used.debt_ebitda_ratio <= 4 ? 'text-yellow-900' : 'text-red-900'}`}>
-              {details.inputs_used.debt_ebitda_ratio?.toFixed(1) || 'N/A'}x
-            </p>
-            <p className="text-xs text-slate-500 mt-1">
-              {details.inputs_used.debt_ebitda_ratio < 2 ? 'Basso' : details.inputs_used.debt_ebitda_ratio <= 4 ? 'Medio' : 'Alto'}
-            </p>
-          </div>
+      {/* Bottoni Azione */}
+      <div className="space-y-4 no-print">
+        <div className="flex justify-start">
+          <button 
+            onClick={() => window.location.href = '/valuta-pmi'}
+            className="inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+          >
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Torna all'Upload
+          </button>
+        </div>
 
-          {/* Settore */}
-          <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <p className="text-xs text-slate-600 mb-1 uppercase tracking-wide">Settore</p>
-            <p className="text-base font-bold text-slate-900">{details.settore.nome}</p>
-            <p className="text-xs text-slate-500 mt-1">Multiplo: {details.settore.multiplo_ebitda}x</p>
-          </div>
-
-          {/* Dimensione */}
-          <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <p className="text-xs text-slate-600 mb-1 uppercase tracking-wide">Dimensione</p>
-            <p className="text-base font-bold text-slate-900 capitalize">{details.dimensione_azienda}</p>
-            <p className="text-xs text-slate-500 mt-1">
-              {details.dimensione_azienda === 'micro' && '< €2M'}
-              {details.dimensione_azienda === 'piccola' && '€2M-€10M'}
-              {details.dimensione_azienda === 'media' && '€10M-€50M'}
-              {details.dimensione_azienda === 'grande' && '> €50M'}
-            </p>
-          </div>
-
-          {/* PFN */}
-          <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <p className="text-xs text-slate-600 mb-1 uppercase tracking-wide">PFN</p>
-            <p className="text-2xl font-bold text-slate-900">{formatCurrency(details.inputs_used.pfn)}</p>
-            <p className="text-xs text-slate-500 mt-1">Posizione Fin. Netta</p>
-          </div>
+        <div className="flex flex-col md:flex-row gap-4">
+          <button 
+            onClick={handlePrintPDF}
+            className="flex-1 px-4 py-3 font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            Stampa / Scarica PDF
+          </button>
+          
+          <button 
+            onClick={onRecalculate} 
+            className="flex-1 px-4 py-3 font-bold text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors"
+          >
+            🔄 Modifica e Ricalcola
+          </button>
         </div>
       </div>
 
-      {/* 📈 METODOLOGIA - ALWAYS VISIBLE */}
-      <div className="bg-white rounded-lg shadow-md p-6 print-avoid-break">
-        <h3 className="text-lg font-bold text-slate-900 mb-6">📈 Metodologia di Calcolo</h3>
-        
-        <div className="space-y-6">
-          {/* STEP 1 */}
-          <div>
-            <div className="flex items-center mb-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-sm mr-3">1</div>
-              <h4 className="font-bold text-slate-900">Enterprise Value Base</h4>
-            </div>
-            <div className="ml-11 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-700">EBITDA × Multiplo Settore</span>
-                  <span className="font-mono font-semibold text-blue-900">{formatCurrency(details.inputs_used.ebitda)} × {details.step1_multiplo}x</span>
-                </div>
-                <div className="border-t border-blue-300 pt-2 mt-2">
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-blue-900">EV Base:</span>
-                    <span className="text-xl font-bold text-blue-900">{formatCurrency(details.step1_ev_base)}</span>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-600 italic mt-2">💡 {details.settore.nome}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Freccia */}
-          <div className="flex justify-center">
-            <svg className="w-6 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-            </svg>
-          </div>
-
-          {/* STEP 2 */}
-          <div>
-            <div className="flex items-center mb-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center font-bold text-sm mr-3">2</div>
-              <h4 className="font-bold text-slate-900">Sconto Liquidità</h4>
-            </div>
-            <div className="ml-11 p-4 bg-orange-50 border border-orange-200 rounded-lg">
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-700">EV Base × Sconto</span>
-                  <span className="font-mono font-semibold text-orange-900">{formatCurrency(details.step1_ev_base)} × (-{details.step2_sconto_liquidita_pct}%)</span>
-                </div>
-                <div className="border-t border-orange-300 pt-2 mt-2">
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-orange-900">EV Post-Sconto:</span>
-                    <span className="text-xl font-bold text-orange-900">{formatCurrency(details.step2_ev_post_sconto)}</span>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-600 italic mt-2">💡 Dimensione: {details.dimensione_azienda}, Liquidità settore: {details.settore.liquidita}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Freccia */}
-          <div className="flex justify-center">
-            <svg className="w-6 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-            </svg>
-          </div>
-
-          {/* STEP 3 */}
-          <div>
-            <div className="flex items-center mb-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold text-sm mr-3">3</div>
-              <h4 className="font-bold text-slate-900">Aggiustamenti Performance</h4>
-            </div>
-            <div className="ml-11 p-4 bg-purple-50 border border-purple-200 rounded-lg">
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-700">EV Post-Sconto × Aggiustamento</span>
-                  <span className="font-mono font-semibold text-purple-900">{formatCurrency(details.step2_ev_post_sconto)} × ({details.step3_fattori_ev.totale >= 0 ? '+' : ''}{details.step3_fattori_ev.totale}%)</span>
-                </div>
-                <div className="border-t border-purple-300 pt-2 mt-2">
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-purple-900">EV Aggiustato:</span>
-                    <span className="text-xl font-bold text-purple-900">{formatCurrency(details.step3_ev_aggiustato)}</span>
-                  </div>
-                </div>
-                <div className="mt-3 pt-3 border-t border-purple-300">
-                  <p className="text-xs font-semibold text-slate-700 mb-2">Dettaglio aggiustamenti:</p>
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-600">• Crescita Ricavi:</span>
-                      <span className={`font-semibold ${details.step3_fattori_ev.crescita_ricavi >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                        {details.step3_fattori_ev.crescita_ricavi >= 0 ? '+' : ''}{details.step3_fattori_ev.crescita_ricavi}%
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-600">• Livello Indebitamento:</span>
-                      <span className={`font-semibold ${details.step3_fattori_ev.indebitamento >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                        {details.step3_fattori_ev.indebitamento >= 0 ? '+' : ''}{details.step3_fattori_ev.indebitamento}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-600 italic mt-2">💡 Crescita {details.inputs_used.crescita_ricavi_pct?.toFixed(1)}%, Debt/EBITDA {details.inputs_used.debt_ebitda_ratio?.toFixed(1)}x</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Freccia */}
-          <div className="flex justify-center">
-            <svg className="w-6 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-            </svg>
-          </div>
-
-          {/* STEP 4 */}
-          <div>
-            <div className="flex items-center mb-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center font-bold text-sm mr-3">4</div>
-              <h4 className="font-bold text-slate-900">Equity Value Finale</h4>
-            </div>
-            <div className="ml-11 p-4 bg-green-50 border border-green-200 rounded-lg">
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-700">EV Aggiustato</span>
-                  <span className="font-mono font-semibold text-green-900">{formatCurrency(details.step3_ev_aggiustato)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-700">− PFN (Posizione Fin. Netta)</span>
-                  <span className="font-mono font-semibold text-red-700">−{formatCurrency(details.step4_pfn_sottratta)}</span>
-                </div>
-                <div className="border-t-2 border-green-400 pt-3 mt-3">
-                  <div className="flex justify-between items-center bg-green-700 text-white p-3 rounded-lg">
-                    <span className="font-semibold flex items-center">
-                      <span className="mr-2">💎</span> EQUITY VALUE:
-                    </span>
-                    <span className="text-2xl font-bold">{formatCurrency(details.step4_equity_value)}</span>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-600 italic mt-2">💡 Valore del capitale azionario (Enterprise Value meno debito netto)</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 📊 BENCHMARK SETTORE */}
-      <div className="bg-white rounded-lg shadow-md p-6 print-avoid-break">
-        <h3 className="text-lg font-bold text-slate-900 mb-4">📊 Posizionamento nel Settore</h3>
-        
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-            <div>
-              <p className="text-slate-600">Multiplo Applicato:</p>
-              <p className="text-xl font-bold text-blue-600">{multiploBase}x EBITDA</p>
-            </div>
-            <div>
-              <p className="text-slate-600">Range Settore:</p>
-              <p className="text-xl font-bold text-slate-900">{multiploMin}x - {multiploMax}x</p>
-            </div>
-            <div>
-              <p className="text-slate-600">Settore:</p>
-              <p className="text-base font-bold text-slate-900">{details.settore.nome}</p>
-            </div>
-          </div>
-
-          {/* Barra posizionamento */}
-          <div className="mt-6">
-            <div className="relative h-4 bg-slate-200 rounded-full">
-              <div 
-                className="absolute h-4 bg-blue-600 rounded-full transition-all duration-500"
-                style={{width: `${percentile}%`}}
-              ></div>
-              <div 
-                className="absolute top-1/2 transform -translate-y-1/2 w-4 h-4 bg-blue-900 border-4 border-white rounded-full shadow-lg"
-                style={{left: `${percentile}%`, marginLeft: '-8px'}}
-              ></div>
-            </div>
-            
-            <div className="flex justify-between mt-2 text-xs text-slate-600">
-              <span>{multiploMin}x<br/>Minimo</span>
-              <span className="font-semibold text-blue-600">{multiploBase}x (tuo)<br/>{percentile}° percentile</span>
-              <span>{multiploMax}x<br/>Massimo</span>
-            </div>
-          </div>
-
-          {/* Insight */}
-          <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm text-blue-900">
-              <span className="font-semibold">💡 Insight:</span> Sei nel {percentile}° percentile del settore. 
-              {percentile >= 60 ? ' Valutazione superiore alla media delle aziende comparabili.' : percentile >= 40 ? ' Valutazione in linea con la media delle aziende comparabili.' : ' Valutazione inferiore alla media, possibile margine di miglioramento.'}
-            </p>
-          </div>
-        </div>
-      </div>
-
-{/* Bottoni Azione */}
-<div className="space-y-4 no-print">
-  {/* Bottone Torna all'Upload - Sopra */}
-  <div className="flex justify-start">
-    <button 
-      onClick={() => window.location.href = '/valuta-pmi'}
-      className="inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
-    >
-      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-      </svg>
-      Torna all'Upload
-    </button>
-  </div>
-
-  {/* Bottoni Principali */}
-  <div className="flex flex-col md:flex-row gap-4">
-    <button 
-      onClick={handlePrintPDF}
-      className="flex-1 px-4 py-3 font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2 transition-colors"
-    >
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-      </svg>
-      Stampa PDF
-    </button>
-    
-    <button 
-      onClick={onRecalculate} 
-      className="flex-1 px-4 py-3 font-bold text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors"
-    >
-      🔄 Modifica Dati e Ricalcola
-    </button>
-  </div>
-</div>
-
-      {/* Disclaimer Aggiornato */}
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-yellow-900 print-avoid-break">
+      {/* Disclaimer */}
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-xs md:text-sm text-yellow-900 print-avoid-break">
         <p className="font-semibold mb-2">⚠️ Disclaimer</p>
         <p>
-          Questa valutazione utilizza multipli standard di mercato adattati al contesto italiano e rappresenta una stima indicativa. PMIScout non si assume alcuna responsabilità per decisioni prese sulla base di questa analisi.
+          Questa valutazione utilizza multipli standard di mercato adattati al contesto italiano e rappresenta una stima indicativa basata sui dati forniti. PMIScout non si assume alcuna responsabilità per decisioni prese sulla base di questa analisi. Per valutazioni ufficiali o transazioni, consultare esperti indipendenti qualificati.
         </p>
       </div>
     </div>
