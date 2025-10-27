@@ -1,6 +1,6 @@
 // /pages/valuta-pmi.js
 // Valuta-PMI: Pagina principale con wizard multi-step
-// VERSIONE 3.0 - UI/UX UPGRADE: Hero section, card ottimizzate, visual hierarchy
+// VERSIONE 4.0 - Solo .xlsx/.xls (no XBRL, no ZIP)
 
 import { useState, useRef } from 'react';
 import Head from 'next/head';
@@ -32,7 +32,7 @@ export default function ValutaPmiPageWrapper() {
     <>
       <Head>
         <title>Valuta-PMI - PMIScout</title>
-        <meta name="description" content="Carica il tuo bilancio XBRL per avviare una valutazione aziendale professionale con il metodo dei Multipli di Mercato." />
+        <meta name="description" content="Carica il tuo bilancio Excel per avviare una valutazione aziendale professionale con il metodo dei Multipli di Mercato." />
       </Head>
 
       <Script id="outseta-options" strategy="beforeInteractive">
@@ -64,12 +64,12 @@ function ValutaPmiPage() {
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     if (selectedFile) {
-      const validExtensions = ['.xbrl', '.xls', '.xlsx', '.zip'];
+      const validExtensions = ['.xls', '.xlsx'];
       const fileName = selectedFile.name.toLowerCase();
       const isValid = validExtensions.some(ext => fileName.endsWith(ext));
       
       if (!isValid) {
-        setError('Formato file non valido. Carica un file XBRL (.xbrl, .xls, .xlsx, .zip)');
+        setError('Formato file non valido. Carica un file Excel (.xls o .xlsx)');
         setFile(null);
         return;
       }
@@ -107,7 +107,7 @@ function ValutaPmiPage() {
       
     } catch (err) {
       console.error('💥 Errore upload:', err);
-      setError(err.response?.data?.error || err.message || 'Impossibile caricare il file. Verifica che sia un XBRL valido.');
+      setError(err.response?.data?.error || err.message || 'Impossibile caricare il file. Verifica che sia un bilancio Excel valido.');
       setLoading(false);
     }
   };
@@ -129,7 +129,7 @@ function ValutaPmiPage() {
 
   return (
     <div className="py-8 mx-auto max-w-4xl px-4">
-      {/* 🎯 HERO SECTION - OTTIMIZZATA */}
+      {/* 🎯 HERO SECTION */}
       <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-blue-900 rounded-2xl p-8 md:p-12 text-white shadow-2xl mb-8">
         {/* Decorazioni sfondo */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl"></div>
@@ -153,7 +153,7 @@ function ValutaPmiPage() {
           <div className="flex items-center justify-center gap-3 text-sm">
             <div className="flex items-center gap-2 bg-white/20 px-3 py-1 rounded-full">
               <Icon path={icons.upload} className="w-4 h-4" />
-              <span>1. Carica XBRL</span>
+              <span>1. Carica Excel</span>
             </div>
             <div className="w-8 h-0.5 bg-white/30"></div>
             <div className="flex items-center gap-2 bg-white/20 px-3 py-1 rounded-full">
@@ -211,7 +211,7 @@ function ValutaPmiPage() {
           {/* Upload File */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-2">
-              File Bilancio XBRL (ultimi 1-2 anni) <span className="text-red-500">*</span>
+              File Bilancio Excel (ultimi 1-2 anni) <span className="text-red-500">*</span>
             </label>
             
             <div 
@@ -227,7 +227,7 @@ function ValutaPmiPage() {
                 <p className="text-sm text-slate-600 mb-1">
                   <span className="font-semibold text-blue-600">Clicca per caricare</span> o trascina il file qui
                 </p>
-                <p className="text-xs text-slate-500">Formati supportati: .xbrl, .xls, .xlsx, .zip</p>
+                <p className="text-xs text-slate-500">Formati supportati: .xls, .xlsx</p>
                 <p className="text-xs text-slate-400 mt-1">Dimensione massima: 10MB</p>
               </div>
             </div>
@@ -239,7 +239,7 @@ function ValutaPmiPage() {
               type="file" 
               className="sr-only" 
               onChange={handleFileChange} 
-              accept=".xbrl,.xls,.xlsx,.zip,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip" 
+              accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" 
             />
 
             {/* File caricato */}
@@ -269,11 +269,11 @@ function ValutaPmiPage() {
               </div>
             )}
 
-            {/* Info XBRL */}
+            {/* Info Excel */}
             <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <p className="text-xs text-blue-800">
-                <span className="font-semibold">💡 Dove trovo il file XBRL?</span><br/>
-                Scaricalo dal Registro delle Imprese nella sezione "Bilanci". È il formato digitale standard per i bilanci aziendali.
+                <span className="font-semibold">💡 Dove trovo il file Excel?</span><br/>
+                Esporta il bilancio dal tuo software contabile (Zucchetti, Aruba, etc.) in formato .xls o .xlsx. Assicurati di includere sia lo Stato Patrimoniale che il Conto Economico.
               </p>
             </div>
           </div>
@@ -304,7 +304,7 @@ function ValutaPmiPage() {
               <div className="flex-shrink-0 w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs mt-0.5">✓</div>
               <div>
                 <p className="text-sm font-semibold text-blue-900">Metodologia Trasparente</p>
-                <p className="text-xs text-blue-700 mt-0.5">Step-by-step con formule e spiegazioni</p>
+                <p className="text-xs text-blue-700 mt-0.5">Nota metodologica completa e comprensibile</p>
               </div>
             </div>
             <div className="flex items-start gap-3">
@@ -321,7 +321,7 @@ function ValutaPmiPage() {
         <div className="flex items-start gap-3 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-4">
           <Icon path={icons.lock} className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <p>
-            <span className="font-semibold text-slate-700">Privacy garantita:</span> I tuoi dati sono crittografati end-to-end e utilizzati esclusivamente per questa valutazione. Non condividiamo informazioni con terze parti.
+            <span className="font-semibold text-slate-700">Privacy garantita:</span> I tuoi dati sono crittografati e utilizzati esclusivamente per questa valutazione. Non condividiamo informazioni con terze parti.
           </p>
         </div>
 
@@ -350,7 +350,7 @@ function ValutaPmiPage() {
 
       {/* 📋 Requisiti tecnici */}
       <div className="mt-8 bg-white border border-slate-200 rounded-lg p-5 shadow-sm">
-        <h3 className="text-sm font-bold text-slate-900 mb-3">📋 Requisiti File XBRL</h3>
+        <h3 className="text-sm font-bold text-slate-900 mb-3">📋 Requisiti File Excel</h3>
         <ul className="text-xs text-slate-600 space-y-2">
           <li className="flex items-start gap-2">
             <span className="text-blue-600 mt-0.5">•</span>
@@ -358,11 +358,15 @@ function ValutaPmiPage() {
           </li>
           <li className="flex items-start gap-2">
             <span className="text-blue-600 mt-0.5">•</span>
-            <span>Dati finanziari completi: <strong>Ricavi, debiti, liquidità</strong></span>
+            <span>Dati finanziari completi: <strong>Ricavi, EBITDA, debiti, liquidità</strong></span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-blue-600 mt-0.5">•</span>
-            <span>Formato standard civilistico italiano (Stato Patrimoniale + Conto Economico)</span>
+            <span>Formato standard civilistico italiano: Stato Patrimoniale + Conto Economico</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-blue-600 mt-0.5">•</span>
+            <span>Esporta dal tuo software contabile in .xls o .xlsx</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-blue-600 mt-0.5">•</span>
