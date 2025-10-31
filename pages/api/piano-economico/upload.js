@@ -1,9 +1,9 @@
 // /pages/api/piano-economico/upload.js
-// VERSIONE 3.3 - CORRETTO E FUNZIONANTE
-// ✅ Autenticazione Outseta
-// ✅ Parse multipart con formidable
-// ✅ Extract Excel con xlsx
-// ✅ Salva in Supabase
+// VERSIONE 4.0 - COMPLETO
+// ✅ Estrae dati anno0 da Excel
+// ✅ Applica assunzioni del prompt
+// ✅ Genera anni 1-3 PRE-CALCOLATI
+// ✅ Salva tutto pronto per visualizzazione
 
 import { createClient } from '@supabase/supabase-js';
 import xlsx from 'xlsx';
@@ -53,7 +53,6 @@ const findYearColumns = (sheetData) => {
     if (years.length >= 2) break;
   }
   if (years.length < 2) {
-    console.warn('Colonne anni non trovate, uso fallback 3 e 4.');
     return { currentYearCol: 3, previousYearCol: 4 };
   }
   years.sort((a, b) => b.year - a.year);
@@ -87,7 +86,7 @@ const findValueInSheetImproved = (sheetData, searchConfigs, yearCols, metricName
 };
 
 // ============================================
-// METRIC CONFIGS
+// METRIC CONFIGS (Identico ad analyze-xbrl.js)
 // ============================================
 
 const metricsConfigs = {
@@ -145,15 +144,214 @@ const metricsConfigs = {
   debitiTotali: [
     { primary: ['totale debiti'] },
     { primary: ['d) debiti'] }
-  ],
-  imposte: [
-    { primary: ['imposte sul reddito dell\'esercizio'] },
-    { primary: ['imposte sul reddito'] }
   ]
 };
 
 // ============================================
-// PARSE FORM FUNCTION
+// ASSUNZIONI BUSINESS PLAN (Dal Prompt)
+// ============================================
+
+const INFLATION_RATE = 0.02; // 2% inflazione
+const MIN_GROWTH_RATE = 0.02; // 2% minimo
+const MAX_GROWTH_RATE = 0.10; // 10% massimo
+const TECH_GROWTH_RATE = 0.08; // 8% per tech
+const IRES_RATE = 0.24; // 24%
+const IRAP_RATE = 0.039; // 3.9%
+
+/**
+ * Determina il tasso di crescita ricavi in base al settore
+ */
+const getGrowthRate = (atecoCode, overrideRate) => {
+  if (overrideRate) return Math.max(MIN_GROWTH_RATE, Math.min(overrideRate, MAX_GROWTH_RATE));
+  
+  // Se tech/AI/digitale → 8%
+  const isTech = atecoCode && /^(62|63|72|73)/.test(atecoCode);
+  if (isTech) return TECH_GROWTH_RATE;
+  
+  // Default: 2.5% (tra inflazione e tech)
+  return 0.025;
+};
+
+/**
+ * Genera i dati prospettici per gli anni 1-3
+ */
+const generateProspectiveYears = (anno0Data, growthRate, sessionId) => {
+  console.log(`[${sessionId}] 📊 GENERAZIONE PIANO PROSPETTICO`);
+  console.log(`   Tasso crescita ricavi: ${(growthRate * 100).toFixed(1)}%`);
+  
+  const years = {};
+  let prevData = anno0Data;
+  
+  for (let year = 1; year <= 3; year++) {
+    console.log(`\n   === ANNO ${year} ===`);
+    
+    const currentData = {};
+    
+    // 1. RICAVI con crescita
+    currentData.ricavi = Math.round(prevData.ricavi * (1 + growthRate));
+    console.log(`   Ricavi: ${prevData.ricavi} × (1 + ${growthRate}) = ${currentData.ricavi}`);
+    
+    // 2. COSTI PERSONALE con inflazione
+    currentData.costiPersonale = Math.round((prevData.costiPersonale || 0) * (1 + INFLATION_RATE));
+    
+    // 3. MATERIE PRIME: % fissa su ricavi
+    const mp_pct = prevData.ricavi > 0 ? (prevData.mp || 0) / prevData.ricavi : 0;
+    currentData.materiePrime = Math.round(currentData.ricavi * mp_pct);
+    
+    // 4. SERVIZI: % fissa su ricavi
+    const servizi_pct = prevData.ricavi > 0 ? (prevData.servizi || 0) / prevData.ricavi : 0;
+    currentData.servizi = Math.round(currentData.ricavi * servizi_pct);
+    
+    // 5. GODIMENTO: % fissa su ricavi
+    const godimento_pct = prevData.ricavi > 0 ? (prevData.godimento || 0) / prevData.ricavi : 0;
+    currentData.godimento = Math.round(currentData.ricavi * godimento_pct);
+    
+    // 6. ONERI DIVERSI: % fissa su ricavi
+    const oneri_pct = prevData.ricavi > 0 ? (prevData.oneriDiversi || 0) / prevData.ricavi : 0;
+    currentData.oneriDiversi = Math.round(currentData.ricavi * oneri_pct);
+    
+    // 7. AMMORTAMENTI: flat (nessun nuovo investimento)
+    currentData.ammortamenti = prevData.ammortamenti || 0;
+    
+    // 8. EBITDA = Ricavi - Tutti i costi operativi
+    currentData.ebitda = Math.round(
+      currentData.ricavi 
+      - currentData.costiPersonale 
+      - currentData.materiePrime 
+      - currentData.servizi 
+      - currentData.godimento 
+      - currentData.oneriDiversi
+    );
+    
+    // 9. EBIT = EBITDA - Ammortamenti
+    currentData.ebit = Math.round(currentData.ebitda - currentData.ammortamenti);
+    
+    // 10. ONERI FINANZIARI: flat (no nuovi debiti)
+    currentData.oneriFinanziari = prevData.oneriFinanziari || 0;
+    
+    // 11. EBT = EBIT - Oneri finanziari
+    currentData.ebt = Math.round(currentData.ebit - currentData.oneriFinanziari);
+    
+    // 12. IMPOSTE = IRES (24% EBIT) + IRAP (3.9% EBIT)
+    const ires = Math.round(currentData.ebit * IRES_RATE);
+    const irap = Math.round(currentData.ebit * IRAP_RATE);
+    currentData.imposte = Math.round(ires + irap);
+    
+    // 13. UTILE NETTO = EBT - Imposte
+    currentData.utileNetto = Math.round(currentData.ebt - currentData.imposte);
+    
+    // 14. MARGINI
+    currentData.margineEbitda = currentData.ricavi > 0 
+      ? (currentData.ebitda / currentData.ricavi) * 100 
+      : 0;
+    currentData.margineEbit = currentData.ricavi > 0 
+      ? (currentData.ebit / currentData.ricavi) * 100 
+      : 0;
+    currentData.margineNetto = currentData.ricavi > 0 
+      ? (currentData.utileNetto / currentData.ricavi) * 100 
+      : 0;
+    
+    console.log(`   EBITDA: ${currentData.ebitda} (margine: ${currentData.margineEbitda.toFixed(1)}%)`);
+    console.log(`   EBIT: ${currentData.ebit} (margine: ${currentData.margineEbit.toFixed(1)}%)`);
+    console.log(`   Utile Netto: ${currentData.utileNetto} (margine: ${currentData.margineNetto.toFixed(1)}%)`);
+    
+    years[`anno${year}_data`] = currentData;
+    prevData = currentData;
+  }
+  
+  return years;
+};
+
+/**
+ * Calcola KPI derivati
+ */
+const calculateKpi = (anno0, anno3, patrimonioNetto, debitiTotali) => {
+  const ricavi_y3 = anno3.ricavi || 0;
+  const ricavi_y0 = anno0.ricavi || 1;
+  const cagr = Math.pow(ricavi_y3 / ricavi_y0, 1/3) - 1;
+  
+  const roe = patrimonioNetto > 0 ? (anno3.utileNetto / patrimonioNetto) * 100 : 0;
+  const roi = (anno0.ricavi || 1) > 0 ? (anno3.ebit / anno0.ricavi) * 100 : 0;
+  const leverage = anno3.ebitda > 0 ? debitiTotali / anno3.ebitda : 0;
+  const interestCoverage = anno3.oneriFinanziari > 0 
+    ? anno3.ebit / anno3.oneriFinanziari 
+    : 999;
+  
+  const margineEbitda = [anno0, anno3].reduce((sum, year) => sum + (year.margineEbitda || 0), 0) / 2;
+  
+  return {
+    cagr_ricavi: (cagr * 100).toFixed(2),
+    roe_y3: roe.toFixed(2),
+    roi_y3: roi.toFixed(2),
+    leverage_y3: leverage.toFixed(2),
+    interest_coverage_y3: Math.min(interestCoverage, 999).toFixed(2),
+    margine_ebitda_medio: margineEbitda.toFixed(2),
+    breakeven_assessment: anno3.ebitda > 0 ? 'SOSTENIBILE' : 'CRITICO'
+  };
+};
+
+/**
+ * Calcola sensibilità (+/- 10% ricavi)
+ */
+const calculateSensitivity = (anno3) => {
+  const baseline = anno3.ricavi;
+  const baseline_ebitda = anno3.ebitda;
+  const baseline_margin = anno3.margineEbitda;
+  
+  const delta_ricavi = baseline * 0.1;
+  
+  return {
+    ricavi_baseline: {
+      ricavi: baseline,
+      ebitda: baseline_ebitda,
+      margine_ebitda: baseline_margin.toFixed(1)
+    },
+    ricavi_plus10: {
+      ricavi: Math.round(baseline + delta_ricavi),
+      ebitda: Math.round(baseline_ebitda + (delta_ricavi * (baseline_margin / 100))),
+      margine_ebitda: baseline_margin.toFixed(1)
+    },
+    ricavi_minus10: {
+      ricavi: Math.round(baseline - delta_ricavi),
+      ebitda: Math.round(baseline_ebitda - (delta_ricavi * (baseline_margin / 100))),
+      margine_ebitda: baseline_margin.toFixed(1)
+    }
+  };
+};
+
+/**
+ * Genera narrative strategica
+ */
+const generateNarrative = (companyName, anno0, anno3, growthRate, sectorInfo) => {
+  const cagr = ((Math.pow(anno3.ricavi / anno0.ricavi, 1/3) - 1) * 100).toFixed(1);
+  const sectorText = sectorInfo ? `settore ${sectorInfo}` : 'settore di operatività';
+  
+  return `PIANO ECONOMICO TRIENNALE - ${companyName.toUpperCase()}
+
+EXECUTIVE SUMMARY
+Il presente piano economico triennale muove da un bilancio storico caratterizzato da ricavi di €${anno0.ricavi?.toLocaleString('it-IT') || '0'} e un EBITDA di €${anno0.ebitda?.toLocaleString('it-IT') || '0'} (margine ${anno0.margineEbitda?.toFixed(1) || 0}%).
+
+Con un tasso di crescita annua del ${(growthRate * 100).toFixed(1)}% (in linea con i benchmark settoriali), il piano stima ricavi a €${anno3.ricavi?.toLocaleString('it-IT') || '0'} entro il 2027, con EBITDA atteso a €${anno3.ebitda?.toLocaleString('it-IT') || '0'} (margine ${anno3.margineEbitda?.toFixed(1) || 0}%) e utile netto di €${anno3.utileNetto?.toLocaleString('it-IT') || '0'}. La traiettoria è ${anno3.ebitda > 0 ? 'sostenibile' : 'critica'}.
+
+DRIVER DI CRESCITA
+La crescita è sostenuta da: (a) espansione organica in linea con il ${sectorText}, (b) stabilità dei margini operativi attraverso controllo dei costi, (c) effetto leva finanziaria moderato con riduzione progressiva del leverage.
+
+METRICHE CHIAVE
+- CAGR Ricavi 3 anni: ${cagr}%
+- Margine EBITDA medio: ${((anno0.margineEbitda + anno3.margineEbitda) / 2).toFixed(1)}%
+- EBIT Margine Year 3: ${anno3.margineEbit?.toFixed(1) || 0}%
+- Utile Netto Year 3: €${anno3.utileNetto?.toLocaleString('it-IT') || '0'}
+- Assessment complessivo: ${anno3.ebitda > 0 ? 'SOSTENIBILE' : 'CRITICO'}
+
+FATTORI DI RISCHIO
+Il piano presuppone: (i) continuità operativa e stabilità della domanda, (ii) assenza di significativi incrementi nei prezzi delle materie prime, (iii) mantenimento dell'efficienza costi corrente, (iv) nessun nuovo indebitamento.
+
+CONCLUSIONI
+Il piano rappresenta uno scenario prudenziale basato su ipotesi conservative. È consigliabile un monitoraggio trimestrale dei KPI principali e una revisione annuale del piano in base ai risultati consuntivi.`;
+};
+
+// ============================================
+// PARSE FORM
 // ============================================
 
 const parseForm = (req) => {
@@ -183,31 +381,24 @@ export default async function handler(req, res) {
   const sessionId = uuidv4();
 
   console.log(`\n${'='.repeat(80)}`);
-  console.log(`[${sessionId}] 🚀 INIZIO UPLOAD PIANO ECONOMICO (v3.3 - FIXED)`);
+  console.log(`[${sessionId}] 🚀 UPLOAD + GENERATE PIANO ECONOMICO (v4.0)`);
   console.log(`${'='.repeat(80)}`);
 
   try {
     // ============================================
-    // STEP 1: AUTENTICAZIONE VIA OUTSETA
+    // STEP 1: AUTENTICAZIONE
     // ============================================
 
-    console.log(`\n[${sessionId}] 🔐 STEP 1: AUTENTICAZIONE OUTSETA`);
-    
     const outsetaToken = req.headers.authorization?.split(' ')[1];
     if (!outsetaToken) {
-      console.error(`[${sessionId}] ❌ Token Outseta mancante`);
       return res.status(401).json({ error: 'Token di autenticazione mancante' });
     }
 
-    console.log(`[${sessionId}] 🔍 Token ricevuto`);
-
-    // Verifica token con Outseta
     const outsetaResponse = await fetch('https://pmiscout.outseta.com/api/v1/profile', {
       headers: { Authorization: `Bearer ${outsetaToken}` }
     });
 
     if (!outsetaResponse.ok) {
-      console.error(`[${sessionId}] ❌ Token non valido (${outsetaResponse.status})`);
       return res.status(401).json({ error: 'Token non valido' });
     }
 
@@ -215,10 +406,8 @@ export default async function handler(req, res) {
     console.log(`[${sessionId}] ✅ Autenticazione OK: ${outsetaUser.Email}`);
 
     // ============================================
-    // STEP 2: RECUPERA/CREA USER DA OUTSETA
+    // STEP 2: USER SUPABASE
     // ============================================
-
-    console.log(`\n[${sessionId}] 👤 STEP 2: GESTIONE USER SUPABASE`);
 
     const { data: userRow, error: userError } = await supabase
       .from('users')
@@ -235,22 +424,18 @@ export default async function handler(req, res) {
       .single();
 
     if (userError || !userRow) {
-      console.error(`[${sessionId}] ❌ Errore user:`, userError?.message);
       return res.status(500).json({ error: 'Errore autenticazione user' });
     }
 
     console.log(`[${sessionId}] ✅ User ID: ${userRow.id}`);
 
     // ============================================
-    // STEP 3: PARSE MULTIPART FORM DATA
+    // STEP 3: PARSE FORM
     // ============================================
 
-    console.log(`\n[${sessionId}] 📦 STEP 3: PARSE FORM`);
-    
     const { fields, files } = await parseForm(req);
 
     if (!files.file) {
-      console.error(`[${sessionId}] ❌ File mancante`);
       return res.status(400).json({ error: 'Nessun file caricato' });
     }
 
@@ -259,11 +444,9 @@ export default async function handler(req, res) {
     console.log(`[${sessionId}] ✅ File: ${fileBuffer.length} bytes`);
 
     // ============================================
-    // STEP 4: PARSE EXCEL FILE
+    // STEP 4: PARSE EXCEL
     // ============================================
 
-    console.log(`\n[${sessionId}] 📋 STEP 4: PARSE EXCEL`);
-    
     const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
     const sheets = workbook.SheetNames;
 
@@ -274,26 +457,20 @@ export default async function handler(req, res) {
     const firstSheet = workbook.Sheets[sheets[0]];
     const sheetData = xlsx.utils.sheet_to_json(firstSheet, { header: 1 });
 
-    console.log(`[${sessionId}] ✅ Fogli: ${sheetData.length} righe`);
+    console.log(`[${sessionId}] ✅ Excel: ${sheetData.length} righe`);
 
     // ============================================
-    // STEP 5: EXTRACT YEAR COLUMNS
+    // STEP 5: ESTRAI YEAR COLUMNS
     // ============================================
 
-    console.log(`\n[${sessionId}] 📅 STEP 5: COLONNE ANNI`);
-    
     const yearCols = findYearColumns(sheetData);
-    console.log(`[${sessionId}] ✅ Trovate: col${yearCols.currentYearCol}, col${yearCols.previousYearCol}`);
 
     // ============================================
-    // STEP 6: EXTRACT METRICS
+    // STEP 6: ESTRAI METRICHE ANNO 0
     // ============================================
 
-    console.log(`\n[${sessionId}] 📊 STEP 6: ESTRAI METRICHE`);
-    
     const metrics = {
       fatturato: findValueInSheetImproved(sheetData, metricsConfigs.fatturato, yearCols, 'Fatturato'),
-      costiProduzione: findValueInSheetImproved(sheetData, metricsConfigs.costiProduzione, yearCols, 'Costi Produzione'),
       costiPersonale: findValueInSheetImproved(sheetData, metricsConfigs.costiPersonale, yearCols, 'Costi Personale'),
       costiMateriePrime: findValueInSheetImproved(sheetData, metricsConfigs.costiMateriePrime, yearCols, 'Materie Prime'),
       costiServizi: findValueInSheetImproved(sheetData, metricsConfigs.costiServizi, yearCols, 'Servizi'),
@@ -304,18 +481,15 @@ export default async function handler(req, res) {
       utile: findValueInSheetImproved(sheetData, metricsConfigs.utile, yearCols, 'Utile'),
       totaleAttivo: findValueInSheetImproved(sheetData, metricsConfigs.totaleAttivo, yearCols, 'Totale Attivo'),
       patrimonioNetto: findValueInSheetImproved(sheetData, metricsConfigs.patrimonioNetto, yearCols, 'Patrimonio Netto'),
-      debitiTotali: findValueInSheetImproved(sheetData, metricsConfigs.debitiTotali, yearCols, 'Debiti Totali'),
-      imposte: findValueInSheetImproved(sheetData, metricsConfigs.imposte, yearCols, 'Imposte')
+      debitiTotali: findValueInSheetImproved(sheetData, metricsConfigs.debitiTotali, yearCols, 'Debiti Totali')
     };
 
     console.log(`[${sessionId}] ✅ Metriche estratte`);
 
     // ============================================
-    // STEP 7: CALCULATE PERCENTAGES
+    // STEP 7: CALCOLA PERCENTUALI
     // ============================================
 
-    console.log(`\n[${sessionId}] 📈 STEP 7: PERCENTUALI`);
-    
     const fatturatoCorrente = metrics.fatturato.currentYear || 1;
 
     const incidenze = {
@@ -325,14 +499,12 @@ export default async function handler(req, res) {
       oneri_pct: fatturatoCorrente > 0 ? (metrics.oneriDiversi.currentYear || 0) / fatturatoCorrente * 100 : 0
     };
 
-    console.log(`[${sessionId}] ✅ Calcolate`);
+    console.log(`[${sessionId}] ✅ Percentuali calcolate`);
 
     // ============================================
-    // STEP 8: EXTRACT FORM FIELDS
+    // STEP 8: CAMPI FORM
     // ============================================
 
-    console.log(`\n[${sessionId}] 📝 STEP 8: CAMPI FORM`);
-    
     const companyName = Array.isArray(fields.companyName) 
       ? fields.companyName[0] 
       : fields.companyName || 'Azienda';
@@ -340,21 +512,88 @@ export default async function handler(req, res) {
     const scenario = Array.isArray(fields.scenario)
       ? fields.scenario[0]
       : fields.scenario || 'base';
+    
+    const atecoCode = Array.isArray(fields.atecoCode)
+      ? fields.atecoCode[0]
+      : fields.atecoCode || null;
+
+    const growthRateOverride = Array.isArray(fields.growthRateOverride)
+      ? parseFloat(fields.growthRateOverride[0])
+      : (fields.growthRateOverride ? parseFloat(fields.growthRateOverride) : null);
 
     console.log(`[${sessionId}] ✅ ${companyName}`);
 
     // ============================================
-    // STEP 9: PREPARA DATI PER INSERT
+    // STEP 9: DETERMINA TASSO CRESCITA
     // ============================================
 
-    console.log(`\n[${sessionId}] 🔧 STEP 9: PREPARA INSERT`);
+    const growthRate = getGrowthRate(atecoCode, growthRateOverride);
+    console.log(`[${sessionId}] 📈 Tasso crescita: ${(growthRate * 100).toFixed(1)}%`);
+
+    // ============================================
+    // STEP 10: PREPARA ANNO 0
+    // ============================================
+
+    const anno0 = {
+      ricavi: metrics.fatturato.currentYear || 0,
+      costiPersonale: metrics.costiPersonale.currentYear || 0,
+      mp: metrics.costiMateriePrime.currentYear || 0,
+      servizi: metrics.costiServizi.currentYear || 0,
+      godimento: metrics.costiGodimento.currentYear || 0,
+      oneriDiversi: metrics.oneriDiversi.currentYear || 0,
+      ammortamenti: metrics.ammortamenti.currentYear || 0,
+      oneriFinanziari: metrics.oneriFinanziari.currentYear || 0,
+      utileNetto: metrics.utile.currentYear || 0,
+      margineEbitda: 0,
+      margineEbit: 0,
+      margineNetto: 0,
+      ebitda: 0,
+      ebit: 0
+    };
+
+    // ============================================
+    // STEP 11: GENERA ANNI 1-3
+    // ============================================
+
+    const prospectiveYears = generateProspectiveYears(anno0, growthRate, sessionId);
+    console.log(`[${sessionId}] ✅ Piano prospettico generato`);
+
+    // ============================================
+    // STEP 12: CALCOLA KPI
+    // ============================================
+
+    const anno3 = prospectiveYears.anno3_data;
+    const kpis = calculateKpi(
+      anno0,
+      anno3,
+      metrics.patrimonioNetto.currentYear || 0,
+      metrics.debitiTotali.currentYear || 0
+    );
+
+    console.log(`[${sessionId}] ✅ KPI calcolati`);
+
+    // ============================================
+    // STEP 13: CALCOLA SENSIBILITÀ
+    // ============================================
+
+    const sensibilita = calculateSensitivity(anno3);
+
+    // ============================================
+    // STEP 14: GENERA NARRATIVE
+    // ============================================
+
+    const narrative = generateNarrative(companyName, anno0, anno3, growthRate, null);
+
+    // ============================================
+    // STEP 15: PREPARA DATI PER INSERT
+    // ============================================
 
     const insertData = {
       id: sessionId,
       user_id: userRow.id,
       company_name: companyName,
       
-      // Anno 0 (storico)
+      // Anno 0
       anno0_ricavi: metrics.fatturato.currentYear,
       anno0_costi_personale: metrics.costiPersonale.currentYear,
       anno0_mp: metrics.costiMateriePrime.currentYear,
@@ -365,28 +604,45 @@ export default async function handler(req, res) {
       anno0_oneri_finanziari: metrics.oneriFinanziari.currentYear,
       anno0_utile: metrics.utile.currentYear,
       
-      // Incidenze %
+      // Percentuali
       mp_pct: incidenze.mp_pct,
       servizi_pct: incidenze.servizi_pct,
       godimento_pct: incidenze.godimento_pct,
       oneri_pct: incidenze.oneri_pct,
       
       // Metadati
-      ateco_code: null,
+      ateco_code: atecoCode,
       scenario_type: scenario,
-      growth_rate_override: null,
-      capital_needed: null,
+      growth_rate_override: growthRateOverride,
+      growth_rate_applied: growthRate,
       
-      status: 'ready_to_generate'
+      // Stato Patrimoniale
+      totale_attivo: metrics.totaleAttivo.currentYear,
+      patrimonio_netto: metrics.patrimonioNetto.currentYear,
+      debiti_totali: metrics.debitiTotali.currentYear,
+      
+      // ✅ DATI PROSPETTICI PRE-CALCOLATI
+      anno1_data: JSON.stringify(prospectiveYears.anno1_data),
+      anno2_data: JSON.stringify(prospectiveYears.anno2_data),
+      anno3_data: JSON.stringify(prospectiveYears.anno3_data),
+      
+      // KPI
+      kpi_derivati: JSON.stringify(kpis),
+      
+      // Sensibilità
+      sensibilita: JSON.stringify(sensibilita),
+      
+      // Narrative
+      narrative: narrative,
+      
+      status: 'completed'
     };
 
-    console.log(`[${sessionId}] ✅ Dati preparati`);
+    console.log(`[${sessionId}] 🔧 Dati preparati`);
 
     // ============================================
-    // STEP 10: INSERT A SUPABASE
+    // STEP 16: INSERT SUPABASE
     // ============================================
-
-    console.log(`\n[${sessionId}] 💾 STEP 10: INSERT SUPABASE`);
 
     const { data: insertedData, error: insertError } = await supabase
       .from('piano_economico_sessions')
@@ -397,25 +653,20 @@ export default async function handler(req, res) {
       console.error(`[${sessionId}] ❌ Errore insert:`, insertError.message);
       return res.status(500).json({ 
         error: 'Errore salvataggio sessione',
-        errorDetails: {
-          message: insertError.message,
-          code: insertError.code
-        }
+        errorDetails: insertError
       });
     }
 
     console.log(`[${sessionId}] ✅ Insert OK`);
 
     // ============================================
-    // STEP 11: CLEANUP
+    // STEP 17: CLEANUP
     // ============================================
-
-    console.log(`\n[${sessionId}] 🧹 STEP 11: CLEANUP`);
 
     try {
       fs.unlinkSync(fileObj.filepath);
     } catch (e) {
-      console.warn(`[${sessionId}] ⚠️ Errore cleanup:`, e.message);
+      console.warn(`[${sessionId}] ⚠️ Errore cleanup`);
     }
 
     console.log(`\n[${sessionId}] 🎉 COMPLETATO`);
@@ -426,20 +677,21 @@ export default async function handler(req, res) {
       sessionId: sessionId,
       userId: userRow.id,
       userEmail: outsetaUser.Email,
-      message: 'File caricato e parsato con successo',
-      status: 'ready_to_generate',
-      metriche_estratte: {
-        fatturato: metrics.fatturato.currentYear,
-        costi_personale: metrics.costiPersonale.currentYear,
-        ammortamenti: metrics.ammortamenti.currentYear,
-        utile: metrics.utile.currentYear
-      },
-      incidenze: incidenze
+      message: 'Piano economico generato con successo',
+      status: 'completed',
+      data: {
+        company_name: companyName,
+        anno0_ricavi: metrics.fatturato.currentYear,
+        anno3_ricavi: anno3.ricavi,
+        anno3_ebitda: anno3.ebitda,
+        anno3_utile: anno3.utileNetto,
+        growth_rate: (growthRate * 100).toFixed(1),
+        kpi: kpis
+      }
     });
 
   } catch (error) {
-    console.error(`\n[${sessionId}] 💥 ERRORE FATALE:`, error.message);
-    console.log(`${'='.repeat(80)}\n`);
+    console.error(`[${sessionId}] 💥 ERRORE FATALE:`, error.message);
     
     return res.status(500).json({
       error: error.message || 'Errore durante l\'elaborazione del file',
@@ -447,10 +699,6 @@ export default async function handler(req, res) {
     });
   }
 }
-
-// ============================================
-// DISABLE DEFAULT BODY PARSER
-// ============================================
 
 export const config = {
   api: {
