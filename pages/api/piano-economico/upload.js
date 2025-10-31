@@ -1,6 +1,6 @@
 // /pages/api/piano-economico/upload.js
-// VERSIONE 3.0 - Autenticazione con Outseta (come Valuta-PMI)
-// Fix: Usa outseta_user_id invece di email
+// VERSIONE 3.1 - DEBUG COMPLETO
+// Logging dettagliato per diagnosticare errori Supabase
 
 import { createClient } from '@supabase/supabase-js';
 import xlsx from 'xlsx';
@@ -160,14 +160,20 @@ export default async function handler(req, res) {
 
   const sessionId = uuidv4();
 
-  console.log(`[${sessionId}] 🚀 Avvio upload Piano Economico (v3.0 - Outseta Auth)`);
+  console.log(`\n${'='.repeat(80)}`);
+  console.log(`[${sessionId}] 🚀 INIZIO UPLOAD PIANO ECONOMICO (v3.1 - DEBUG)`);
+  console.log(`${'='.repeat(80)}`);
 
   try {
     // ============================================
     // STEP 1: AUTENTICAZIONE VIA OUTSETA
     // ============================================
 
-    console.log(`[${sessionId}] 🔐 Verifica token Outseta...`);
+    console.log(`\n[${sessionId}] 🔐 STEP 1: AUTENTICAZIONE OUTSETA`);
+    console.log(`[${sessionId}] 📋 Headers ricevuti:`, {
+      authorization: req.headers.authorization ? '✅ Presente' : '❌ Mancante',
+      contentType: req.headers['content-type']
+    });
     
     const outsetaToken = req.headers.authorization?.split(' ')[1];
     if (!outsetaToken) {
@@ -175,24 +181,36 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Token di autenticazione mancante' });
     }
 
+    console.log(`[${sessionId}] 🔍 Token Outseta ricevuto (${outsetaToken.length} char)`);
+
     // Verifica token con Outseta
+    console.log(`[${sessionId}] 🌐 Verifico token con API Outseta...`);
     const outsetaResponse = await fetch('https://pmiscout.outseta.com/api/v1/profile', {
       headers: { Authorization: `Bearer ${outsetaToken}` }
     });
 
+    console.log(`[${sessionId}] 📊 Risposta Outseta: ${outsetaResponse.status} ${outsetaResponse.statusText}`);
+
     if (!outsetaResponse.ok) {
-      console.error(`[${sessionId}] ❌ Token Outseta non valido`);
+      console.error(`[${sessionId}] ❌ Token Outseta non valido (${outsetaResponse.status})`);
       return res.status(401).json({ error: 'Token non valido' });
     }
 
     const outsetaUser = await outsetaResponse.json();
-    console.log(`[${sessionId}] ✅ Token Outseta valido per: ${outsetaUser.Email}`);
+    console.log(`[${sessionId}] ✅ Autenticazione OK`);
+    console.log(`[${sessionId}] 👤 User Outseta:`, {
+      Uid: outsetaUser.Uid,
+      Email: outsetaUser.Email,
+      FirstName: outsetaUser.FirstName,
+      LastName: outsetaUser.LastName
+    });
 
     // ============================================
     // STEP 2: RECUPERA/CREA USER DA OUTSETA
     // ============================================
 
-    console.log(`[${sessionId}] 👤 Ricerca user con outseta_user_id: ${outsetaUser.Uid}`);
+    console.log(`\n[${sessionId}] 👤 STEP 2: GESTIONE USER SUPABASE`);
+    console.log(`[${sessionId}] 🔍 Upsert user con outseta_user_id: ${outsetaUser.Uid}`);
 
     const { data: userRow, error: userError } = await supabase
       .from('users')
@@ -205,21 +223,40 @@ export default async function handler(req, res) {
         },
         { onConflict: 'outseta_user_id' }
       )
-      .select('id')
+      .select('id, outseta_user_id, email')
       .single();
 
-    if (userError || !userRow) {
-      console.error(`[${sessionId}] ❌ Errore recupero/creazione user:`, userError);
-      return res.status(500).json({ error: 'Impossibile autenticare utente' });
+    if (userError) {
+      console.error(`[${sessionId}] ❌ Errore upsert user:`, {
+        message: userError.message,
+        code: userError.code,
+        details: userError.details,
+        hint: userError.hint
+      });
+      return res.status(500).json({ 
+        error: 'Errore autenticazione user', 
+        details: userError.message 
+      });
     }
 
-    console.log(`[${sessionId}] ✅ User ID trovato/creato: ${userRow.id}`);
+    if (!userRow) {
+      console.error(`[${sessionId}] ❌ User row è null dopo upsert`);
+      return res.status(500).json({ error: 'User row non trovato dopo upsert' });
+    }
+
+    console.log(`[${sessionId}] ✅ User creato/trovato:`, {
+      id: userRow.id,
+      outseta_user_id: userRow.outseta_user_id,
+      email: userRow.email
+    });
 
     // ============================================
     // STEP 3: PARSE MULTIPART FORM DATA
     // ============================================
 
-    console.log(`[${sessionId}] 📦 Parsing form data...`);
+    console.log(`\n[${sessionId}] 📦 STEP 3: PARSE FORM DATA`);
+    console.log(`[${sessionId}] 🔄 Parsing multipart form...`);
+    
     const { fields, files } = await parseForm(req);
 
     console.log(`[${sessionId}] ✅ Fields:`, Object.keys(fields));
@@ -239,11 +276,13 @@ export default async function handler(req, res) {
     // STEP 4: PARSE EXCEL FILE
     // ============================================
 
-    console.log(`[${sessionId}] 📋 Parsing Excel...`);
+    console.log(`\n[${sessionId}] 📋 STEP 4: PARSE EXCEL`);
+    console.log(`[${sessionId}] 🔄 Lettura file Excel...`);
+    
     const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
     const sheets = workbook.SheetNames;
 
-    console.log(`[${sessionId}] 📋 Fogli trovati: ${sheets.join(', ')}`);
+    console.log(`[${sessionId}] ✅ Fogli trovati: ${sheets.join(', ')}`);
 
     if (sheets.length === 0) {
       return res.status(400).json({ error: 'File Excel vuoto o non valido' });
@@ -258,13 +297,18 @@ export default async function handler(req, res) {
     // STEP 5: EXTRACT YEAR COLUMNS
     // ============================================
 
+    console.log(`\n[${sessionId}] 📅 STEP 5: ESTRAI COLONNE ANNI`);
+    
     const yearCols = findYearColumns(sheetData);
-    console.log(`[${sessionId}] 📅 Colonne anni: N=${yearCols.currentYearCol}, N-1=${yearCols.previousYearCol}`);
+    console.log(`[${sessionId}] ✅ Colonne anni trovate:`, yearCols);
 
     // ============================================
     // STEP 6: EXTRACT METRICS
     // ============================================
 
+    console.log(`\n[${sessionId}] 📊 STEP 6: ESTRAI METRICHE`);
+    console.log(`[${sessionId}] 🔄 Estrazione valori dal bilancio...`);
+    
     const metrics = {
       fatturato: findValueInSheetImproved(sheetData, metricsConfigs.fatturato, yearCols, 'Fatturato'),
       costiProduzione: findValueInSheetImproved(sheetData, metricsConfigs.costiProduzione, yearCols, 'Costi Produzione'),
@@ -282,7 +326,7 @@ export default async function handler(req, res) {
       imposte: findValueInSheetImproved(sheetData, metricsConfigs.imposte, yearCols, 'Imposte')
     };
 
-    console.log(`[${sessionId}] 📊 Metriche estratte:`, {
+    console.log(`[${sessionId}] ✅ Metriche estratte:`, {
       fatturato: metrics.fatturato.currentYear,
       costiPersonale: metrics.costiPersonale.currentYear,
       ammortamenti: metrics.ammortamenti.currentYear,
@@ -293,6 +337,8 @@ export default async function handler(req, res) {
     // STEP 7: CALCULATE PERCENTAGES
     // ============================================
 
+    console.log(`\n[${sessionId}] 📈 STEP 7: CALCOLA PERCENTUALI`);
+    
     const fatturatoCorrente = metrics.fatturato.currentYear || 1;
 
     const incidenze = {
@@ -302,12 +348,14 @@ export default async function handler(req, res) {
       oneri_pct: fatturatoCorrente > 0 ? (metrics.oneriDiversi.currentYear || 0) / fatturatoCorrente * 100 : 0
     };
 
-    console.log(`[${sessionId}] 📈 Incidenze % calcolate:`, incidenze);
+    console.log(`[${sessionId}] ✅ Incidenze calcolate:`, incidenze);
 
     // ============================================
     // STEP 8: EXTRACT FORM FIELDS
     // ============================================
 
+    console.log(`\n[${sessionId}] 📝 STEP 8: ESTRAI CAMPI FORM`);
+    
     const companyName = Array.isArray(fields.companyName) 
       ? fields.companyName[0] 
       : fields.companyName || 'Azienda';
@@ -316,64 +364,134 @@ export default async function handler(req, res) {
       ? fields.scenario[0]
       : fields.scenario || 'base';
 
-    console.log(`[${sessionId}] 🏢 Company: ${companyName}, Scenario: ${scenario}`);
+    console.log(`[${sessionId}] ✅ Dati form:`, {
+      company_name: companyName,
+      scenario: scenario
+    });
 
     // ============================================
-    // STEP 9: SAVE TO SUPABASE
+    // STEP 9: PREPARA DATI PER INSERT
     // ============================================
 
-    console.log(`[${sessionId}] 💾 Salvataggio in Supabase...`);
+    console.log(`\n[${sessionId}] 🔧 STEP 9: PREPARA DATI INSERT`);
 
-    const { error: insertError } = await supabase
+    const insertData = {
+      id: sessionId,
+      user_id: userRow.id,
+      user_email: outsetaUser.Email,
+      company_name: companyName,
+      
+      // Anno 0 (storico)
+      anno0_ricavi: metrics.fatturato.currentYear,
+      anno0_costi_personale: metrics.costiPersonale.currentYear,
+      anno0_mp: metrics.costiMateriePrime.currentYear,
+      anno0_servizi: metrics.costiServizi.currentYear,
+      anno0_godimento: metrics.costiGodimento.currentYear,
+      anno0_oneri_diversi: metrics.oneriDiversi.currentYear,
+      anno0_ammortamenti: metrics.ammortamenti.currentYear,
+      anno0_oneri_finanziari: metrics.oneriFinanziari.currentYear,
+      anno0_utile: metrics.utile.currentYear,
+      
+      // Incidenze %
+      mp_pct: incidenze.mp_pct,
+      servizi_pct: incidenze.servizi_pct,
+      godimento_pct: incidenze.godimento_pct,
+      oneri_pct: incidenze.oneri_pct,
+      
+      // Metadati
+      ateco_code: null,
+      scenario_type: scenario,
+      growth_rate_override: null,
+      capital_needed: null,
+      
+      status: 'ready_to_generate'
+    };
+
+    console.log(`[${sessionId}] 📋 Dati da inserire:`, {
+      id: insertData.id,
+      user_id: insertData.user_id,
+      company_name: insertData.company_name,
+      status: insertData.status,
+      user_email: insertData.user_email,
+      anno0_ricavi: insertData.anno0_ricavi,
+      anno0_utile: insertData.anno0_utile
+    });
+
+    // ============================================
+    // STEP 10: VERIFICA STRUTTURA TABELLA
+    // ============================================
+
+    console.log(`\n[${sessionId}] 🔍 STEP 10: VERIFICA TABELLA SUPABASE`);
+    console.log(`[${sessionId}] 🔄 Query test per verificare tabella...`);
+
+    const { data: testData, error: testError } = await supabase
       .from('piano_economico_sessions')
-      .insert({
-        id: sessionId,
-        user_id: userRow.id,
-        user_email: outsetaUser.Email,
-        company_name: companyName,
-        
-        // Anno 0 (storico)
-        anno0_ricavi: metrics.fatturato.currentYear,
-        anno0_costi_personale: metrics.costiPersonale.currentYear,
-        anno0_mp: metrics.costiMateriePrime.currentYear,
-        anno0_servizi: metrics.costiServizi.currentYear,
-        anno0_godimento: metrics.costiGodimento.currentYear,
-        anno0_oneri_diversi: metrics.oneriDiversi.currentYear,
-        anno0_ammortamenti: metrics.ammortamenti.currentYear,
-        anno0_oneri_finanziari: metrics.oneriFinanziari.currentYear,
-        anno0_utile: metrics.utile.currentYear,
-        
-        // Incidenze %
-        mp_pct: incidenze.mp_pct,
-        servizi_pct: incidenze.servizi_pct,
-        godimento_pct: incidenze.godimento_pct,
-        oneri_pct: incidenze.oneri_pct,
-        
-        // Metadati
-        ateco_code: null,
-        scenario_type: scenario,
-        growth_rate_override: null,
-        capital_needed: null,
-        
-        status: 'ready_to_generate'
-      });
+      .select('*')
+      .limit(1);
 
-    if (insertError) {
-      console.error(`[${sessionId}] ❌ Errore insert Supabase:`, insertError);
-      return res.status(500).json({ error: 'Errore salvataggio sessione', details: insertError.message });
+    if (testError) {
+      console.error(`[${sessionId}] ❌ Errore query test:`, {
+        message: testError.message,
+        code: testError.code,
+        details: testError.details
+      });
+    } else {
+      console.log(`[${sessionId}] ✅ Tabella accessibile. Colonne: ${testData.length === 0 ? 'N/D (tabella vuota)' : Object.keys(testData[0]).join(', ')}`);
     }
 
-    console.log(`[${sessionId}] ✅ Sessione creata e salvata`);
+    // ============================================
+    // STEP 11: INSERT A SUPABASE
+    // ============================================
+
+    console.log(`\n[${sessionId}] 💾 STEP 11: INSERT A SUPABASE`);
+    console.log(`[${sessionId}] 🔄 Eseguo insert...`);
+
+    const { data: insertedData, error: insertError } = await supabase
+      .from('piano_economico_sessions')
+      .insert(insertData)
+      .select();
+
+    if (insertError) {
+      console.error(`[${sessionId}] ❌ ERRORE INSERT SUPABASE:`, {
+        message: insertError.message,
+        code: insertError.code,
+        details: insertError.details,
+        hint: insertError.hint,
+        status: insertError.status
+      });
+      
+      console.error(`[${sessionId}] 📋 Dati tentati:`, insertData);
+
+      return res.status(500).json({ 
+        error: 'Errore salvataggio sessione',
+        errorDetails: {
+          message: insertError.message,
+          code: insertError.code,
+          details: insertError.details,
+          hint: insertError.hint
+        },
+        sessionId: sessionId
+      });
+    }
+
+    console.log(`[${sessionId}] ✅ Insert riuscito!`);
+    console.log(`[${sessionId}] 📊 Dati inseriti:`, insertedData);
 
     // ============================================
-    // STEP 10: CLEANUP E RESPONSE
+    // STEP 12: CLEANUP E RESPONSE
     // ============================================
+
+    console.log(`\n[${sessionId}] 🧹 STEP 12: CLEANUP`);
 
     try {
       fs.unlinkSync(fileObj.filepath);
+      console.log(`[${sessionId}] ✅ File temporaneo eliminato`);
     } catch (e) {
-      console.warn(`[${sessionId}] ⚠️ Errore eliminazione file temporaneo:`, e.message);
+      console.warn(`[${sessionId}] ⚠️ Errore eliminazione file:`, e.message);
     }
+
+    console.log(`\n[${sessionId}] 🎉 UPLOAD COMPLETATO CON SUCCESSO`);
+    console.log(`${'='.repeat(80)}\n`);
 
     return res.status(200).json({
       success: true,
@@ -392,7 +510,13 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error(`[${sessionId}] 💥 Errore fatale:`, error);
+    console.error(`\n[${sessionId}] 💥 ERRORE FATALE:`, {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+    console.log(`${'='.repeat(80)}\n`);
+    
     return res.status(500).json({
       error: error.message || 'Errore durante l\'elaborazione del file',
       sessionId: sessionId,
