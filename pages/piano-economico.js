@@ -1,5 +1,5 @@
 // /pages/piano-economico.js
-// VERSIONE 1.0 - Upload Form Piano Economico
+// VERSIONE 1.1 - Upload Form Piano Economico + Barra Progresso
 // Layout simile a Valuta-PMI, con opzioni aggiuntive per scenario e parametri
 
 import { useState, useRef } from 'react';
@@ -64,6 +64,8 @@ function PianoEconomicPage() {
   const [growthRateOverride, setGrowthRateOverride] = useState('');
   const [capitalNeeded, setCapitalNeeded] = useState('');
   const [loading, setLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [progressStage, setProgressStage] = useState(''); // Traccia lo stage dell'upload
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
   const router = useRouter();
@@ -99,6 +101,8 @@ function PianoEconomicPage() {
     }
 
     setLoading(true);
+    setUploadProgress(0);
+    setProgressStage('Preparazione file...');
     setError('');
 
     try {
@@ -107,17 +111,55 @@ function PianoEconomicPage() {
       formData.append('companyName', companyName);
       formData.append('scenario', scenario);
       if (growthRateOverride) formData.append('growthRateOverride', parseFloat(growthRateOverride));
-      if (capitalNeeded) formData.append('capitalNeeded', parseFloat(capitalNeeded.replace(/[^0-9.-]/g, '')));
+      if (capitalNeeded) {
+        const parsed = parseFloat(capitalNeeded.replace(/[^0-9.-]/g, ''));
+        if (!isNaN(parsed) && parsed > 0) {
+          formData.append('capitalNeeded', parsed);
+        }
+      }
 
       console.log('📤 Invio file a /api/piano-economico/upload...');
-      const response = await api.post('/piano-economico/upload', formData);
+
+      // Configurazione per monitorare il progresso
+      const config = {
+        onUploadProgress: (progressEvent) => {
+          const percentCompleted = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total
+          );
+          setUploadProgress(percentCompleted);
+
+          // Aggiorna il messaggio in base al progresso
+          if (percentCompleted < 30) {
+            setProgressStage('Preparazione file...');
+          } else if (percentCompleted < 60) {
+            setProgressStage('Caricamento in corso...');
+          } else if (percentCompleted < 90) {
+            setProgressStage('Upload completato, elaborazione in corso...');
+          } else {
+            setProgressStage('Finalizzazione...');
+          }
+
+          console.log(`📊 Upload progress: ${percentCompleted}%`);
+        }
+      };
+
+      setProgressStage('Invio al server...');
+      const response = await api.post('/piano-economico/upload', formData, config);
 
       console.log('✅ Upload completato:', response.data);
-      if (response.data.success && response.data.sessionId) {
-        router.push(`/piano/${response.data.sessionId}`);
-      } else {
-        throw new Error(response.data.error || 'Errore durante la creazione della sessione.');
-      }
+      
+      setProgressStage('Reindirizzamento...');
+      setUploadProgress(100);
+
+      // Pausa di 500ms per mostrare 100%
+      setTimeout(() => {
+        if (response.data.success && response.data.sessionId) {
+          router.push(`/piano/${response.data.sessionId}`);
+        } else {
+          throw new Error(response.data.error || 'Errore durante la creazione della sessione.');
+        }
+      }, 500);
+
     } catch (err) {
       console.error('💥 Errore upload:', err);
       setError(
@@ -126,6 +168,8 @@ function PianoEconomicPage() {
         'Impossibile caricare il file. Verifica che sia un bilancio Excel valido.'
       );
       setLoading(false);
+      setUploadProgress(0);
+      setProgressStage('');
     }
   };
 
@@ -204,6 +248,32 @@ function PianoEconomicPage() {
         </div>
       </div>
 
+      {/* ===== PROGRESS BAR (Mostra solo durante upload) ===== */}
+      {loading && (
+        <div className="mb-6 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+              <span className="font-semibold text-blue-900">{progressStage}</span>
+            </div>
+            <span className="text-sm font-bold text-blue-600">{uploadProgress}%</span>
+          </div>
+
+          {/* Barra progresso principale */}
+          <div className="w-full h-3 bg-blue-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-300 ease-out rounded-full shadow-lg"
+              style={{ width: `${uploadProgress}%` }}
+            ></div>
+          </div>
+
+          {/* Sottotesto informativo */}
+          <p className="text-xs text-blue-700 mt-3">
+            ⏱️ Non chiudere questa pagina durante l'elaborazione
+          </p>
+        </div>
+      )}
+
       {/* ===== ERROR MESSAGE ===== */}
       {error && (
         <div className="mb-6 p-4 bg-red-50 text-red-800 border border-red-200 rounded-lg text-sm flex items-start gap-3 shadow-sm">
@@ -239,7 +309,8 @@ function PianoEconomicPage() {
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
               placeholder="Es: Rossi S.R.L."
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={loading}
               required
             />
             <p className="mt-1 text-xs text-slate-500">Inserisci la ragione sociale completa</p>
@@ -252,8 +323,10 @@ function PianoEconomicPage() {
             </label>
 
             <div
-              onClick={() => fileInputRef.current?.click()}
-              className="mt-2 flex flex-col justify-center items-center px-6 py-8 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer hover:border-blue-500 hover:bg-blue-50/50 bg-slate-50 transition-all group"
+              onClick={() => !loading && fileInputRef.current?.click()}
+              className={`mt-2 flex flex-col justify-center items-center px-6 py-8 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer hover:border-blue-500 hover:bg-blue-50/50 bg-slate-50 transition-all group ${
+                loading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
             >
               <div className="text-center">
                 <div className="mx-auto h-16 w-16 text-slate-400 group-hover:text-blue-500 transition-colors mb-4">
@@ -281,6 +354,7 @@ function PianoEconomicPage() {
               type="file"
               className="sr-only"
               onChange={handleFileChange}
+              disabled={loading}
               accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             />
 
@@ -304,7 +378,8 @@ function PianoEconomicPage() {
                     setFile(null);
                     fileInputRef.current.value = null;
                   }}
-                  className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-green-700 hover:text-green-900 hover:bg-green-100 rounded-lg transition-colors"
+                  disabled={loading}
+                  className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-green-700 hover:text-green-900 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label="Rimuovi file"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -350,7 +425,8 @@ function PianoEconomicPage() {
                 id="scenario"
                 value={scenario}
                 onChange={(e) => setScenario(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                disabled={loading}
+                className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="base">Base (Trend Settore Standard)</option>
                 <option value="conservative">Conservativo (-30% crescita)</option>
@@ -375,7 +451,8 @@ function PianoEconomicPage() {
                 min="0"
                 max="20"
                 step="0.1"
-                className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                disabled={loading}
+                className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <p className="mt-1 text-xs text-slate-500">
                 Lascia vuoto per autodetection (minimo 2%, massimo 10% tranne tech)
@@ -393,7 +470,8 @@ function PianoEconomicPage() {
                 value={capitalNeeded}
                 onChange={(e) => setCapitalNeeded(e.target.value)}
                 placeholder="Es: 100.000"
-                className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                disabled={loading}
+                className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <p className="mt-1 text-xs text-slate-500">
                 Se inserito, calcoleremo oneri finanziari aggiuntivi
