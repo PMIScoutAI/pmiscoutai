@@ -1,6 +1,6 @@
 // /pages/piano/[sessionId].js
-// VERSIONE 1.0 - Pagina Output Piano Economico
-// Focus: Numeri, Recharts leggero, PDF export
+// VERSIONE 3.0 - SENZA GRAFICI RECHARTS
+// Focus: Tabelle + KPI + PDF Export (No problemi di rendering)
 
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
@@ -13,48 +13,6 @@ import Layout from '../../components/Layout';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
-// Dynamic import Recharts
-const LineChart = dynamic(
-  () => import('recharts').then(mod => mod.LineChart),
-  { ssr: false }
-);
-const Line = dynamic(
-  () => import('recharts').then(mod => mod.Line),
-  { ssr: false }
-);
-const BarChart = dynamic(
-  () => import('recharts').then(mod => mod.BarChart),
-  { ssr: false }
-);
-const Bar = dynamic(
-  () => import('recharts').then(mod => mod.Bar),
-  { ssr: false }
-);
-const XAxis = dynamic(
-  () => import('recharts').then(mod => mod.XAxis),
-  { ssr: false }
-);
-const YAxis = dynamic(
-  () => import('recharts').then(mod => mod.YAxis),
-  { ssr: false }
-);
-const CartesianGrid = dynamic(
-  () => import('recharts').then(mod => mod.CartesianGrid),
-  { ssr: false }
-);
-const Tooltip = dynamic(
-  () => import('recharts').then(mod => mod.Tooltip),
-  { ssr: false }
-);
-const Legend = dynamic(
-  () => import('recharts').then(mod => mod.Legend),
-  { ssr: false }
-);
-const ResponsiveContainer = dynamic(
-  () => import('recharts').then(mod => mod.ResponsiveContainer),
-  { ssr: false }
-);
-
 const PianoPageComponent = dynamic(
   () => Promise.resolve(PianoPage),
   {
@@ -63,7 +21,7 @@ const PianoPageComponent = dynamic(
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-slate-600">Caricamento risultati...</p>
+          <p className="text-slate-600">Elaborazione piano economico...</p>
         </div>
       </div>
     )
@@ -121,7 +79,6 @@ function PianoPage() {
       try {
         console.log(`📥 Caricamento dati sessione: ${sessionId}`);
         
-        // Se il piano non è ancora stato generato, genera ora
         const generateRes = await api.post(`/piano-economico/${sessionId}/generate`);
         
         if (generateRes.data.success) {
@@ -162,13 +119,13 @@ function PianoPage() {
 
       // Header
       doc.setFontSize(20);
-      doc.setTextColor(30, 58, 138); // blue-900
+      doc.setTextColor(30, 58, 138);
       doc.text('Piano Economico AI', pageWidth / 2, yPosition, { align: 'center' });
 
       yPosition += 10;
       doc.setFontSize(12);
-      doc.setTextColor(100, 116, 139); // slate-500
-      doc.text(`${data.anno0?.companyName || 'Azienda'}`, pageWidth / 2, yPosition, { align: 'center' });
+      doc.setTextColor(100, 116, 139);
+      doc.text(`${data.anno0?.company_name || 'Azienda'}`, pageWidth / 2, yPosition, { align: 'center' });
 
       yPosition += 12;
 
@@ -395,51 +352,6 @@ function PianoPage() {
     );
   }
 
-  const chartData = [
-    {
-      anno: 'Anno 0',
-      ricavi: data.anno0.ricavi,
-      ebitda: data.anno0.ebitda,
-      utile: data.anno0.utile
-    },
-    {
-      anno: 'Anno 1',
-      ricavi: data.anno1.ricavi,
-      ebitda: data.anno1.ebitda,
-      utile: data.anno1.utileNetto
-    },
-    {
-      anno: 'Anno 2',
-      ricavi: data.anno2.ricavi,
-      ebitda: data.anno2.ebitda,
-      utile: data.anno2.utileNetto
-    },
-    {
-      anno: 'Anno 3',
-      ricavi: data.anno3.ricavi,
-      ebitda: data.anno3.ebitda,
-      utile: data.anno3.utileNetto
-    }
-  ];
-
-  const sensibilityData = [
-    {
-      scenario: '-10%',
-      ricavi: data.sensibilita.ricavi_minus10.ricavi,
-      ebitda: data.sensibilita.ricavi_minus10.ebitda
-    },
-    {
-      scenario: 'Base',
-      ricavi: data.sensibilita.ricavi_baseline.ricavi,
-      ebitda: data.sensibilita.ricavi_baseline.ebitda
-    },
-    {
-      scenario: '+10%',
-      ricavi: data.sensibilita.ricavi_plus10.ricavi,
-      ebitda: data.sensibilita.ricavi_plus10.ebitda
-    }
-  ];
-
   return (
     <div className="py-8 mx-auto max-w-7xl px-4">
       {/* ===== HEADER ===== */}
@@ -477,7 +389,7 @@ function PianoPage() {
       </div>
 
       {/* ===== TABS ===== */}
-      <div className="flex gap-2 mb-6 border-b border-slate-200">
+      <div className="flex gap-2 mb-6 border-b border-slate-200 overflow-x-auto">
         {[
           { id: 'riepilogo', label: '📊 Riepilogo' },
           { id: 'numeri', label: '💰 Numeri Dettagli' },
@@ -488,7 +400,7 @@ function PianoPage() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-3 font-semibold border-b-2 transition ${
+            className={`px-4 py-3 font-semibold border-b-2 transition whitespace-nowrap ${
               activeTab === tab.id
                 ? 'text-blue-600 border-blue-600'
                 : 'text-slate-600 border-transparent hover:text-slate-900'
@@ -532,41 +444,44 @@ function PianoPage() {
             />
           </div>
 
-          {/* Grafico Lineare: Ricavi, EBITDA, Utile */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Trend Principali (€)</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="anno" stroke="#94a3b8" />
-                <YAxis stroke="#94a3b8" />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
-                  formatter={(value) => formatCurrency(value)}
-                />
-                <Legend />
-                <Line type="monotone" dataKey="ricavi" stroke="#2563eb" strokeWidth={2} name="Ricavi" dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="ebitda" stroke="#7c3aed" strokeWidth={2} name="EBITDA" dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="utile" stroke="#10b981" strokeWidth={2} name="Utile Netto" dot={{ r: 4 }} />
-              </LineChart>
-            </ResponsiveContainer>
+          {/* Tabella Trend Principali */}
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-blue-900 text-white">
+                <tr>
+                  <th className="px-6 py-3 text-left font-semibold">Voce</th>
+                  <th className="px-6 py-3 text-right font-semibold">Anno 0</th>
+                  <th className="px-6 py-3 text-right font-semibold">Anno 1</th>
+                  <th className="px-6 py-3 text-right font-semibold">Anno 2</th>
+                  <th className="px-6 py-3 text-right font-semibold">Anno 3</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                <TableRow label="Ricavi" v0={data.anno0.ricavi} v1={data.anno1.ricavi} v2={data.anno2.ricavi} v3={data.anno3.ricavi} bold />
+                <TableRow label="EBITDA" v0={data.anno0.ebitda} v1={data.anno1.ebitda} v2={data.anno2.ebitda} v3={data.anno3.ebitda} bold highlight />
+                <TableRow label="Utile Netto" v0={data.anno0.utile} v1={data.anno1.utileNetto} v2={data.anno2.utileNetto} v3={data.anno3.utileNetto} bold highlight />
+              </tbody>
+            </table>
           </div>
 
-          {/* Grafico Colonne: Ricavi per anno */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Ricavi per Anno (€)</h3>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="anno" stroke="#94a3b8" />
-                <YAxis stroke="#94a3b8" />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
-                  formatter={(value) => formatCurrency(value)}
-                />
-                <Bar dataKey="ricavi" fill="#3b82f6" name="Ricavi" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          {/* Margini */}
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-blue-900 text-white">
+                <tr>
+                  <th className="px-6 py-3 text-left font-semibold">Margine</th>
+                  <th className="px-6 py-3 text-right font-semibold">Anno 0</th>
+                  <th className="px-6 py-3 text-right font-semibold">Anno 1</th>
+                  <th className="px-6 py-3 text-right font-semibold">Anno 2</th>
+                  <th className="px-6 py-3 text-right font-semibold">Anno 3</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                <TableRow label="% EBITDA" v0={data.anno0.ebitda / data.anno0.ricavi * 100} v1={data.anno1.margineEbitda} v2={data.anno2.margineEbitda} v3={data.anno3.margineEbitda} pct />
+                <TableRow label="% EBIT" v0={data.anno0.ebit / data.anno0.ricavi * 100} v1={data.anno1.margineEbit} v2={data.anno2.margineEbit} v3={data.anno3.margineEbit} pct />
+                <TableRow label="% Netto" v0={data.anno0.utile / data.anno0.ricavi * 100} v1={data.anno1.margineNetto} v2={data.anno2.margineNetto} v3={data.anno3.margineNetto} pct />
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -702,25 +617,6 @@ function PianoPage() {
           <p className="text-sm text-slate-600">
             Analisi dell'impatto di variazioni ±10% sui ricavi rispetto allo scenario base (anno 3).
           </p>
-
-          {/* Grafico Sensibilità */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Ricavi e EBITDA per Scenario</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={sensibilityData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="scenario" stroke="#94a3b8" />
-                <YAxis stroke="#94a3b8" />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
-                  formatter={(value) => formatCurrency(value)}
-                />
-                <Legend />
-                <Bar dataKey="ricavi" fill="#3b82f6" name="Ricavi" />
-                <Bar dataKey="ebitda" fill="#8b5cf6" name="EBITDA" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
 
           {/* Tabella Sensibilità */}
           <div className="bg-white rounded-lg shadow overflow-hidden">
