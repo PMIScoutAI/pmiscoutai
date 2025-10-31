@@ -1,10 +1,12 @@
 // /pages/api/piano-economico/upload.js
-// VERSIONE 1.0 - Upload & Parser Backend
-// Riusa logica da analyze-xbrl.js per consistenza
+// VERSIONE 2.0 - Upload & Parser Backend con Formidable
+// Fix: Parsing multipart/form-data
 
 import { createClient } from '@supabase/supabase-js';
 import xlsx from 'xlsx';
 import { v4 as uuidv4 } from 'uuid';
+import { parseForm } from '../../../lib/parseForm';
+import fs from 'fs';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -12,7 +14,7 @@ const supabase = createClient(
 );
 
 // ============================================
-// UTILITY FUNCTIONS (Riprese da analyze-xbrl.js)
+// UTILITY FUNCTIONS
 // ============================================
 
 const parseValue = (val) => {
@@ -82,7 +84,7 @@ const findValueInSheetImproved = (sheetData, searchConfigs, yearCols, metricName
 };
 
 // ============================================
-// METRIC CONFIGS (Estrazione dati dal bilancio)
+// METRIC CONFIGS
 // ============================================
 
 const metricsConfigs = {
@@ -148,10 +150,11 @@ const metricsConfigs = {
 };
 
 // ============================================
-// FUNZIONE PRINCIPALE HANDLER
+// MAIN HANDLER
 // ============================================
 
 export default async function handler(req, res) {
+  // Disabilita bodyParser per questo endpoint
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Metodo non permesso' });
   }
@@ -163,14 +166,30 @@ export default async function handler(req, res) {
 
   try {
     // ============================================
-    // STEP 1: PARSE FILE EXCEL
+    // STEP 1: PARSE MULTIPART FORM DATA
     // ============================================
 
-    if (!req.file) {
+    console.log(`[${sessionId}] 📦 Parsing form data...`);
+    const { fields, files } = await parseForm(req);
+
+    console.log(`[${sessionId}] ✅ Fields:`, Object.keys(fields));
+    console.log(`[${sessionId}] ✅ Files:`, Object.keys(files));
+
+    if (!files.file) {
+      console.error(`[${sessionId}] ❌ Nessun file trovato`);
       return res.status(400).json({ error: 'Nessun file caricato' });
     }
 
-    const fileBuffer = req.file.buffer;
+    // Estrai il file
+    const fileObj = Array.isArray(files.file) ? files.file[0] : files.file;
+    const fileBuffer = fs.readFileSync(fileObj.filepath);
+    console.log(`[${sessionId}] 📂 File size: ${fileBuffer.length} bytes`);
+
+    // ============================================
+    // STEP 2: PARSE EXCEL FILE
+    // ============================================
+
+    console.log(`[${sessionId}] 📋 Parsing Excel...`);
     const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
     const sheets = workbook.SheetNames;
 
@@ -180,21 +199,20 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'File Excel vuoto o non valido' });
     }
 
-    // Usa il primo foglio disponibile (di solito il conto economico)
     const firstSheet = workbook.Sheets[sheets[0]];
     const sheetData = xlsx.utils.sheet_to_json(firstSheet, { header: 1 });
 
     console.log(`[${sessionId}] ✅ File parsato: ${sheetData.length} righe`);
 
     // ============================================
-    // STEP 2: ESTRAI COLONNE ANNI
+    // STEP 3: EXTRACT YEAR COLUMNS
     // ============================================
 
     const yearCols = findYearColumns(sheetData);
     console.log(`[${sessionId}] 📅 Colonne anni: N=${yearCols.currentYearCol}, N-1=${yearCols.previousYearCol}`);
 
     // ============================================
-    // STEP 3: ESTRAI METRICHE STORICHE
+    // STEP 4: EXTRACT METRICS
     // ============================================
 
     const metrics = {
@@ -222,10 +240,10 @@ export default async function handler(req, res) {
     });
 
     // ============================================
-    // STEP 4: CALCOLA INCIDENZE % (per crescita futura)
+    // STEP 5: CALCULATE PERCENTAGES
     // ============================================
 
-    const fatturatoCorrente = metrics.fatturato.currentYear || 1; // Avoid division by zero
+    const fatturatoCorrente = metrics.fatturato.currentYear || 1;
 
     const incidenze = {
       mp_pct: fatturatoCorrente > 0 ? (metrics.costiMateriePrime.currentYear || 0) / fatturatoCorrente * 100 : 0,
@@ -237,7 +255,21 @@ export default async function handler(req, res) {
     console.log(`[${sessionId}] 📈 Incidenze % calcolate:`, incidenze);
 
     // ============================================
-    // STEP 5: SALVA IN SUPABASE
+    // STEP 6: EXTRACT FORM FIELDS
+    // ============================================
+
+    const companyName = Array.isArray(fields.companyName) 
+      ? fields.companyName[0] 
+      : fields.companyName || 'Azienda';
+    
+    const scenario = Array.isArray(fields.scenario)
+      ? fields.scenario[0]
+      : fields.scenario || 'base';
+
+    console.log(`[${sessionId}] 🏢 Company: ${companyName}, Scenario: ${scenario}`);
+
+    // ============================================
+    // STEP 7: SAVE TO SUPABASE
     // ============================================
 
     const { error: insertError } = await supabase
@@ -245,7 +277,7 @@ export default async function handler(req, res) {
       .insert({
         id: sessionId,
         user_email: userEmail,
-        company_name: req.body.companyName || 'Azienda',
+        company_name: companyName,
         
         // Anno 0 (storico)
         anno0_ricavi: metrics.fatturato.currentYear,
@@ -265,24 +297,31 @@ export default async function handler(req, res) {
         oneri_pct: incidenze.oneri_pct,
         
         // Metadati
-        ateco_code: null,  // Da determinare successivamente se necessario
-        scenario_type: req.body.scenario || 'base',
-        growth_rate_override: req.body.growthRateOverride || null,
-        capital_needed: req.body.capitalNeeded || null,
+        ateco_code: null,
+        scenario_type: scenario,
+        growth_rate_override: null,
+        capital_needed: null,
         
         status: 'ready_to_generate'
       });
 
     if (insertError) {
       console.error(`[${sessionId}] ❌ Errore insert Supabase:`, insertError);
-      return res.status(500).json({ error: 'Errore salvataggio sessione' });
+      return res.status(500).json({ error: 'Errore salvataggio sessione', details: insertError.message });
     }
 
     console.log(`[${sessionId}] ✅ Sessione creata e salvata`);
 
     // ============================================
-    // STEP 6: RESPONSE
+    // STEP 8: CLEANUP E RESPONSE
     // ============================================
+
+    // Pulisci il file temporaneo
+    try {
+      fs.unlinkSync(fileObj.filepath);
+    } catch (e) {
+      console.warn(`[${sessionId}] ⚠️ Errore eliminazione file temporaneo:`, e.message);
+    }
 
     return res.status(200).json({
       success: true,
@@ -302,19 +341,18 @@ export default async function handler(req, res) {
     console.error(`[${sessionId}] 💥 Errore fatale:`, error);
     return res.status(500).json({
       error: error.message || 'Errore durante l\'elaborazione del file',
-      sessionId: sessionId
+      sessionId: sessionId,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }
 
 // ============================================
-// MIDDLEWARE: Gestione multipart/form-data
+// DISABLE DEFAULT BODY PARSER
 // ============================================
 
 export const config = {
   api: {
-    bodyParser: {
-      sizeLimit: '10mb'
-    }
-  }
+    bodyParser: false,
+  },
 };
