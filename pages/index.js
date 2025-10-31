@@ -1,5 +1,6 @@
 // /pages/index.js (o il file della tua dashboard principale)
 // VERSIONE AGGIORNATA SECONDO IL BRIEF DEL 16/09/2025
+// CON INTEGRAZIONE PIANO ECONOMICO AI
 
 import React, { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
@@ -226,8 +227,8 @@ export default function Home() {
         bando: <><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></>,
         normativa: <><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></>,
         checkbanche: <><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"></path><path d="M12 5L8 21l4-7 4 7-4-16Z"></path></>,
-        // MODIFICA 7: AGGIUNTA ICONA GARANZIA
         garanzia: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path></>,
+        pieChart: <><path d="M12 2v20M2 12h20M12 2a10 10 0 0 1 10 10"></path></>,
     });
   }, []);
 
@@ -301,14 +302,13 @@ export default function Home() {
     </svg>
   );
 
-  // MODIFICA 1: RIMOSSO ELEMENTO "CALCOLATORI" DAL MENU
   const navLinks = [
     { href: '/', text: 'Dashboard', icon: icons.dashboard, active: true },
     { href: '/profilo', text: 'Profilo', icon: icons.profile, active: false },
     { href: 'https://pmiscoutai.vercel.app/check-ai-xbrl', text: 'Check-AI XBRL', icon: icons.xbrl, active: false },
   ];
   
-  // MODIFICA 2: SOSTITUITO INTERO ARRAY toolCards
+  // INTEGRAZIONE PIANO ECONOMICO AI
   const toolCards = [
     {
       title: 'Check-AI XBRL',
@@ -325,19 +325,26 @@ export default function Home() {
       icon: icons.checkbanche
     },
     {
+      title: 'Piano Economico AI',
+      description: 'Genera automaticamente un piano economico triennale con proiezioni, KPI bancabili e scenari di sensibilità basati sui dati del tuo bilancio.',
+      linkText: 'Genera Piano',
+      href: '/piano-economico',
+      icon: icons.calculator
+    },
+    {
       title: 'Fondo Garanzia PMI',
       description: 'Simula la percentuale di copertura del fondo e genera PDF con analisi di fattibilità.',
       linkText: 'Simula Garanzia',
       href: 'https://pmiscoutai.vercel.app/calcolatori/simulazione-fondo-garanzia',
       icon: icons.bando
-    } ,
-  {
-    title: 'Valuta-PMI',
-    description: 'Valuta la PMI in pochi minuti: utile per vendita, passaggi generazionali e dialogo con banche.',
-    linkText: 'Valuta Azienda',
-    href: '/valuta-pmi',
-    icon: icons.garanzia  // Usa l'icona "scudo" già definita
-  }
+    },
+    {
+      title: 'Valuta-PMI',
+      description: 'Valuta la PMI in pochi minuti: utile per vendita, passaggi generazionali e dialogo con banche.',
+      linkText: 'Valuta Azienda',
+      href: '/valuta-pmi',
+      icon: icons.garanzia
+    }
   ];
 
   return (
@@ -450,14 +457,11 @@ export default function Home() {
               <SubHeroAlerts Icon={Icon} icons={icons} userEmail={userEmail} />
 
               <div className="mt-10">
-                {/* MODIFICA 5: AGGIORNATO TITOLO DELLA SEZIONE */}
                 <h2 className="text-2xl font-bold text-slate-900 mb-2">I tuoi Strumenti di Analisi</h2>
                 <p className="text-slate-600 mb-8">Scegli il modulo di analisi più adatto alle tue esigenze</p>
                 
-                {/* MODIFICA 3: AGGIORNATO LAYOUT GRID */}
                 <div className="grid grid-cols-1 gap-8 mt-6 lg:grid-cols-3">
                   {toolCards.map((card) => (
-                    // MODIFICA 4: MIGLIORATE LE CARD DEI TOOL
                     <div key={card.title} className="flex flex-col h-full p-8 transition-all duration-300 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-lg hover:border-blue-300">
                         <div className="flex-grow">
                             <div className="flex items-center justify-center w-16 h-16 mb-6 bg-blue-50 rounded-xl">
