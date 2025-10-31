@@ -1,6 +1,6 @@
 // /pages/api/piano-economico/upload.js
-// VERSIONE 2.1 - Upload & Parser Backend con user_id da Supabase
-// Fix: Ora ottiene user_id dalla tabella users
+// VERSIONE 3.0 - Autenticazione con Outseta (come Valuta-PMI)
+// Fix: Usa outseta_user_id invece di email
 
 import { createClient } from '@supabase/supabase-js';
 import xlsx from 'xlsx';
@@ -154,19 +154,69 @@ const metricsConfigs = {
 // ============================================
 
 export default async function handler(req, res) {
-  // Disabilita bodyParser per questo endpoint
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Metodo non permesso' });
   }
 
   const sessionId = uuidv4();
-  const userEmail = req.headers['x-user-email'] || 'unknown@pmiscout.eu';
 
-  console.log(`[${sessionId}] 🚀 Avvio upload Piano Economico`);
+  console.log(`[${sessionId}] 🚀 Avvio upload Piano Economico (v3.0 - Outseta Auth)`);
 
   try {
     // ============================================
-    // STEP 1: PARSE MULTIPART FORM DATA
+    // STEP 1: AUTENTICAZIONE VIA OUTSETA
+    // ============================================
+
+    console.log(`[${sessionId}] 🔐 Verifica token Outseta...`);
+    
+    const outsetaToken = req.headers.authorization?.split(' ')[1];
+    if (!outsetaToken) {
+      console.error(`[${sessionId}] ❌ Token Outseta mancante`);
+      return res.status(401).json({ error: 'Token di autenticazione mancante' });
+    }
+
+    // Verifica token con Outseta
+    const outsetaResponse = await fetch('https://pmiscout.outseta.com/api/v1/profile', {
+      headers: { Authorization: `Bearer ${outsetaToken}` }
+    });
+
+    if (!outsetaResponse.ok) {
+      console.error(`[${sessionId}] ❌ Token Outseta non valido`);
+      return res.status(401).json({ error: 'Token non valido' });
+    }
+
+    const outsetaUser = await outsetaResponse.json();
+    console.log(`[${sessionId}] ✅ Token Outseta valido per: ${outsetaUser.Email}`);
+
+    // ============================================
+    // STEP 2: RECUPERA/CREA USER DA OUTSETA
+    // ============================================
+
+    console.log(`[${sessionId}] 👤 Ricerca user con outseta_user_id: ${outsetaUser.Uid}`);
+
+    const { data: userRow, error: userError } = await supabase
+      .from('users')
+      .upsert(
+        {
+          outseta_user_id: outsetaUser.Uid,
+          email: outsetaUser.Email,
+          first_name: outsetaUser.FirstName || '',
+          last_name: outsetaUser.LastName || ''
+        },
+        { onConflict: 'outseta_user_id' }
+      )
+      .select('id')
+      .single();
+
+    if (userError || !userRow) {
+      console.error(`[${sessionId}] ❌ Errore recupero/creazione user:`, userError);
+      return res.status(500).json({ error: 'Impossibile autenticare utente' });
+    }
+
+    console.log(`[${sessionId}] ✅ User ID trovato/creato: ${userRow.id}`);
+
+    // ============================================
+    // STEP 3: PARSE MULTIPART FORM DATA
     // ============================================
 
     console.log(`[${sessionId}] 📦 Parsing form data...`);
@@ -186,7 +236,7 @@ export default async function handler(req, res) {
     console.log(`[${sessionId}] 📂 File size: ${fileBuffer.length} bytes`);
 
     // ============================================
-    // STEP 2: PARSE EXCEL FILE
+    // STEP 4: PARSE EXCEL FILE
     // ============================================
 
     console.log(`[${sessionId}] 📋 Parsing Excel...`);
@@ -205,14 +255,14 @@ export default async function handler(req, res) {
     console.log(`[${sessionId}] ✅ File parsato: ${sheetData.length} righe`);
 
     // ============================================
-    // STEP 3: EXTRACT YEAR COLUMNS
+    // STEP 5: EXTRACT YEAR COLUMNS
     // ============================================
 
     const yearCols = findYearColumns(sheetData);
     console.log(`[${sessionId}] 📅 Colonne anni: N=${yearCols.currentYearCol}, N-1=${yearCols.previousYearCol}`);
 
     // ============================================
-    // STEP 4: EXTRACT METRICS
+    // STEP 6: EXTRACT METRICS
     // ============================================
 
     const metrics = {
@@ -240,7 +290,7 @@ export default async function handler(req, res) {
     });
 
     // ============================================
-    // STEP 5: CALCULATE PERCENTAGES
+    // STEP 7: CALCULATE PERCENTAGES
     // ============================================
 
     const fatturatoCorrente = metrics.fatturato.currentYear || 1;
@@ -255,7 +305,7 @@ export default async function handler(req, res) {
     console.log(`[${sessionId}] 📈 Incidenze % calcolate:`, incidenze);
 
     // ============================================
-    // STEP 6: EXTRACT FORM FIELDS
+    // STEP 8: EXTRACT FORM FIELDS
     // ============================================
 
     const companyName = Array.isArray(fields.companyName) 
@@ -269,37 +319,17 @@ export default async function handler(req, res) {
     console.log(`[${sessionId}] 🏢 Company: ${companyName}, Scenario: ${scenario}`);
 
     // ============================================
-    // STEP 7: GET USER ID FROM SUPABASE
+    // STEP 9: SAVE TO SUPABASE
     // ============================================
 
-    console.log(`[${sessionId}] 🔍 Ricerca user_id per email: ${userEmail}`);
-
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', userEmail)
-      .single();
-
-    if (userError || !user) {
-      console.error(`[${sessionId}] ❌ Utente non trovato:`, userError);
-      return res.status(404).json({ 
-        error: 'Utente non trovato nel sistema',
-        details: userError?.message || 'Email non registrata'
-      });
-    }
-
-    console.log(`[${sessionId}] ✅ User ID trovato: ${user.id}`);
-
-    // ============================================
-    // STEP 8: SAVE TO SUPABASE
-    // ============================================
+    console.log(`[${sessionId}] 💾 Salvataggio in Supabase...`);
 
     const { error: insertError } = await supabase
       .from('piano_economico_sessions')
       .insert({
         id: sessionId,
-        user_id: user.id,
-        user_email: userEmail,
+        user_id: userRow.id,
+        user_email: outsetaUser.Email,
         company_name: companyName,
         
         // Anno 0 (storico)
@@ -336,10 +366,9 @@ export default async function handler(req, res) {
     console.log(`[${sessionId}] ✅ Sessione creata e salvata`);
 
     // ============================================
-    // STEP 9: CLEANUP E RESPONSE
+    // STEP 10: CLEANUP E RESPONSE
     // ============================================
 
-    // Pulisci il file temporaneo
     try {
       fs.unlinkSync(fileObj.filepath);
     } catch (e) {
@@ -349,7 +378,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       sessionId: sessionId,
-      userId: user.id,
+      userId: userRow.id,
+      userEmail: outsetaUser.Email,
       message: 'File caricato e parsato con successo',
       status: 'ready_to_generate',
       metriche_estratte: {
