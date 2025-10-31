@@ -1,11 +1,14 @@
 // /pages/api/piano-economico/upload.js
-// VERSIONE 3.2 - CORRETTO (senza user_email)
-// Logging dettagliato per diagnosticare errori Supabase
+// VERSIONE 3.3 - CORRETTO E FUNZIONANTE
+// ✅ Autenticazione Outseta
+// ✅ Parse multipart con formidable
+// ✅ Extract Excel con xlsx
+// ✅ Salva in Supabase
 
 import { createClient } from '@supabase/supabase-js';
 import xlsx from 'xlsx';
 import { v4 as uuidv4 } from 'uuid';
-import { parseForm } from '../../../lib/parseForm';
+import formidable from 'formidable';
 import fs from 'fs';
 
 const supabase = createClient(
@@ -150,6 +153,25 @@ const metricsConfigs = {
 };
 
 // ============================================
+// PARSE FORM FUNCTION
+// ============================================
+
+const parseForm = (req) => {
+  return new Promise((resolve, reject) => {
+    const form = formidable({
+      multiples: false,
+      uploadDir: process.env.UPLOAD_DIR || '/tmp',
+      keepExtensions: true,
+    });
+
+    form.parse(req, (err, fields, files) => {
+      if (err) reject(err);
+      resolve({ fields, files });
+    });
+  });
+};
+
+// ============================================
 // MAIN HANDLER
 // ============================================
 
@@ -161,7 +183,7 @@ export default async function handler(req, res) {
   const sessionId = uuidv4();
 
   console.log(`\n${'='.repeat(80)}`);
-  console.log(`[${sessionId}] 🚀 INIZIO UPLOAD PIANO ECONOMICO (v3.2 - CORRETTO)`);
+  console.log(`[${sessionId}] 🚀 INIZIO UPLOAD PIANO ECONOMICO (v3.3 - FIXED)`);
   console.log(`${'='.repeat(80)}`);
 
   try {
