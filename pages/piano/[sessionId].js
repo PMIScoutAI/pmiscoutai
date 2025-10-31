@@ -1,5 +1,5 @@
 // /pages/piano/[sessionId].js
-// VERSIONE 3.0 - SENZA GRAFICI RECHARTS
+// VERSIONE 3.1 - SENZA GRAFICI RECHARTS + FIX GODIMENTO + RIGHE VUOTE NASCOSTE
 // Focus: Tabelle + KPI + PDF Export (No problemi di rendering)
 
 import { useState, useEffect } from 'react';
@@ -505,7 +505,7 @@ function PianoPage() {
                 <TableRow label="Costi Personale" v0={data.anno0.costiPersonale} v1={data.anno1.costiPersonale} v2={data.anno2.costiPersonale} v3={data.anno3.costiPersonale} />
                 <TableRow label="Materie Prime" v0={data.anno0.materiePrime} v1={data.anno1.materiePrime} v2={data.anno2.materiePrime} v3={data.anno3.materiePrime} />
                 <TableRow label="Servizi" v0={data.anno0.servizi} v1={data.anno1.servizi} v2={data.anno2.servizi} v3={data.anno3.servizi} />
-                <TableRow label="Godimento" v0={data.anno0.godimento} v1={data.anno1.godimento} v2={data.anno2.godimento} v3={data.anno3.godimento} />
+                <TableRow label="Costi Godimento Terzi" v0={data.anno0.godimento} v1={data.anno1.godimento} v2={data.anno2.godimento} v3={data.anno3.godimento} />
                 <TableRow label="Oneri Diversi" v0={data.anno0.oneriDiversi} v1={data.anno1.oneriDiversi} v2={data.anno2.oneriDiversi} v3={data.anno3.oneriDiversi} />
                 <TableRow label="EBITDA" v0={data.anno0.ebitda} v1={data.anno1.ebitda} v2={data.anno2.ebitda} v3={data.anno3.ebitda} bold highlight />
                 <TableRow label="Ammortamenti" v0={data.anno0.ammortamenti} v1={data.anno1.ammortamenti} v2={data.anno2.ammortamenti} v3={data.anno3.ammortamenti} />
@@ -715,6 +715,10 @@ function KpiBox({ title, value, description, color }) {
 }
 
 function TableRow({ label, v0, v1, v2, v3, bold = false, highlight = false, pct = false }) {
+  // Nascondi righe completamente vuote (tutti i valori 0 o null)
+  const allZero = !v0 && !v1 && !v2 && !v3;
+  if (allZero) return null;
+
   const format = pct ? (v) => `${v?.toFixed(1) || '0'}%` : formatCurrency;
   const bgClass = highlight ? 'bg-blue-50' : '';
   const fontClass = bold ? 'font-bold text-slate-900' : 'text-slate-600';
