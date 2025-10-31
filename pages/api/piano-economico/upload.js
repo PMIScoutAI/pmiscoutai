@@ -1,5 +1,5 @@
 // /pages/api/piano-economico/upload.js
-// VERSIONE 3.1 - DEBUG COMPLETO
+// VERSIONE 3.2 - CORRETTO (senza user_email)
 // Logging dettagliato per diagnosticare errori Supabase
 
 import { createClient } from '@supabase/supabase-js';
@@ -161,7 +161,7 @@ export default async function handler(req, res) {
   const sessionId = uuidv4();
 
   console.log(`\n${'='.repeat(80)}`);
-  console.log(`[${sessionId}] 🚀 INIZIO UPLOAD PIANO ECONOMICO (v3.1 - DEBUG)`);
+  console.log(`[${sessionId}] 🚀 INIZIO UPLOAD PIANO ECONOMICO (v3.2 - CORRETTO)`);
   console.log(`${'='.repeat(80)}`);
 
   try {
@@ -170,10 +170,6 @@ export default async function handler(req, res) {
     // ============================================
 
     console.log(`\n[${sessionId}] 🔐 STEP 1: AUTENTICAZIONE OUTSETA`);
-    console.log(`[${sessionId}] 📋 Headers ricevuti:`, {
-      authorization: req.headers.authorization ? '✅ Presente' : '❌ Mancante',
-      contentType: req.headers['content-type']
-    });
     
     const outsetaToken = req.headers.authorization?.split(' ')[1];
     if (!outsetaToken) {
@@ -181,36 +177,26 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Token di autenticazione mancante' });
     }
 
-    console.log(`[${sessionId}] 🔍 Token Outseta ricevuto (${outsetaToken.length} char)`);
+    console.log(`[${sessionId}] 🔍 Token ricevuto`);
 
     // Verifica token con Outseta
-    console.log(`[${sessionId}] 🌐 Verifico token con API Outseta...`);
     const outsetaResponse = await fetch('https://pmiscout.outseta.com/api/v1/profile', {
       headers: { Authorization: `Bearer ${outsetaToken}` }
     });
 
-    console.log(`[${sessionId}] 📊 Risposta Outseta: ${outsetaResponse.status} ${outsetaResponse.statusText}`);
-
     if (!outsetaResponse.ok) {
-      console.error(`[${sessionId}] ❌ Token Outseta non valido (${outsetaResponse.status})`);
+      console.error(`[${sessionId}] ❌ Token non valido (${outsetaResponse.status})`);
       return res.status(401).json({ error: 'Token non valido' });
     }
 
     const outsetaUser = await outsetaResponse.json();
-    console.log(`[${sessionId}] ✅ Autenticazione OK`);
-    console.log(`[${sessionId}] 👤 User Outseta:`, {
-      Uid: outsetaUser.Uid,
-      Email: outsetaUser.Email,
-      FirstName: outsetaUser.FirstName,
-      LastName: outsetaUser.LastName
-    });
+    console.log(`[${sessionId}] ✅ Autenticazione OK: ${outsetaUser.Email}`);
 
     // ============================================
     // STEP 2: RECUPERA/CREA USER DA OUTSETA
     // ============================================
 
     console.log(`\n[${sessionId}] 👤 STEP 2: GESTIONE USER SUPABASE`);
-    console.log(`[${sessionId}] 🔍 Upsert user con outseta_user_id: ${outsetaUser.Uid}`);
 
     const { data: userRow, error: userError } = await supabase
       .from('users')
@@ -223,91 +209,65 @@ export default async function handler(req, res) {
         },
         { onConflict: 'outseta_user_id' }
       )
-      .select('id, outseta_user_id, email')
+      .select('id')
       .single();
 
-    if (userError) {
-      console.error(`[${sessionId}] ❌ Errore upsert user:`, {
-        message: userError.message,
-        code: userError.code,
-        details: userError.details,
-        hint: userError.hint
-      });
-      return res.status(500).json({ 
-        error: 'Errore autenticazione user', 
-        details: userError.message 
-      });
+    if (userError || !userRow) {
+      console.error(`[${sessionId}] ❌ Errore user:`, userError?.message);
+      return res.status(500).json({ error: 'Errore autenticazione user' });
     }
 
-    if (!userRow) {
-      console.error(`[${sessionId}] ❌ User row è null dopo upsert`);
-      return res.status(500).json({ error: 'User row non trovato dopo upsert' });
-    }
-
-    console.log(`[${sessionId}] ✅ User creato/trovato:`, {
-      id: userRow.id,
-      outseta_user_id: userRow.outseta_user_id,
-      email: userRow.email
-    });
+    console.log(`[${sessionId}] ✅ User ID: ${userRow.id}`);
 
     // ============================================
     // STEP 3: PARSE MULTIPART FORM DATA
     // ============================================
 
-    console.log(`\n[${sessionId}] 📦 STEP 3: PARSE FORM DATA`);
-    console.log(`[${sessionId}] 🔄 Parsing multipart form...`);
+    console.log(`\n[${sessionId}] 📦 STEP 3: PARSE FORM`);
     
     const { fields, files } = await parseForm(req);
 
-    console.log(`[${sessionId}] ✅ Fields:`, Object.keys(fields));
-    console.log(`[${sessionId}] ✅ Files:`, Object.keys(files));
-
     if (!files.file) {
-      console.error(`[${sessionId}] ❌ Nessun file trovato`);
+      console.error(`[${sessionId}] ❌ File mancante`);
       return res.status(400).json({ error: 'Nessun file caricato' });
     }
 
-    // Estrai il file
     const fileObj = Array.isArray(files.file) ? files.file[0] : files.file;
     const fileBuffer = fs.readFileSync(fileObj.filepath);
-    console.log(`[${sessionId}] 📂 File size: ${fileBuffer.length} bytes`);
+    console.log(`[${sessionId}] ✅ File: ${fileBuffer.length} bytes`);
 
     // ============================================
     // STEP 4: PARSE EXCEL FILE
     // ============================================
 
     console.log(`\n[${sessionId}] 📋 STEP 4: PARSE EXCEL`);
-    console.log(`[${sessionId}] 🔄 Lettura file Excel...`);
     
     const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
     const sheets = workbook.SheetNames;
 
-    console.log(`[${sessionId}] ✅ Fogli trovati: ${sheets.join(', ')}`);
-
     if (sheets.length === 0) {
-      return res.status(400).json({ error: 'File Excel vuoto o non valido' });
+      return res.status(400).json({ error: 'File Excel vuoto' });
     }
 
     const firstSheet = workbook.Sheets[sheets[0]];
     const sheetData = xlsx.utils.sheet_to_json(firstSheet, { header: 1 });
 
-    console.log(`[${sessionId}] ✅ File parsato: ${sheetData.length} righe`);
+    console.log(`[${sessionId}] ✅ Fogli: ${sheetData.length} righe`);
 
     // ============================================
     // STEP 5: EXTRACT YEAR COLUMNS
     // ============================================
 
-    console.log(`\n[${sessionId}] 📅 STEP 5: ESTRAI COLONNE ANNI`);
+    console.log(`\n[${sessionId}] 📅 STEP 5: COLONNE ANNI`);
     
     const yearCols = findYearColumns(sheetData);
-    console.log(`[${sessionId}] ✅ Colonne anni trovate:`, yearCols);
+    console.log(`[${sessionId}] ✅ Trovate: col${yearCols.currentYearCol}, col${yearCols.previousYearCol}`);
 
     // ============================================
     // STEP 6: EXTRACT METRICS
     // ============================================
 
     console.log(`\n[${sessionId}] 📊 STEP 6: ESTRAI METRICHE`);
-    console.log(`[${sessionId}] 🔄 Estrazione valori dal bilancio...`);
     
     const metrics = {
       fatturato: findValueInSheetImproved(sheetData, metricsConfigs.fatturato, yearCols, 'Fatturato'),
@@ -326,18 +286,13 @@ export default async function handler(req, res) {
       imposte: findValueInSheetImproved(sheetData, metricsConfigs.imposte, yearCols, 'Imposte')
     };
 
-    console.log(`[${sessionId}] ✅ Metriche estratte:`, {
-      fatturato: metrics.fatturato.currentYear,
-      costiPersonale: metrics.costiPersonale.currentYear,
-      ammortamenti: metrics.ammortamenti.currentYear,
-      utile: metrics.utile.currentYear
-    });
+    console.log(`[${sessionId}] ✅ Metriche estratte`);
 
     // ============================================
     // STEP 7: CALCULATE PERCENTAGES
     // ============================================
 
-    console.log(`\n[${sessionId}] 📈 STEP 7: CALCOLA PERCENTUALI`);
+    console.log(`\n[${sessionId}] 📈 STEP 7: PERCENTUALI`);
     
     const fatturatoCorrente = metrics.fatturato.currentYear || 1;
 
@@ -348,13 +303,13 @@ export default async function handler(req, res) {
       oneri_pct: fatturatoCorrente > 0 ? (metrics.oneriDiversi.currentYear || 0) / fatturatoCorrente * 100 : 0
     };
 
-    console.log(`[${sessionId}] ✅ Incidenze calcolate:`, incidenze);
+    console.log(`[${sessionId}] ✅ Calcolate`);
 
     // ============================================
     // STEP 8: EXTRACT FORM FIELDS
     // ============================================
 
-    console.log(`\n[${sessionId}] 📝 STEP 8: ESTRAI CAMPI FORM`);
+    console.log(`\n[${sessionId}] 📝 STEP 8: CAMPI FORM`);
     
     const companyName = Array.isArray(fields.companyName) 
       ? fields.companyName[0] 
@@ -364,21 +319,17 @@ export default async function handler(req, res) {
       ? fields.scenario[0]
       : fields.scenario || 'base';
 
-    console.log(`[${sessionId}] ✅ Dati form:`, {
-      company_name: companyName,
-      scenario: scenario
-    });
+    console.log(`[${sessionId}] ✅ ${companyName}`);
 
     // ============================================
     // STEP 9: PREPARA DATI PER INSERT
     // ============================================
 
-    console.log(`\n[${sessionId}] 🔧 STEP 9: PREPARA DATI INSERT`);
+    console.log(`\n[${sessionId}] 🔧 STEP 9: PREPARA INSERT`);
 
     const insertData = {
       id: sessionId,
       user_id: userRow.id,
-      user_email: outsetaUser.Email,
       company_name: companyName,
       
       // Anno 0 (storico)
@@ -407,44 +358,13 @@ export default async function handler(req, res) {
       status: 'ready_to_generate'
     };
 
-    console.log(`[${sessionId}] 📋 Dati da inserire:`, {
-      id: insertData.id,
-      user_id: insertData.user_id,
-      company_name: insertData.company_name,
-      status: insertData.status,
-      user_email: insertData.user_email,
-      anno0_ricavi: insertData.anno0_ricavi,
-      anno0_utile: insertData.anno0_utile
-    });
+    console.log(`[${sessionId}] ✅ Dati preparati`);
 
     // ============================================
-    // STEP 10: VERIFICA STRUTTURA TABELLA
+    // STEP 10: INSERT A SUPABASE
     // ============================================
 
-    console.log(`\n[${sessionId}] 🔍 STEP 10: VERIFICA TABELLA SUPABASE`);
-    console.log(`[${sessionId}] 🔄 Query test per verificare tabella...`);
-
-    const { data: testData, error: testError } = await supabase
-      .from('piano_economico_sessions')
-      .select('*')
-      .limit(1);
-
-    if (testError) {
-      console.error(`[${sessionId}] ❌ Errore query test:`, {
-        message: testError.message,
-        code: testError.code,
-        details: testError.details
-      });
-    } else {
-      console.log(`[${sessionId}] ✅ Tabella accessibile. Colonne: ${testData.length === 0 ? 'N/D (tabella vuota)' : Object.keys(testData[0]).join(', ')}`);
-    }
-
-    // ============================================
-    // STEP 11: INSERT A SUPABASE
-    // ============================================
-
-    console.log(`\n[${sessionId}] 💾 STEP 11: INSERT A SUPABASE`);
-    console.log(`[${sessionId}] 🔄 Eseguo insert...`);
+    console.log(`\n[${sessionId}] 💾 STEP 10: INSERT SUPABASE`);
 
     const { data: insertedData, error: insertError } = await supabase
       .from('piano_economico_sessions')
@@ -452,45 +372,31 @@ export default async function handler(req, res) {
       .select();
 
     if (insertError) {
-      console.error(`[${sessionId}] ❌ ERRORE INSERT SUPABASE:`, {
-        message: insertError.message,
-        code: insertError.code,
-        details: insertError.details,
-        hint: insertError.hint,
-        status: insertError.status
-      });
-      
-      console.error(`[${sessionId}] 📋 Dati tentati:`, insertData);
-
+      console.error(`[${sessionId}] ❌ Errore insert:`, insertError.message);
       return res.status(500).json({ 
         error: 'Errore salvataggio sessione',
         errorDetails: {
           message: insertError.message,
-          code: insertError.code,
-          details: insertError.details,
-          hint: insertError.hint
-        },
-        sessionId: sessionId
+          code: insertError.code
+        }
       });
     }
 
-    console.log(`[${sessionId}] ✅ Insert riuscito!`);
-    console.log(`[${sessionId}] 📊 Dati inseriti:`, insertedData);
+    console.log(`[${sessionId}] ✅ Insert OK`);
 
     // ============================================
-    // STEP 12: CLEANUP E RESPONSE
+    // STEP 11: CLEANUP
     // ============================================
 
-    console.log(`\n[${sessionId}] 🧹 STEP 12: CLEANUP`);
+    console.log(`\n[${sessionId}] 🧹 STEP 11: CLEANUP`);
 
     try {
       fs.unlinkSync(fileObj.filepath);
-      console.log(`[${sessionId}] ✅ File temporaneo eliminato`);
     } catch (e) {
-      console.warn(`[${sessionId}] ⚠️ Errore eliminazione file:`, e.message);
+      console.warn(`[${sessionId}] ⚠️ Errore cleanup:`, e.message);
     }
 
-    console.log(`\n[${sessionId}] 🎉 UPLOAD COMPLETATO CON SUCCESSO`);
+    console.log(`\n[${sessionId}] 🎉 COMPLETATO`);
     console.log(`${'='.repeat(80)}\n`);
 
     return res.status(200).json({
@@ -510,17 +416,12 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error(`\n[${sessionId}] 💥 ERRORE FATALE:`, {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    });
+    console.error(`\n[${sessionId}] 💥 ERRORE FATALE:`, error.message);
     console.log(`${'='.repeat(80)}\n`);
     
     return res.status(500).json({
       error: error.message || 'Errore durante l\'elaborazione del file',
-      sessionId: sessionId,
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      sessionId: sessionId
     });
   }
 }
