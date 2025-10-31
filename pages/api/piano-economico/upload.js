@@ -1,6 +1,6 @@
 // /pages/api/piano-economico/upload.js
-// VERSIONE 2.0 - Upload & Parser Backend con Formidable
-// Fix: Parsing multipart/form-data
+// VERSIONE 2.1 - Upload & Parser Backend con user_id da Supabase
+// Fix: Ora ottiene user_id dalla tabella users
 
 import { createClient } from '@supabase/supabase-js';
 import xlsx from 'xlsx';
@@ -269,13 +269,36 @@ export default async function handler(req, res) {
     console.log(`[${sessionId}] 🏢 Company: ${companyName}, Scenario: ${scenario}`);
 
     // ============================================
-    // STEP 7: SAVE TO SUPABASE
+    // STEP 7: GET USER ID FROM SUPABASE
+    // ============================================
+
+    console.log(`[${sessionId}] 🔍 Ricerca user_id per email: ${userEmail}`);
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', userEmail)
+      .single();
+
+    if (userError || !user) {
+      console.error(`[${sessionId}] ❌ Utente non trovato:`, userError);
+      return res.status(404).json({ 
+        error: 'Utente non trovato nel sistema',
+        details: userError?.message || 'Email non registrata'
+      });
+    }
+
+    console.log(`[${sessionId}] ✅ User ID trovato: ${user.id}`);
+
+    // ============================================
+    // STEP 8: SAVE TO SUPABASE
     // ============================================
 
     const { error: insertError } = await supabase
       .from('piano_economico_sessions')
       .insert({
         id: sessionId,
+        user_id: user.id,
         user_email: userEmail,
         company_name: companyName,
         
@@ -313,7 +336,7 @@ export default async function handler(req, res) {
     console.log(`[${sessionId}] ✅ Sessione creata e salvata`);
 
     // ============================================
-    // STEP 8: CLEANUP E RESPONSE
+    // STEP 9: CLEANUP E RESPONSE
     // ============================================
 
     // Pulisci il file temporaneo
@@ -326,6 +349,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       sessionId: sessionId,
+      userId: user.id,
       message: 'File caricato e parsato con successo',
       status: 'ready_to_generate',
       metriche_estratte: {
